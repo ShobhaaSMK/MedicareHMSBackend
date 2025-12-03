@@ -1,11 +1,9 @@
 const db = require('../db');
-const { randomUUID } = require('crypto');
 
 const allowedGender = ['Male', 'Female'];
-const allowedPatientTypes = ['OPD', 'Emergency'];
-const allowedArrivalModes = ['Ambulance', 'Walkin', 'Referred'];
-const allowedEmergencyLevels = ['Urgent', 'NotUrgent', 'LifeThreatening'];
+const allowedPatientTypes = ['OPD', 'IPD', 'Emergency', 'Direct'];
 const allowedStatus = ['Active', 'Inactive'];
+const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const mapPatientRow = (row) => ({
   PatientId: row.PatientId || row.patientid,
@@ -16,11 +14,11 @@ const mapPatientRow = (row) => ({
   Gender: row.Gender || row.gender,
   Age: row.Age || row.age,
   Address: row.Address || row.address,
+  AdhaarID: row.AdhaarID || row.adhaarid || null,
+  PANCard: row.PANCard || row.pancard || null,
   PatientType: row.PatientType || row.patienttype,
   ChiefComplaint: row.ChiefComplaint || row.chiefcomplaint,
   Description: row.Description || row.description,
-  EmergencyArrivalMode: row.EmergencyArrivalMode || row.emergencyarrivalmode,
-  EmergencyLevel: row.EmergencyLevel || row.emergencylevel,
   Status: row.Status || row.status,
   RegisteredBy: row.RegisteredBy || row.registeredby,
   RegisteredDate: row.RegisteredDate || row.registereddate,
@@ -88,12 +86,19 @@ exports.getAllPatients = async (req, res) => {
 exports.getPatientById = async (req, res) => {
   try {
     const { id } = req.params;
+    // Validate that id is a valid UUID
+    if (!uuidRegex.test(id)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid PatientId. Must be a valid UUID.' 
+      });
+    }
     const { rows } = await db.query(
       `
       SELECT p.*, u."UserName"
       FROM "PatientRegistration" p
       LEFT JOIN "Users" u ON p."RegisteredBy" = u."UserId"
-      WHERE p."PatientId" = $1
+      WHERE p."PatientId" = $1::uuid
       `,
       [id]
     );
@@ -118,23 +123,25 @@ const validatePatientPayload = (body, requireAll = true) => {
   if (requireAll && (!body.PhoneNo || !body.PhoneNo.trim())) {
     errors.push('PhoneNo is required');
   }
+  // Validate AdhaarID format if provided (optional field)
+  if (body.AdhaarID !== undefined && body.AdhaarID !== null && body.AdhaarID !== '') {
+    const adhaarRegex = /^\d{12}$/;
+    if (!adhaarRegex.test(body.AdhaarID.trim())) {
+      errors.push('AdhaarID must be exactly 12 digits');
+    }
+  }
+  // Validate PANCard format if provided (optional field)
+  if (body.PANCard !== undefined && body.PANCard !== null && body.PANCard !== '') {
+    const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+    if (!panRegex.test(body.PANCard.trim().toUpperCase())) {
+      errors.push('PANCard must be in format: ABCDE1234F (5 letters, 4 digits, 1 letter)');
+    }
+  }
   if (body.Gender && !allowedGender.includes(body.Gender)) {
     errors.push('Gender must be Male or Female');
   }
   if (body.PatientType && !allowedPatientTypes.includes(body.PatientType)) {
-    errors.push('PatientType must be OPD or Emergency');
-  }
-  if (
-    body.EmergencyArrivalMode &&
-    !allowedArrivalModes.includes(body.EmergencyArrivalMode)
-  ) {
-    errors.push('EmergencyArrivalMode must be Ambulance, Walkin, or Referred');
-  }
-  if (
-    body.EmergencyLevel &&
-    !allowedEmergencyLevels.includes(body.EmergencyLevel)
-  ) {
-    errors.push('EmergencyLevel must be Urgent, NotUrgent, or LifeThreatening');
+    errors.push('PatientType must be OPD, IPD, Emergency, or Direct');
   }
   if (body.Status && !allowedStatus.includes(body.Status)) {
     errors.push('Status must be Active or InActive');
@@ -159,32 +166,56 @@ exports.createPatient = async (req, res) => {
       Gender,
       Age,
       Address,
+      AdhaarID,
+      PANCard,
       PatientType,
       ChiefComplaint,
       Description,
-      EmergencyArrivalMode,
-      EmergencyLevel,
       Status = 'Active',
       RegisteredBy,
     } = req.body;
 
-    // Generate random UUID for PatientId
-    const patientId = randomUUID();
-
     // Generate PatientNo in format PYYYY_MM_XXXX
     const patientNo = await generatePatientNo();
 
+    // Proactive validation: Check if PatientNo already exists
+    const existingPatient = await db.query(
+      'SELECT "PatientId" FROM "PatientRegistration" WHERE "PatientNo" = $1',
+      [patientNo]
+    );
+    if (existingPatient.rows.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Patient number already exists. Please try again.',
+      });
+    }
+
+    // Check if AdhaarID already exists (only if provided)
+    if (AdhaarID !== undefined && AdhaarID !== null && AdhaarID.trim() !== '') {
+      const existingAdhaar = await db.query(
+        'SELECT "PatientId" FROM "PatientRegistration" WHERE "AdhaarID" = $1',
+        [AdhaarID.trim()]
+      );
+      if (existingAdhaar.rows.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'AdhaarID already exists. Each patient must have a unique AdhaarID.',
+        });
+      }
+    }
+
+    // PatientId is auto-generated by PostgreSQL SERIAL, so we don't include it in INSERT
     const insertQuery = `
       INSERT INTO "PatientRegistration"
-        ("PatientId", "PatientNo", "PatientName","LastName","PhoneNo","Gender","Age","Address","PatientType",
-         "ChiefComplaint","Description","EmergencyArrivalMode","EmergencyLevel",
+        ("PatientNo", "PatientName","LastName","PhoneNo","Gender","Age","Address",
+         "AdhaarID","PANCard","PatientType",
+         "ChiefComplaint","Description",
          "Status","RegisteredBy")
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
       RETURNING *;
     `;
 
     const { rows } = await db.query(insertQuery, [
-      patientId,
       patientNo,
       PatientName.trim(),
       LastName ? LastName.trim() : null,
@@ -192,11 +223,11 @@ exports.createPatient = async (req, res) => {
       Gender || null,
       Age || null,
       Address || null,
+      AdhaarID && AdhaarID.trim() !== '' ? AdhaarID.trim() : null,
+      PANCard ? PANCard.trim().toUpperCase() : null,
       PatientType || null,
       ChiefComplaint || null,
       Description || null,
-      EmergencyArrivalMode || null,
-      EmergencyLevel || null,
       Status,
       RegisteredBy,
     ]);
@@ -208,7 +239,14 @@ exports.createPatient = async (req, res) => {
     });
   } catch (error) {
     if (error.code === '23505') {
-      // Unique constraint violation (likely PatientNo)
+      // Unique constraint violation (likely PatientNo or AdhaarID)
+      if (error.message && error.message.includes('AdhaarID')) {
+        return res.status(400).json({
+          success: false,
+          message: 'AdhaarID already exists. Each patient must have a unique AdhaarID.',
+          error: error.message,
+        });
+      }
       return res.status(400).json({
         success: false,
         message: 'Patient number already exists. Please try again.',
@@ -237,16 +275,37 @@ exports.updatePatient = async (req, res) => {
       Gender,
       Age,
       Address,
+      AdhaarID,
+      PANCard,
       PatientType,
       ChiefComplaint,
       Description,
-      EmergencyArrivalMode,
-      EmergencyLevel,
       Status,
       RegisteredBy,
     } = req.body;
 
     const { id } = req.params;
+  // Validate that id is a valid UUID
+  if (!uuidRegex.test(id)) {
+      return res.status(400).json({ 
+        success: false, 
+      message: 'Invalid PatientId. Must be a valid UUID.' 
+      });
+    }
+
+    // Check if AdhaarID is being updated and if it already exists for another patient
+    if (AdhaarID !== undefined && AdhaarID !== null && AdhaarID !== '') {
+      const existingAdhaar = await db.query(
+      'SELECT "PatientId" FROM "PatientRegistration" WHERE "AdhaarID" = $1 AND "PatientId" != $2::uuid',
+      [AdhaarID.trim(), id]
+      );
+      if (existingAdhaar.rows.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'AdhaarID already exists for another patient.',
+        });
+      }
+    }
 
     const updateQuery = `
       UPDATE "PatientRegistration"
@@ -257,11 +316,11 @@ exports.updatePatient = async (req, res) => {
         "Gender" = COALESCE($4, "Gender"),
         "Age" = COALESCE($5, "Age"),
         "Address" = COALESCE($6, "Address"),
-        "PatientType" = COALESCE($7, "PatientType"),
-        "ChiefComplaint" = COALESCE($8, "ChiefComplaint"),
-        "Description" = COALESCE($9, "Description"),
-        "EmergencyArrivalMode" = COALESCE($10, "EmergencyArrivalMode"),
-        "EmergencyLevel" = COALESCE($11, "EmergencyLevel"),
+        "AdhaarID" = COALESCE($7, "AdhaarID"),
+        "PANCard" = COALESCE($8, "PANCard"),
+        "PatientType" = COALESCE($9, "PatientType"),
+        "ChiefComplaint" = COALESCE($10, "ChiefComplaint"),
+        "Description" = COALESCE($11, "Description"),
         "Status" = COALESCE($12, "Status"),
         "RegisteredBy" = COALESCE($13, "RegisteredBy")
       WHERE "PatientId" = $14
@@ -275,11 +334,11 @@ exports.updatePatient = async (req, res) => {
       Gender || null,
       Age || null,
       Address || null,
+      AdhaarID && AdhaarID.trim() !== '' ? AdhaarID.trim() : null,
+      PANCard ? PANCard.trim().toUpperCase() : null,
       PatientType || null,
       ChiefComplaint || null,
       Description || null,
-      EmergencyArrivalMode || null,
-      EmergencyLevel || null,
       Status || null,
       RegisteredBy || null,
       id,
@@ -295,6 +354,15 @@ exports.updatePatient = async (req, res) => {
       data: mapPatientRow(rows[0]),
     });
   } catch (error) {
+    if (error.code === '23505') {
+      if (error.message && error.message.includes('AdhaarID')) {
+        return res.status(400).json({
+          success: false,
+          message: 'AdhaarID already exists for another patient.',
+          error: error.message,
+        });
+      }
+    }
     res.status(500).json({
       success: false,
       message: 'Error updating patient',
@@ -306,8 +374,15 @@ exports.updatePatient = async (req, res) => {
 exports.deletePatient = async (req, res) => {
   try {
     const { id } = req.params;
+    // Validate that id is a valid UUID
+    if (!uuidRegex.test(id)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid PatientId. Must be a valid UUID.' 
+      });
+    }
     const { rows } = await db.query(
-      'DELETE FROM "PatientRegistration" WHERE "PatientId" = $1 RETURNING *;',
+      'DELETE FROM "PatientRegistration" WHERE "PatientId" = $1::uuid RETURNING *;',
       [id]
     );
     if (rows.length === 0) {

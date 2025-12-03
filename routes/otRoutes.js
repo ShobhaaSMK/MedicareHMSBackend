@@ -3,6 +3,8 @@ const router = express.Router();
 const otController = require('../controllers/otController');
 
 router.get('/', otController.getAllOTs);
+router.get('/by-otno/:otNo', otController.getOTByNo);
+router.get('/by-type/:otType', otController.getOTByType);
 router.get('/:id', otController.getOTById);
 router.post('/', otController.createOT);
 router.put('/:id', otController.updateOT);

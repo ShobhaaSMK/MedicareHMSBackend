@@ -1,9 +1,9 @@
 const db = require('../db');
-const { randomUUID } = require('crypto');
 
 const mapDepartmentRow = (row) => ({
   DoctorDepartmentId: row.DoctorDepartmentId || row.doctordepartmentid,
   DepartmentName: row.DepartmentName || row.departmentname,
+  DepartmentCategory: row.DepartmentCategory || row.departmentcategory,
   SpecialisationDetails: row.SpecialisationDetails || row.specialisationdetails,
   NoOfDoctors: row.NoOfDoctors || row.noofdoctors || 0,
   Status: row.Status || row.status,
@@ -40,9 +40,17 @@ exports.getAllDepartments = async (req, res) => {
 exports.getDepartmentById = async (req, res) => {
   try {
     const { id } = req.params;
+    // Validate that id is an integer
+    const deptId = parseInt(id, 10);
+    if (isNaN(deptId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid DoctorDepartmentId. Must be an integer.' 
+      });
+    }
     const { rows } = await db.query(
-      'SELECT * FROM "DoctorDepartment" WHERE "DoctorDepartmentId" = $1::uuid',
-      [id]
+      'SELECT * FROM "DoctorDepartment" WHERE "DoctorDepartmentId" = $1',
+      [deptId]
     );
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Department not found' });
@@ -59,54 +67,71 @@ exports.getDepartmentById = async (req, res) => {
 
 exports.createDepartment = async (req, res) => {
   try {
-    const { DepartmentName, SpecialisationDetails, NoOfDoctors, Status = 'Active', CreatedBy } = req.body;
+    const { DepartmentName, DepartmentCategory, SpecialisationDetails, NoOfDoctors, Status = 'Active', CreatedBy } = req.body;
     if (!DepartmentName || !DepartmentName.trim()) {
       return res
         .status(400)
         .json({ success: false, message: 'DepartmentName is required' });
     }
 
-    // Validate CreatedBy if provided (should be a valid UUID - UserId)
-    let createdByValue = null;
-    if (CreatedBy !== undefined && CreatedBy !== null) {
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (!uuidRegex.test(CreatedBy)) {
-        return res
-          .status(400)
-          .json({ success: false, message: 'CreatedBy must be a valid UUID (UserId) if provided' });
+    // Validate DepartmentCategory if provided
+    const allowedCategories = ['Clinical', 'Surgical', 'Diagnostic', 'Critical Care', 'Support'];
+    let departmentCategoryValue = null;
+    if (DepartmentCategory !== undefined && DepartmentCategory !== null && DepartmentCategory !== '') {
+      const trimmedCategory = typeof DepartmentCategory === 'string' ? DepartmentCategory.trim() : String(DepartmentCategory).trim();
+      if (trimmedCategory !== '') {
+        if (!allowedCategories.includes(trimmedCategory)) {
+          return res.status(400).json({ 
+            success: false, 
+            message: `DepartmentCategory must be one of: ${allowedCategories.join(', ')}.` 
+          });
+        }
+        departmentCategoryValue = trimmedCategory;
       }
-      createdByValue = CreatedBy;
     }
 
-    // Generate random UUID for DoctorDepartmentId
-    const doctorDepartmentId = randomUUID();
+    const trimmedDepartmentName = DepartmentName.trim();
+
+    // Check if DepartmentName already exists (proactive validation)
+    const checkQuery = 'SELECT "DoctorDepartmentId", "DepartmentName" FROM "DoctorDepartment" WHERE LOWER("DepartmentName") = LOWER($1)';
+    const { rows: existingDepartments } = await db.query(checkQuery, [trimmedDepartmentName]);
     
-    if (!doctorDepartmentId || typeof doctorDepartmentId !== 'string') {
-      throw new Error('Failed to generate DoctorDepartmentId');
+    if (existingDepartments.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Department with name "${trimmedDepartmentName}" already exists. DepartmentName must be unique.`,
+        error: 'DUPLICATE_DEPARTMENT_NAME',
+      });
     }
 
-    // Use conditional casting for CreatedBy - only cast to UUID if value is provided
-    const insertQuery = createdByValue
-      ? `
-        INSERT INTO "DoctorDepartment" ("DoctorDepartmentId", "DepartmentName", "SpecialisationDetails", "NoOfDoctors", "Status", "CreatedBy")
-        VALUES ($1::uuid, $2, $3, $4, $5, $6::uuid) RETURNING *;
-      `
-      : `
-        INSERT INTO "DoctorDepartment" ("DoctorDepartmentId", "DepartmentName", "SpecialisationDetails", "NoOfDoctors", "Status", "CreatedBy")
-        VALUES ($1::uuid, $2, $3, $4, $5, NULL) RETURNING *;
-      `;
+    // Validate CreatedBy if provided - must be a valid integer
+    let createdByValue = null;
+    if (CreatedBy !== undefined && CreatedBy !== null && CreatedBy !== '') {
+      const createdByInt = parseInt(CreatedBy, 10);
+      if (isNaN(createdByInt)) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'CreatedBy must be a valid integer. Leave it empty or null if not needed.' 
+        });
+      }
+      createdByValue = createdByInt;
+    }
+
+    // DoctorDepartmentId is auto-generated by PostgreSQL SERIAL, so we don't include it in INSERT
+    const insertQuery = `
+      INSERT INTO "DoctorDepartment" ("DepartmentName", "DepartmentCategory", "SpecialisationDetails", "NoOfDoctors", "Status", "CreatedBy")
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *;
+    `;
 
     const params = [
-      doctorDepartmentId,
-      DepartmentName.trim(),
+      trimmedDepartmentName,
+      departmentCategoryValue,
       SpecialisationDetails ? SpecialisationDetails.trim() : null,
       NoOfDoctors || 0,
       Status,
+      createdByValue,
     ];
-    
-    if (createdByValue) {
-      params.push(createdByValue);
-    }
 
     const { rows } = await db.query(insertQuery, params);
 
@@ -116,6 +141,29 @@ exports.createDepartment = async (req, res) => {
       data: mapDepartmentRow(rows[0]),
     });
   } catch (error) {
+    if (error.code === '23505') {
+      // Unique constraint violation - DepartmentName already exists (fallback check)
+      if (error.message && error.message.includes('DepartmentName')) {
+        return res.status(400).json({
+          success: false,
+          message: `Department with name "${DepartmentName}" already exists. DepartmentName must be unique.`,
+          error: 'DUPLICATE_DEPARTMENT_NAME',
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        message: 'A department with this information already exists. Please try again.',
+        error: error.message,
+      });
+    }
+    // Handle invalid integer format error
+    if (error.message && (error.message.includes('invalid input syntax for type integer') || error.message.includes('invalid input syntax for type numeric'))) {
+      return res.status(400).json({
+        success: false,
+        message: 'CreatedBy must be a valid integer. Leave it empty or null if not needed.',
+        error: error.message,
+      });
+    }
     res.status(500).json({
       success: false,
       message: 'Error creating department',
@@ -127,25 +175,68 @@ exports.createDepartment = async (req, res) => {
 exports.updateDepartment = async (req, res) => {
   try {
     const { id } = req.params;
-    const { DepartmentName, SpecialisationDetails, NoOfDoctors, Status } = req.body;
+    // Validate that id is an integer
+    const deptId = parseInt(id, 10);
+    if (isNaN(deptId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid DoctorDepartmentId. Must be an integer.' 
+      });
+    }
+    const { DepartmentName, DepartmentCategory, SpecialisationDetails, NoOfDoctors, Status } = req.body;
+
+    // Validate DepartmentCategory if provided
+    const allowedCategories = ['Clinical', 'Surgical', 'Diagnostic', 'Critical Care', 'Support'];
+    let departmentCategoryValue = null;
+    if (DepartmentCategory !== undefined && DepartmentCategory !== null && DepartmentCategory !== '') {
+      const trimmedCategory = typeof DepartmentCategory === 'string' ? DepartmentCategory.trim() : String(DepartmentCategory).trim();
+      if (trimmedCategory !== '') {
+        if (!allowedCategories.includes(trimmedCategory)) {
+          return res.status(400).json({ 
+            success: false, 
+            message: `DepartmentCategory must be one of: ${allowedCategories.join(', ')}.` 
+          });
+        }
+        departmentCategoryValue = trimmedCategory;
+      }
+    }
+
+    // If DepartmentName is being updated, check if it already exists for another department
+    if (DepartmentName && DepartmentName.trim()) {
+      const trimmedDepartmentName = DepartmentName.trim();
+      
+      // Check if DepartmentName already exists for a different department
+      const checkQuery = 'SELECT "DoctorDepartmentId", "DepartmentName" FROM "DoctorDepartment" WHERE LOWER("DepartmentName") = LOWER($1) AND "DoctorDepartmentId" != $2';
+      const { rows: existingDepartments } = await db.query(checkQuery, [trimmedDepartmentName, deptId]);
+      
+      if (existingDepartments.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Department with name "${trimmedDepartmentName}" already exists. DepartmentName must be unique.`,
+          error: 'DUPLICATE_DEPARTMENT_NAME',
+        });
+      }
+    }
 
     const updateQuery = `
       UPDATE "DoctorDepartment"
       SET
         "DepartmentName" = COALESCE($1, "DepartmentName"),
-        "SpecialisationDetails" = COALESCE($2, "SpecialisationDetails"),
-        "NoOfDoctors" = COALESCE($3, "NoOfDoctors"),
-        "Status" = COALESCE($4, "Status")
-      WHERE "DoctorDepartmentId" = $5::uuid
+        "DepartmentCategory" = COALESCE($2, "DepartmentCategory"),
+        "SpecialisationDetails" = COALESCE($3, "SpecialisationDetails"),
+        "NoOfDoctors" = COALESCE($4, "NoOfDoctors"),
+        "Status" = COALESCE($5, "Status")
+      WHERE "DoctorDepartmentId" = $6
       RETURNING *;
     `;
 
     const { rows } = await db.query(updateQuery, [
       DepartmentName ? DepartmentName.trim() : null,
+      departmentCategoryValue,
       SpecialisationDetails ? SpecialisationDetails.trim() : null,
       NoOfDoctors !== undefined ? NoOfDoctors : null,
       Status || null,
-      id,
+      deptId,
     ]);
 
     if (rows.length === 0) {
@@ -158,6 +249,21 @@ exports.updateDepartment = async (req, res) => {
       data: mapDepartmentRow(rows[0]),
     });
   } catch (error) {
+    // Handle unique constraint violation for DepartmentName (fallback check)
+    if (error.code === '23505') {
+      if (error.message && error.message.includes('DepartmentName')) {
+        return res.status(400).json({
+          success: false,
+          message: `Department with name "${DepartmentName}" already exists. DepartmentName must be unique.`,
+          error: 'DUPLICATE_DEPARTMENT_NAME',
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        message: 'A department with this information already exists.',
+        error: error.message,
+      });
+    }
     res.status(500).json({
       success: false,
       message: 'Error updating department',
@@ -169,9 +275,17 @@ exports.updateDepartment = async (req, res) => {
 exports.deleteDepartment = async (req, res) => {
   try {
     const { id } = req.params;
+    // Validate that id is an integer
+    const deptId = parseInt(id, 10);
+    if (isNaN(deptId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid DoctorDepartmentId. Must be an integer.' 
+      });
+    }
     const { rows } = await db.query(
-      'DELETE FROM "DoctorDepartment" WHERE "DoctorDepartmentId" = $1::uuid RETURNING *;',
-      [id]
+      'DELETE FROM "DoctorDepartment" WHERE "DoctorDepartmentId" = $1 RETURNING *;',
+      [deptId]
     );
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Department not found' });

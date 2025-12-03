@@ -153,9 +153,31 @@ async function initializeTables() {
   try {
     // Read the SQL file
     const sqlFilePath = path.join(__dirname, 'init_tables.sql');
+    
+    if (!fs.existsSync(sqlFilePath)) {
+      await pool.end();
+      return {
+        success: false,
+        message: `SQL file not found: ${sqlFilePath}`,
+        tablesCreated: 0,
+        error: 'SQL file not found',
+      };
+    }
+
     const sql = fs.readFileSync(sqlFilePath, 'utf8');
 
+    if (!sql || sql.trim().length === 0) {
+      await pool.end();
+      return {
+        success: false,
+        message: 'SQL file is empty',
+        tablesCreated: 0,
+        error: 'SQL file is empty',
+      };
+    }
+
     // Execute the SQL script
+    // The SQL file uses IF NOT EXISTS clauses, so it's safe to execute multiple times
     await pool.query(sql);
 
     // Check which tables exist
@@ -164,10 +186,10 @@ async function initializeTables() {
       FROM information_schema.tables 
       WHERE table_schema = 'public' 
       AND table_type = 'BASE TABLE'
-      AND table_name IN (
-        'UserRoles', 'Users', 'DoctorDepartment', 'PatientRegistration',
-        'AdmissionRoom', 'LabTest', 'ICU', 'Emergency', 'OT'
-      )
+        AND table_name IN (
+          'Roles', 'Users', 'DoctorDepartment', 'PatientRegistration',
+          'RoomBeds', 'LabTest', 'ICU', 'EmergencyBed', 'OT', 'PatientAppointment', 'PatientLabTest', 'RoomAdmission', 'EmergencyAdmission', 'EmergencyAdmissionVitals', 'PatientOTAllocation', 'PatientAdmitNurseVisits', 'PatientICUAdmission', 'ICUDoctorVisits', 'ICUNurseVisits', 'ICUNurseVisitVitals', 'PatientAdmitVisitVitals', 'PatientAdmitDoctorVisits'
+        )
       ORDER BY table_name;
     `;
     const tablesResult = await pool.query(tablesQuery);

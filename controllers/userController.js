@@ -1,6 +1,5 @@
 const db = require('../db');
 const bcrypt = require('bcrypt');
-const { randomUUID } = require('crypto');
 
 const mapUserRow = (row) => ({
   UserId: row.UserId || row.userid,
@@ -10,6 +9,13 @@ const mapUserRow = (row) => ({
   EmailId: row.EmailId || row.emailid,
   DoctorDepartmentId: row.DoctorDepartmentId || row.doctordepartmentid,
   DoctorQualification: row.DoctorQualification || row.doctorqualification,
+  DoctorType: row.DoctorType || row.doctortype || null,
+  DoctorOPDCharge: row.DoctorOPDCharge !== undefined && row.DoctorOPDCharge !== null ? parseFloat(row.DoctorOPDCharge) : (row.doctoropdcharge !== undefined && row.doctoropdcharge !== null ? parseFloat(row.doctoropdcharge) : null),
+  DoctorSurgeryCharge: row.DoctorSurgeryCharge !== undefined && row.DoctorSurgeryCharge !== null ? parseFloat(row.DoctorSurgeryCharge) : (row.doctorsurgerycharge !== undefined && row.doctorsurgerycharge !== null ? parseFloat(row.doctorsurgerycharge) : null),
+  OPDConsultation: row.OPDConsultation || row.opdconsultation || null,
+  IPDVisit: row.IPDVisit || row.ipdvisit || null,
+  OTHandle: row.OTHandle || row.othandle || null,
+  ICUVisits: row.ICUVisits || row.icuvisits || null,
   Status: row.Status || row.status,
   CreatedBy: row.CreatedBy || row.createdby,
   CreatedAt: row.CreatedAt || row.createdat,
@@ -24,7 +30,7 @@ exports.getAllUsers = async (req, res) => {
     let query = `
       SELECT u.*, r."RoleName", d."DepartmentName"
       FROM "Users" u
-      LEFT JOIN "UserRoles" r ON u."RoleId" = r."RoleId"
+      LEFT JOIN "Roles" r ON u."RoleId" = r."RoleId"
       LEFT JOIN "DoctorDepartment" d ON u."DoctorDepartmentId" = d."DoctorDepartmentId"
     `;
     if (status) {
@@ -51,15 +57,23 @@ exports.getAllUsers = async (req, res) => {
 exports.getUserById = async (req, res) => {
   try {
     const { id } = req.params;
+    // Validate that id is an integer
+    const userId = parseInt(id, 10);
+    if (isNaN(userId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid UserId. Must be an integer.' 
+      });
+    }
     const { rows } = await db.query(
       `
       SELECT u.*, r."RoleName", d."DepartmentName"
       FROM "Users" u
-      LEFT JOIN "UserRoles" r ON u."RoleId" = r."RoleId"
+      LEFT JOIN "Roles" r ON u."RoleId" = r."RoleId"
       LEFT JOIN "DoctorDepartment" d ON u."DoctorDepartmentId" = d."DoctorDepartmentId"
-      WHERE u."UserId" = $1::uuid
+      WHERE u."UserId" = $1
       `,
-      [id]
+      [userId]
     );
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'User not found' });
@@ -84,6 +98,13 @@ exports.createUser = async (req, res) => {
       EmailId,
       DoctorDepartmentId,
       DoctorQualification,
+      DoctorType,
+      DoctorOPDCharge,
+      DoctorSurgeryCharge,
+      OPDConsultation,
+      IPDVisit,
+      OTHandle,
+      ICUVisits,
       Status = 'Active',
       CreatedBy,
     } = req.body;
@@ -91,52 +112,100 @@ exports.createUser = async (req, res) => {
     if (!RoleId) {
       return res.status(400).json({ success: false, message: 'RoleId is required' });
     }
+    // Validate RoleId is a valid UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(RoleId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'RoleId must be a valid UUID.' 
+      });
+    }
     if (!UserName || !UserName.trim()) {
       return res.status(400).json({ success: false, message: 'UserName is required' });
     }
     if (!Password) {
       return res.status(400).json({ success: false, message: 'Password is required' });
     }
-    // Validate CreatedBy if provided (should be a valid UUID)
-    let createdByValue = null;
-    if (CreatedBy) {
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (!uuidRegex.test(CreatedBy)) {
-        return res.status(400).json({ success: false, message: 'CreatedBy must be a valid UUID (UserId) if provided' });
+
+    // Validate DoctorType if provided
+    if (DoctorType !== undefined && DoctorType !== null && DoctorType !== '') {
+      if (!['INHOUSE', 'VISITING'].includes(DoctorType.toUpperCase())) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'DoctorType must be either "INHOUSE" or "VISITING".' 
+        });
       }
-      createdByValue = CreatedBy;
     }
 
-    // Generate random UUID for UserId
-    const userId = randomUUID();
-    
-    // Ensure UUID is in correct format
-    if (!userId || typeof userId !== 'string') {
-      throw new Error('Failed to generate UserId');
+    // Validate Yes/No fields
+    const yesNoFields = [
+      { name: 'OPDConsultation', value: OPDConsultation },
+      { name: 'IPDVisit', value: IPDVisit },
+      { name: 'OTHandle', value: OTHandle },
+      { name: 'ICUVisits', value: ICUVisits },
+    ];
+
+    for (const field of yesNoFields) {
+      if (field.value !== undefined && field.value !== null && field.value !== '') {
+        const normalizedValue = field.value.toString().trim();
+        if (!['Yes', 'No'].includes(normalizedValue)) {
+          return res.status(400).json({ 
+            success: false, 
+            message: `${field.name} must be either "Yes" or "No".` 
+          });
+        }
+      }
     }
-    
-    // If CreatedBy is not provided, allow NULL (for first user) or use self-reference
-    // For self-reference, we'll use the same userId
-    if (!createdByValue) {
-      // Allow NULL for first user, or use self-reference
-      // Using self-reference for consistency
-      createdByValue = userId;
+
+    // Validate currency fields
+    if (DoctorOPDCharge !== undefined && DoctorOPDCharge !== null && DoctorOPDCharge !== '') {
+      const charge = parseFloat(DoctorOPDCharge);
+      if (isNaN(charge) || charge < 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'DoctorOPDCharge must be a valid positive number.' 
+        });
+      }
+    }
+
+    if (DoctorSurgeryCharge !== undefined && DoctorSurgeryCharge !== null && DoctorSurgeryCharge !== '') {
+      const charge = parseFloat(DoctorSurgeryCharge);
+      if (isNaN(charge) || charge < 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'DoctorSurgeryCharge must be a valid positive number.' 
+        });
+      }
+    }
+
+    // Validate CreatedBy if provided - must be a valid integer
+    let createdByValue = null;
+    if (CreatedBy !== undefined && CreatedBy !== null && CreatedBy !== '') {
+      const createdByInt = parseInt(CreatedBy, 10);
+      if (isNaN(createdByInt)) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'CreatedBy must be a valid integer. Leave it empty or null if not needed.' 
+        });
+      }
+      createdByValue = createdByInt;
     }
 
     // Hash password before storing
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(Password, saltRounds);
 
+    // UserId is auto-generated by PostgreSQL SERIAL, so we don't include it in INSERT
     const insertQuery = `
       INSERT INTO "Users"
-        ("UserId", "RoleId","UserName","Password","PhoneNo","EmailId","DoctorDepartmentId",
-         "DoctorQualification","Status","CreatedBy")
-      VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7::uuid, $8, $9, $10::uuid)
+        ("RoleId","UserName","Password","PhoneNo","EmailId","DoctorDepartmentId",
+         "DoctorQualification","DoctorType","DoctorOPDCharge","DoctorSurgeryCharge",
+         "OPDConsultation","IPDVisit","OTHandle","ICUVisits","Status","CreatedBy")
+      VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING *;
     `;
 
     const { rows } = await db.query(insertQuery, [
-      userId,
       RoleId,
       UserName.trim(),
       hashedPassword,
@@ -144,6 +213,13 @@ exports.createUser = async (req, res) => {
       EmailId || null,
       DoctorDepartmentId || null,
       DoctorQualification || null,
+      DoctorType ? DoctorType.toUpperCase() : null,
+      DoctorOPDCharge !== undefined && DoctorOPDCharge !== null && DoctorOPDCharge !== '' ? parseFloat(DoctorOPDCharge) : null,
+      DoctorSurgeryCharge !== undefined && DoctorSurgeryCharge !== null && DoctorSurgeryCharge !== '' ? parseFloat(DoctorSurgeryCharge) : null,
+      OPDConsultation ? OPDConsultation.toString().trim() : null,
+      IPDVisit ? IPDVisit.toString().trim() : null,
+      OTHandle ? OTHandle.toString().trim() : null,
+      ICUVisits ? ICUVisits.toString().trim() : null,
       Status,
       createdByValue,
     ]);
@@ -154,6 +230,14 @@ exports.createUser = async (req, res) => {
       data: mapUserRow(rows[0]),
     });
   } catch (error) {
+    // Handle invalid integer format error
+    if (error.message && (error.message.includes('invalid input syntax for type integer') || error.message.includes('invalid input syntax for type numeric'))) {
+      return res.status(400).json({
+        success: false,
+        message: 'CreatedBy must be a valid integer. Leave it empty or null if not needed.',
+        error: error.message,
+      });
+    }
     res.status(500).json({
       success: false,
       message: 'Error creating user',
@@ -173,18 +257,92 @@ exports.updateUser = async (req, res) => {
       EmailId,
       DoctorDepartmentId,
       DoctorQualification,
+      DoctorType,
+      DoctorOPDCharge,
+      DoctorSurgeryCharge,
+      OPDConsultation,
+      IPDVisit,
+      OTHandle,
+      ICUVisits,
       Status,
       CreatedBy,
     } = req.body;
 
-    // Validate CreatedBy if provided (should be a UUID)
+    // Validate CreatedBy if provided - must be a valid integer
     let createdByValue = null;
-    if (CreatedBy !== undefined && CreatedBy !== null) {
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (!uuidRegex.test(CreatedBy)) {
-        return res.status(400).json({ success: false, message: 'CreatedBy must be a valid UUID (UserId)' });
+    if (CreatedBy !== undefined && CreatedBy !== null && CreatedBy !== '') {
+      const createdByInt = parseInt(CreatedBy, 10);
+      if (isNaN(createdByInt)) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'CreatedBy must be a valid integer. Leave it empty or null if not needed.' 
+        });
       }
-      createdByValue = CreatedBy;
+      createdByValue = createdByInt;
+    }
+
+    // Validate RoleId if provided - must be a valid UUID
+    let roleIdValue = null;
+    if (RoleId !== undefined && RoleId !== null && RoleId !== '') {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(RoleId)) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'RoleId must be a valid UUID.' 
+        });
+      }
+      roleIdValue = RoleId;
+    }
+
+    // Validate DoctorType if provided
+    if (DoctorType !== undefined && DoctorType !== null && DoctorType !== '') {
+      if (!['INHOUSE', 'VISITING'].includes(DoctorType.toUpperCase())) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'DoctorType must be either "INHOUSE" or "VISITING".' 
+        });
+      }
+    }
+
+    // Validate Yes/No fields
+    const yesNoFields = [
+      { name: 'OPDConsultation', value: OPDConsultation },
+      { name: 'IPDVisit', value: IPDVisit },
+      { name: 'OTHandle', value: OTHandle },
+      { name: 'ICUVisits', value: ICUVisits },
+    ];
+
+    for (const field of yesNoFields) {
+      if (field.value !== undefined && field.value !== null && field.value !== '') {
+        const normalizedValue = field.value.toString().trim();
+        if (!['Yes', 'No'].includes(normalizedValue)) {
+          return res.status(400).json({ 
+            success: false, 
+            message: `${field.name} must be either "Yes" or "No".` 
+          });
+        }
+      }
+    }
+
+    // Validate currency fields
+    if (DoctorOPDCharge !== undefined && DoctorOPDCharge !== null && DoctorOPDCharge !== '') {
+      const charge = parseFloat(DoctorOPDCharge);
+      if (isNaN(charge) || charge < 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'DoctorOPDCharge must be a valid positive number.' 
+        });
+      }
+    }
+
+    if (DoctorSurgeryCharge !== undefined && DoctorSurgeryCharge !== null && DoctorSurgeryCharge !== '') {
+      const charge = parseFloat(DoctorSurgeryCharge);
+      if (isNaN(charge) || charge < 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'DoctorSurgeryCharge must be a valid positive number.' 
+        });
+      }
     }
 
     // Hash password if provided
@@ -192,6 +350,15 @@ exports.updateUser = async (req, res) => {
     if (Password) {
       const saltRounds = 10;
       hashedPassword = await bcrypt.hash(Password, saltRounds);
+    }
+
+    // Validate that id is an integer
+    const userId = parseInt(id, 10);
+    if (isNaN(userId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid UserId. Must be an integer.' 
+      });
     }
 
     const updateQuery = `
@@ -202,25 +369,39 @@ exports.updateUser = async (req, res) => {
         "Password" = COALESCE($3, "Password"),
         "PhoneNo" = COALESCE($4, "PhoneNo"),
         "EmailId" = COALESCE($5, "EmailId"),
-        "DoctorDepartmentId" = COALESCE($6::uuid, "DoctorDepartmentId"),
+        "DoctorDepartmentId" = COALESCE($6, "DoctorDepartmentId"),
         "DoctorQualification" = COALESCE($7, "DoctorQualification"),
-        "Status" = COALESCE($8, "Status"),
-        "CreatedBy" = COALESCE($9::uuid, "CreatedBy")
-      WHERE "UserId" = $10::uuid
+        "DoctorType" = COALESCE($8, "DoctorType"),
+        "DoctorOPDCharge" = COALESCE($9, "DoctorOPDCharge"),
+        "DoctorSurgeryCharge" = COALESCE($10, "DoctorSurgeryCharge"),
+        "OPDConsultation" = COALESCE($11, "OPDConsultation"),
+        "IPDVisit" = COALESCE($12, "IPDVisit"),
+        "OTHandle" = COALESCE($13, "OTHandle"),
+        "ICUVisits" = COALESCE($14, "ICUVisits"),
+        "Status" = COALESCE($15, "Status"),
+        "CreatedBy" = COALESCE($16, "CreatedBy")
+      WHERE "UserId" = $17
       RETURNING *;
     `;
 
     const { rows } = await db.query(updateQuery, [
-      RoleId || null,
+      roleIdValue !== null ? roleIdValue : null,
       UserName ? UserName.trim() : null,
       hashedPassword || null,
       PhoneNo || null,
       EmailId || null,
       DoctorDepartmentId || null,
       DoctorQualification || null,
+      DoctorType !== undefined && DoctorType !== null && DoctorType !== '' ? DoctorType.toUpperCase() : null,
+      DoctorOPDCharge !== undefined && DoctorOPDCharge !== null && DoctorOPDCharge !== '' ? parseFloat(DoctorOPDCharge) : null,
+      DoctorSurgeryCharge !== undefined && DoctorSurgeryCharge !== null && DoctorSurgeryCharge !== '' ? parseFloat(DoctorSurgeryCharge) : null,
+      OPDConsultation !== undefined && OPDConsultation !== null && OPDConsultation !== '' ? OPDConsultation.toString().trim() : null,
+      IPDVisit !== undefined && IPDVisit !== null && IPDVisit !== '' ? IPDVisit.toString().trim() : null,
+      OTHandle !== undefined && OTHandle !== null && OTHandle !== '' ? OTHandle.toString().trim() : null,
+      ICUVisits !== undefined && ICUVisits !== null && ICUVisits !== '' ? ICUVisits.toString().trim() : null,
       Status || null,
       createdByValue || null,
-      id,
+      userId,
     ]);
 
     if (rows.length === 0) {
@@ -244,9 +425,17 @@ exports.updateUser = async (req, res) => {
 exports.deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
+    // Validate that id is an integer
+    const userId = parseInt(id, 10);
+    if (isNaN(userId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid UserId. Must be an integer.' 
+      });
+    }
     const { rows } = await db.query(
-      'DELETE FROM "Users" WHERE "UserId" = $1::uuid RETURNING *;',
-      [id]
+      'DELETE FROM "Users" WHERE "UserId" = $1 RETURNING *;',
+      [userId]
     );
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'User not found' });
@@ -260,6 +449,78 @@ exports.deleteUser = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error deleting user',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get role-wise user count from Users table
+ * Returns count of users per role
+ * Optional query parameters:
+ * - status: Filter by user status (Active, Inactive)
+ */
+exports.getRoleWiseUserCount = async (req, res) => {
+  try {
+    const { status } = req.query;
+    
+    let query = `
+      SELECT 
+        u."RoleId",
+        r."RoleName",
+        r."RoleDescription",
+        COUNT(u."UserId") AS "UserCount",
+        COUNT(CASE WHEN u."Status" = 'Active' THEN 1 END) AS "ActiveUserCount",
+        COUNT(CASE WHEN u."Status" = 'Inactive' THEN 1 END) AS "InactiveUserCount"
+      FROM "Users" u
+      INNER JOIN "Roles" r ON u."RoleId" = r."RoleId"
+    `;
+    
+    const conditions = [];
+    const params = [];
+    
+    if (status) {
+      conditions.push(`u."Status" = $${params.length + 1}`);
+      params.push(status);
+    }
+    
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+    
+    query += `
+      GROUP BY u."RoleId", r."RoleName", r."RoleDescription"
+      ORDER BY "UserCount" DESC, r."RoleName" ASC
+    `;
+    
+    const { rows } = await db.query(query, params);
+    
+    const totalUsers = rows.reduce((sum, row) => sum + parseInt(row.UserCount, 10), 0);
+    const totalActiveUsers = rows.reduce((sum, row) => sum + parseInt(row.ActiveUserCount, 10), 0);
+    const totalInactiveUsers = rows.reduce((sum, row) => sum + parseInt(row.InactiveUserCount, 10), 0);
+    
+    res.status(200).json({
+      success: true,
+      count: rows.length,
+      totalUsers: totalUsers,
+      totalActiveUsers: totalActiveUsers,
+      totalInactiveUsers: totalInactiveUsers,
+      filters: {
+        status: status || null,
+      },
+      data: rows.map(row => ({
+        RoleId: row.RoleId || row.roleid,
+        RoleName: row.RoleName || row.rolename,
+        RoleDescription: row.RoleDescription || row.roledescription || null,
+        UserCount: parseInt(row.UserCount, 10) || 0,
+        ActiveUserCount: parseInt(row.ActiveUserCount, 10) || 0,
+        InactiveUserCount: parseInt(row.InactiveUserCount, 10) || 0,
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching role-wise user count',
       error: error.message,
     });
   }
