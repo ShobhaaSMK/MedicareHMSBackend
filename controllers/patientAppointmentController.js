@@ -862,6 +862,76 @@ exports.getAppointmentCountsByStatus = async (req, res) => {
  * - appointmentDate: Filter by specific date (YYYY-MM-DD)
  * - doctorId: Filter by specific doctor (UserId)
  */
+exports.getTodayOPDPatientsCount = async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    
+    const query = `
+      SELECT COUNT(*) AS count
+      FROM "PatientAppointment"
+      WHERE "AppointmentDate" = $1::date
+      AND "Status" = 'Active'
+    `;
+
+    const { rows } = await db.query(query, [today]);
+
+    const count = parseInt(rows[0].count, 10);
+
+    res.status(200).json({
+      success: true,
+      message: 'Today\'s OPD patients count retrieved successfully',
+      date: today,
+      count: count,
+      data: {
+        date: today,
+        count: count,
+        status: 'Active'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching today\'s OPD patients count',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get count of PatientAppointment records with Status = 'Active' and AppointmentStatus IN ('Waiting', 'Consulting')
+ */
+exports.getActiveWaitingOrConsultingCount = async (req, res) => {
+  try {
+    const query = `
+      SELECT COUNT(*) AS count
+      FROM "PatientAppointment"
+      WHERE "Status" = 'Active'
+      AND ("AppointmentStatus" = 'Waiting' OR "AppointmentStatus" = 'Consulting')
+    `;
+
+    const { rows } = await db.query(query);
+
+    const count = parseInt(rows[0].count, 10) || 0;
+
+    res.status(200).json({
+      success: true,
+      message: 'Active appointments count (Waiting or Consulting) retrieved successfully',
+      count: count,
+      data: {
+        count: count,
+        status: 'Active',
+        appointmentStatus: ['Waiting', 'Consulting']
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching active waiting or consulting appointments count',
+      error: error.message,
+    });
+  }
+};
+
 exports.getActiveTokensCount = async (req, res) => {
   try {
     const { appointmentDate, doctorId } = req.query;

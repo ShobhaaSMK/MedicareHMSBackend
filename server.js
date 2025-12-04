@@ -28,8 +28,18 @@ async function startServer() {
     }
 
     // Start the server
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`Server listening on port ${PORT}`);
+    });
+
+    // Handle server errors (e.g., port already in use)
+    server.on('error', (error) => {
+      if (error.code === 'EADDRINUSE') {
+        console.error(`✗ Port ${PORT} is already in use. Please free the port or use a different port.`);
+      } else {
+        console.error('✗ Server error:', error);
+      }
+      process.exit(1);
     });
   } catch (error) {
     console.error('Failed to start server:', error);

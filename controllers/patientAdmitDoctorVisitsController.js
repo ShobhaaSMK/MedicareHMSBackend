@@ -5,7 +5,7 @@ const allowedStatus = ['Active', 'Inactive'];
 
 const mapPatientAdmitDoctorVisitsRow = (row) => ({
   PatientAdmitDoctorVisitsId: row.PatientAdmitDoctorVisitsId || row.patientadmitdoctorvisitsid,
-  RoomAdmissionId: row.RoomAdmissionId || row.roomadmissionid,
+  RoomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
   PatientId: row.PatientId || row.patientid,
   DoctorId: row.DoctorId || row.doctorid,
   DoctorVisitedDateTime: row.DoctorVisitedDateTime || row.doctorvisiteddatetime,
@@ -94,28 +94,25 @@ exports.getPatientAdmitDoctorVisitsById = async (req, res) => {
 const validatePatientAdmitDoctorVisitsPayload = (body, requireAll = true) => {
   const errors = [];
 
-  if (requireAll && !body.RoomAdmissionId) {
-    errors.push('RoomAdmissionId is required');
-  }
-  if (body.RoomAdmissionId && typeof body.RoomAdmissionId !== 'string') {
-    errors.push('RoomAdmissionId must be a valid UUID');
-  }
 
   if (requireAll && body.PatientId === undefined) {
     errors.push('PatientId is required');
   }
   if (body.PatientId !== undefined && body.PatientId !== null) {
-    const patientIdInt = parseInt(body.PatientId, 10);
-    if (isNaN(patientIdInt)) {
-      errors.push('PatientId must be a valid integer');
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(body.PatientId)) {
+      errors.push('PatientId must be a valid UUID');
     }
   }
 
   if (requireAll && !body.DoctorId) {
     errors.push('DoctorId is required');
   }
-  if (body.DoctorId && typeof body.DoctorId !== 'string') {
-    errors.push('DoctorId must be a valid UUID');
+  if (body.DoctorId !== undefined && body.DoctorId !== null) {
+    const doctorIdInt = parseInt(body.DoctorId, 10);
+    if (isNaN(doctorIdInt)) {
+      errors.push('DoctorId must be a valid integer');
+    }
   }
 
   if (requireAll && !body.DoctorVisitedDateTime) {
@@ -169,23 +166,31 @@ exports.createPatientAdmitDoctorVisits = async (req, res) => {
       throw new Error('Failed to generate PatientAdmitDoctorVisitsId');
     }
 
+    // Validate foreign key existence
+    if (RoomAdmissionId !== undefined && RoomAdmissionId !== null) {
+      const roomAdmissionExists = await db.query('SELECT "RoomAdmissionId" FROM "RoomAdmission" WHERE "RoomAdmissionId" = $1', [parseInt(RoomAdmissionId, 10)]);
+      if (roomAdmissionExists.rows.length === 0) {
+        return res.status(400).json({ success: false, message: 'RoomAdmissionId does not exist' });
+      }
+    }
+
     const insertQuery = `
       INSERT INTO "PatientAdmitDoctorVisits"
         ("PatientAdmitDoctorVisitsId", "RoomAdmissionId", "PatientId", "DoctorId",
          "DoctorVisitedDateTime", "VisitsRemarks", "PatientCondition", "VisitCreatedBy", "Status")
-      VALUES ($1::uuid, $2, $3, $4, $5::timestamp, $6, $7, $8, $9)
+      VALUES ($1::uuid, $2, $3::uuid, $4, $5::timestamp, $6, $7, $8, $9)
       RETURNING *;
     `;
 
     const { rows } = await db.query(insertQuery, [
       patientAdmitDoctorVisitsId,
-      RoomAdmissionId,
-      parseInt(PatientId, 10),
+      RoomAdmissionId ? parseInt(RoomAdmissionId, 10) : null,
+      PatientId, // UUID
       parseInt(DoctorId, 10),
       DoctorVisitedDateTime,
       VisitsRemarks || null,
       PatientCondition || null,
-      VisitCreatedBy || null,
+      VisitCreatedBy ? parseInt(VisitCreatedBy, 10) : null,
       Status,
     ]);
 
@@ -236,8 +241,22 @@ exports.updatePatientAdmitDoctorVisits = async (req, res) => {
     let paramIndex = 1;
 
     if (RoomAdmissionId !== undefined) {
-      updates.push(`"RoomAdmissionId" = $${paramIndex++}::uuid`);
-      params.push(RoomAdmissionId);
+      if (RoomAdmissionId !== null) {
+        const roomAdmissionIdInt = parseInt(RoomAdmissionId, 10);
+        if (isNaN(roomAdmissionIdInt)) {
+          return res.status(400).json({ success: false, message: 'RoomAdmissionId must be a valid integer' });
+        }
+        // Validate RoomAdmission exists
+        const roomAdmissionExists = await db.query('SELECT "RoomAdmissionId" FROM "RoomAdmission" WHERE "RoomAdmissionId" = $1', [roomAdmissionIdInt]);
+        if (roomAdmissionExists.rows.length === 0) {
+          return res.status(400).json({ success: false, message: 'RoomAdmissionId does not exist' });
+        }
+        updates.push(`"RoomAdmissionId" = $${paramIndex++}`);
+        params.push(roomAdmissionIdInt);
+      } else {
+        updates.push(`"RoomAdmissionId" = $${paramIndex++}`);
+        params.push(null);
+      }
     }
     if (PatientId !== undefined) {
       updates.push(`"PatientId" = $${paramIndex++}`);

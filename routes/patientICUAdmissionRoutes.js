@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const patientICUAdmissionController = require('../controllers/patientICUAdmissionController');
 
+router.get('/count/icu-beds-occupied', patientICUAdmissionController.getICUBedsAndOccupiedCountByDate);
 router.get('/', patientICUAdmissionController.getAllPatientICUAdmissions);
 router.get('/:id', patientICUAdmissionController.getPatientICUAdmissionById);
 router.post('/', patientICUAdmissionController.createPatientICUAdmission);

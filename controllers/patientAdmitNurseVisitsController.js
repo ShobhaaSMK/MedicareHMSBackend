@@ -34,15 +34,23 @@ exports.getAllPatientAdmitNurseVisits = async (req, res) => {
       params.push(patientStatus);
     }
     if (patientId) {
-      const patientIdInt = parseInt(patientId, 10);
-      if (!isNaN(patientIdInt)) {
-        conditions.push(`"PatientId" = $${params.length + 1}`);
-        params.push(patientIdInt);
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidRegex.test(patientId)) {
+        conditions.push(`"PatientId" = $${params.length + 1}::uuid`);
+        params.push(patientId);
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid patientId. Must be a valid UUID.',
+        });
       }
     }
     if (roomAdmissionId) {
-      conditions.push(`"RoomAdmissionId" = $${params.length + 1}::uuid`);
-      params.push(roomAdmissionId);
+      const roomAdmissionIdInt = parseInt(roomAdmissionId, 10);
+      if (!isNaN(roomAdmissionIdInt)) {
+        conditions.push(`"RoomAdmissionId" = $${params.length + 1}`);
+        params.push(roomAdmissionIdInt);
+      }
     }
     if (visitDate) {
       conditions.push(`"VisitDate" = $${params.length + 1}::date`);
@@ -92,20 +100,20 @@ exports.getPatientAdmitNurseVisitsById = async (req, res) => {
 const validatePatientAdmitNurseVisitsPayload = (body, requireAll = true) => {
   const errors = [];
 
-  if (requireAll && !body.RoomAdmissionId) {
-    errors.push('RoomAdmissionId is required');
-  }
-  if (body.RoomAdmissionId && typeof body.RoomAdmissionId !== 'string') {
-    errors.push('RoomAdmissionId must be a valid UUID');
+  if (body.RoomAdmissionId !== undefined && body.RoomAdmissionId !== null) {
+    const roomAdmissionIdInt = parseInt(body.RoomAdmissionId, 10);
+    if (isNaN(roomAdmissionIdInt)) {
+      errors.push('RoomAdmissionId must be a valid integer');
+    }
   }
 
   if (requireAll && body.PatientId === undefined) {
     errors.push('PatientId is required');
   }
   if (body.PatientId !== undefined && body.PatientId !== null) {
-    const patientIdInt = parseInt(body.PatientId, 10);
-    if (isNaN(patientIdInt)) {
-      errors.push('PatientId must be a valid integer');
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(body.PatientId)) {
+      errors.push('PatientId must be a valid UUID');
     }
   }
 
@@ -169,24 +177,32 @@ exports.createPatientAdmitNurseVisits = async (req, res) => {
       throw new Error('Failed to generate PatientAdmitNurseVisitsId');
     }
 
+    // Validate foreign key existence
+    if (RoomAdmissionId !== undefined && RoomAdmissionId !== null) {
+      const roomAdmissionExists = await db.query('SELECT "RoomAdmissionId" FROM "RoomAdmission" WHERE "RoomAdmissionId" = $1', [parseInt(RoomAdmissionId, 10)]);
+      if (roomAdmissionExists.rows.length === 0) {
+        return res.status(400).json({ success: false, message: 'RoomAdmissionId does not exist' });
+      }
+    }
+
     const insertQuery = `
       INSERT INTO "PatientAdmitNurseVisits"
         ("PatientAdmitNurseVisitsId", "RoomAdmissionId", "PatientId", "VisitDate", "VisitTime",
          "PatientStatus", "SupervisionDetails", "Remarks", "RoomVisitsCreatedBy", "Status")
-      VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *;
     `;
 
     const { rows } = await db.query(insertQuery, [
       patientAdmitNurseVisitsId,
-      RoomAdmissionId,
-      parseInt(PatientId, 10),
+      RoomAdmissionId ? parseInt(RoomAdmissionId, 10) : null,
+      PatientId, // UUID
       VisitDate,
       VisitTime || null,
       PatientStatus || null,
       SupervisionDetails || null,
       Remarks || null,
-      RoomVisitsCreatedBy || null,
+      RoomVisitsCreatedBy ? parseInt(RoomVisitsCreatedBy, 10) : null,
       Status,
     ]);
 

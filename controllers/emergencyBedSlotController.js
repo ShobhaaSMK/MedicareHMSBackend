@@ -209,6 +209,26 @@ const validateEmergencyBedSlotPayload = (body, requireAll = true) => {
   return errors;
 };
 
+const checkDuplicateTiming = async (emergencyBedId, startTime, endTime, excludeSlotId = null) => {
+  // Check if there's an exact duplicate timing (same start and end time) for the same Emergency Bed
+  let query = `
+    SELECT "EmergencyBedSlotId", "EBedSlotNo", "ESlotStartTime", "ESlotEndTime"
+    FROM "EmergencyBedSlot"
+    WHERE "EmergencyBedId" = $1
+      AND "ESlotStartTime" = $2::TIME
+      AND "ESlotEndTime" = $3::TIME
+  `;
+  const params = [emergencyBedId, startTime, endTime];
+
+  if (excludeSlotId) {
+    query += ' AND "EmergencyBedSlotId" != $4';
+    params.push(excludeSlotId);
+  }
+
+  const { rows } = await db.query(query, params);
+  return rows.length > 0 ? rows[0] : null;
+};
+
 const checkSlotOverlap = async (emergencyBedId, startTime, endTime, excludeSlotId = null) => {
   // Check if there's an overlapping slot for the same Emergency Bed
   let query = `
@@ -262,6 +282,15 @@ exports.createEmergencyBedSlot = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'ESlotEndTime must be after ESlotStartTime',
+      });
+    }
+
+    // Check for duplicate/exact repeat timings first
+    const duplicate = await checkDuplicateTiming(emergencyBedIdInt, startTime, endTime);
+    if (duplicate) {
+      return res.status(400).json({
+        success: false,
+        message: `A slot with the exact same timing already exists: ${duplicate.EBedSlotNo} (${duplicate.ESlotStartTime} - ${duplicate.ESlotEndTime})`,
       });
     }
 
@@ -377,6 +406,15 @@ exports.updateEmergencyBedSlot = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'ESlotEndTime must be after ESlotStartTime',
+      });
+    }
+
+    // Check for duplicate/exact repeat timings (excluding current slot)
+    const duplicate = await checkDuplicateTiming(currentEmergencyBedId, startTime, endTime, emergencyBedSlotId);
+    if (duplicate) {
+      return res.status(400).json({
+        success: false,
+        message: `A slot with the exact same timing already exists: ${duplicate.EBedSlotNo} (${duplicate.ESlotStartTime} - ${duplicate.ESlotEndTime})`,
       });
     }
 

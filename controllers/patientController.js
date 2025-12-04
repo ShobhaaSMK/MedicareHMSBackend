@@ -371,6 +371,218 @@ exports.updatePatient = async (req, res) => {
   }
 };
 
+/**
+ * Get count of total patients (IPD, OPD, Emergency) for a specific date
+ * Query parameter: ?date=YYYY-MM-DD (required)
+ * Returns:
+ * 1. IPD patients count (from RoomAdmission where RoomAllocationDate = date)
+ * 2. OPD patients count (from PatientAppointment where AppointmentDate = date)
+ * 3. Emergency patients count (from EmergencyAdmission where EmergencyAdmissionDate = date)
+ * 4. Total patients count (sum of all three)
+ */
+exports.getTotalPatientsCountByDate = async (req, res) => {
+  try {
+    const { date } = req.query;
+    
+    if (!date) {
+      return res.status(400).json({
+        success: false,
+        message: 'Date parameter is required. Please provide date in YYYY-MM-DD format (e.g., ?date=2025-12-03)',
+      });
+    }
+
+    // Validate date format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(date)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid date format. Please use YYYY-MM-DD format (e.g., 2025-12-03)',
+      });
+    }
+
+    // Query to get counts from all three sources
+    const query = `
+      SELECT 
+        (SELECT COUNT(DISTINCT "PatientId")
+         FROM "RoomAdmission"
+         WHERE DATE("RoomAllocationDate") = $1::date
+         AND "Status" = 'Active') AS ipd_count,
+        (SELECT COUNT(DISTINCT "PatientId")
+         FROM "PatientAppointment"
+         WHERE "AppointmentDate" = $1::date
+         AND "Status" = 'Active') AS opd_count,
+        (SELECT COUNT(DISTINCT "PatientId")
+         FROM "EmergencyAdmission"
+         WHERE "EmergencyAdmissionDate" = $1::date
+         AND "Status" = 'Active') AS emergency_count
+    `;
+
+    const { rows } = await db.query(query, [date]);
+
+    const ipdCount = parseInt(rows[0].ipd_count, 10) || 0;
+    const opdCount = parseInt(rows[0].opd_count, 10) || 0;
+    const emergencyCount = parseInt(rows[0].emergency_count, 10) || 0;
+    const totalCount = ipdCount + opdCount + emergencyCount;
+
+    res.status(200).json({
+      success: true,
+      message: 'Total patients count retrieved successfully',
+      date: date,
+      counts: {
+        ipd: ipdCount,
+        opd: opdCount,
+        emergency: emergencyCount,
+        total: totalCount
+      },
+      data: {
+        date: date,
+        ipdCount: ipdCount,
+        opdCount: opdCount,
+        emergencyCount: emergencyCount,
+        totalCount: totalCount,
+        breakdown: {
+          ipd: 'RoomAdmission records where RoomAllocationDate = date and Status = Active',
+          opd: 'PatientAppointment records where AppointmentDate = date and Status = Active',
+          emergency: 'EmergencyAdmission records where EmergencyAdmissionDate = date and Status = Active'
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching total patients count',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get daily OPD patients count for a week to show in bar graph
+ * Query parameter: ?date=YYYY-MM-DD (optional, defaults to current week starting from Monday)
+ * Returns: Daily OPD patient counts for 7 days (Monday to Sunday) with day names and counts
+ */
+exports.getWeeklyOPDPatientsCount = async (req, res) => {
+  try {
+    const { date } = req.query;
+    
+    let startDate;
+    if (date) {
+      // Validate date format
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(date)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date format. Please use YYYY-MM-DD format (e.g., 2025-12-03)',
+        });
+      }
+      const providedDate = new Date(date + 'T00:00:00');
+      // Calculate Monday of the week for the provided date
+      const dayOfWeek = providedDate.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+      // If Sunday (0), go back 6 days. Otherwise, go back (dayOfWeek - 1) days to get Monday
+      const daysToMonday = dayOfWeek === 0 ? 6 : (dayOfWeek === 1 ? 0 : dayOfWeek - 1);
+      startDate = new Date(providedDate);
+      startDate.setDate(providedDate.getDate() - daysToMonday);
+      startDate.setHours(0, 0, 0, 0);
+    } else {
+      // Default to current week starting from Monday
+      const today = new Date();
+      const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+      const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Days to subtract to get Monday
+      startDate = new Date(today);
+      startDate.setDate(today.getDate() - daysToMonday);
+      startDate.setHours(0, 0, 0, 0);
+    }
+
+    // Validate the date
+    if (isNaN(startDate.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid date provided',
+      });
+    }
+
+    // Calculate end date (7 days from start date)
+    const endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + 6);
+    endDate.setHours(23, 59, 59, 999);
+
+    // Format dates for SQL query
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+
+    // Day names array
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+    // Query to get daily OPD patient counts for the week
+    const query = `
+      SELECT 
+        "AppointmentDate"::date AS appointment_date,
+        TO_CHAR("AppointmentDate"::date, 'Day') AS day_name,
+        COUNT(DISTINCT "PatientId") AS patient_count
+      FROM "PatientAppointment"
+      WHERE "AppointmentDate"::date >= $1::date
+      AND "AppointmentDate"::date <= $2::date
+      AND "Status" = 'Active'
+      GROUP BY "AppointmentDate"::date
+      ORDER BY "AppointmentDate"::date ASC
+    `;
+
+    const { rows } = await db.query(query, [startDateStr, endDateStr]);
+
+    // Create a map of date to count
+    const dateCountMap = new Map();
+    rows.forEach(row => {
+      const dateStr = row.appointment_date.toISOString().split('T')[0];
+      dateCountMap.set(dateStr, parseInt(row.patient_count, 10) || 0);
+    });
+
+    // Generate data for all 7 days of the week
+    const weeklyData = [];
+    const currentDate = new Date(startDate);
+    
+    for (let i = 0; i < 7; i++) {
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const dayOfWeek = currentDate.getDay();
+      const dayName = dayNames[dayOfWeek];
+      
+      weeklyData.push({
+        date: dateStr,
+        day: dayName.trim(),
+        dayNumber: dayOfWeek,
+        patientCount: dateCountMap.get(dateStr) || 0
+      });
+      
+      // Move to next day
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    // Calculate total for the week
+    const totalPatients = weeklyData.reduce((sum, day) => sum + day.patientCount, 0);
+
+    res.status(200).json({
+      success: true,
+      message: 'Weekly OPD patients count retrieved successfully',
+      week: {
+        startDate: startDateStr,
+        endDate: endDateStr
+      },
+      totalPatients: totalPatients,
+      data: weeklyData,
+      chartData: {
+        labels: weeklyData.map(day => day.day),
+        values: weeklyData.map(day => day.patientCount),
+        dates: weeklyData.map(day => day.date)
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching weekly OPD patients count',
+      error: error.message,
+    });
+  }
+};
+
 exports.deletePatient = async (req, res) => {
   try {
     const { id } = req.params;

@@ -3,9 +3,11 @@ const router = express.Router();
 const patientAppointmentController = require('../controllers/patientAppointmentController');
 
 router.get('/count/today-active', patientAppointmentController.getTodayActiveAppointmentsCount);
+router.get('/count/today-opd', patientAppointmentController.getTodayOPDPatientsCount);
 router.get('/count/active', patientAppointmentController.getActiveAppointmentsCountByDate);
 router.get('/count/doctor-wise', patientAppointmentController.getDoctorWisePatientCount);
 router.get('/count/status', patientAppointmentController.getAppointmentCountsByStatus);
+router.get('/count/active-waiting-consulting', patientAppointmentController.getActiveWaitingOrConsultingCount);
 router.get('/count/active-tokens', patientAppointmentController.getActiveTokensCount);
 router.get('/', patientAppointmentController.getAllAppointments);
 router.get('/:id', patientAppointmentController.getAppointmentById);

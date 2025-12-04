@@ -9,7 +9,6 @@ const mapPatientOTAllocationRow = (row) => ({
   PatientAppointmentId: row.PatientAppointmentId || row.patientappointmentid || null,
   EmergencyBedSlotId: row.EmergencyBedSlotId || row.emergencybedslotid || null,
   OTId: row.OTId || row.otid,
-  OTSlotId: row.OTSlotId || row.otslotid || null,
   SurgeryId: row.SurgeryId || row.surgeryid || null,
   LeadSurgeonId: row.LeadSurgeonId || row.leadsurgeonid,
   AssistantDoctorId: row.AssistantDoctorId || row.assistantdoctorid || null,
@@ -34,7 +33,6 @@ const mapPatientOTAllocationRow = (row) => ({
   PatientName: row.PatientName || row.patientname || null,
   PatientNo: row.PatientNo || row.patientno || null,
   OTNo: row.OTNo || row.otno || null,
-  OTSlotNo: row.OTSlotNo || row.otslotno || null,
   SurgeryName: row.SurgeryName || row.surgeryname || null,
   LeadSurgeonName: row.LeadSurgeonName || row.leadsurgeonname || null,
   AssistantDoctorName: row.AssistantDoctorName || row.assistantdoctorname || null,
@@ -52,7 +50,6 @@ exports.getAllPatientOTAllocations = async (req, res) => {
         pta.*,
         p."PatientName", p."PatientNo",
         ot."OTNo",
-        os."OTSlotNo",
         sp."SurgeryName",
         ls."UserName" AS "LeadSurgeonName",
         ad."UserName" AS "AssistantDoctorName",
@@ -63,7 +60,6 @@ exports.getAllPatientOTAllocations = async (req, res) => {
       FROM "PatientOTAllocation" pta
       LEFT JOIN "PatientRegistration" p ON pta."PatientId" = p."PatientId"
       LEFT JOIN "OT" ot ON pta."OTId" = ot."OTId"
-      LEFT JOIN "OTSlot" os ON pta."OTSlotId" = os."OTSlotId"
       LEFT JOIN "SurgeryProcedure" sp ON pta."SurgeryId" = sp."SurgeryId"
       LEFT JOIN "Users" ls ON pta."LeadSurgeonId" = ls."UserId"
       LEFT JOIN "Users" ad ON pta."AssistantDoctorId" = ad."UserId"
@@ -154,7 +150,6 @@ exports.getPatientOTAllocationById = async (req, res) => {
         pta.*,
         p."PatientName", p."PatientNo",
         ot."OTNo",
-        os."OTSlotNo",
         sp."SurgeryName",
         ls."UserName" AS "LeadSurgeonName",
         ad."UserName" AS "AssistantDoctorName",
@@ -165,7 +160,6 @@ exports.getPatientOTAllocationById = async (req, res) => {
       FROM "PatientOTAllocation" pta
       LEFT JOIN "PatientRegistration" p ON pta."PatientId" = p."PatientId"
       LEFT JOIN "OT" ot ON pta."OTId" = ot."OTId"
-      LEFT JOIN "OTSlot" os ON pta."OTSlotId" = os."OTSlotId"
       LEFT JOIN "SurgeryProcedure" sp ON pta."SurgeryId" = sp."SurgeryId"
       LEFT JOIN "Users" ls ON pta."LeadSurgeonId" = ls."UserId"
       LEFT JOIN "Users" ad ON pta."AssistantDoctorId" = ad."UserId"
@@ -199,9 +193,9 @@ const validatePatientOTAllocationPayload = (body, requireAll = true) => {
     errors.push('PatientId is required');
   }
   if (body.PatientId !== undefined && body.PatientId !== null) {
-    const patientIdInt = parseInt(body.PatientId, 10);
-    if (isNaN(patientIdInt)) {
-      errors.push('PatientId must be a valid integer');
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(body.PatientId)) {
+      errors.push('PatientId must be a valid UUID');
     }
   }
 
@@ -210,6 +204,13 @@ const validatePatientOTAllocationPayload = (body, requireAll = true) => {
     const appointmentIdInt = parseInt(body.PatientAppointmentId, 10);
     if (isNaN(appointmentIdInt)) {
       errors.push('PatientAppointmentId must be a valid integer');
+    }
+  }
+
+  if (body.RoomAdmissionId !== undefined && body.RoomAdmissionId !== null) {
+    const roomAdmissionIdInt = parseInt(body.RoomAdmissionId, 10);
+    if (isNaN(roomAdmissionIdInt)) {
+      errors.push('RoomAdmissionId must be a valid integer');
     }
   }
 
@@ -332,10 +333,10 @@ exports.createPatientOTAllocation = async (req, res) => {
 
     const {
       PatientId,
+      RoomAdmissionId,
       PatientAppointmentId,
       EmergencyBedSlotId,
       OTId,
-      OTSlotId,
       SurgeryId,
       LeadSurgeonId,
       AssistantDoctorId,
@@ -358,11 +359,11 @@ exports.createPatientOTAllocation = async (req, res) => {
     } = req.body;
 
     // Validate foreign key existence
-    const patientIdInt = parseInt(PatientId, 10);
-    if (isNaN(patientIdInt)) {
-      return res.status(400).json({ success: false, message: 'PatientId must be a valid integer' });
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(PatientId)) {
+      return res.status(400).json({ success: false, message: 'PatientId must be a valid UUID' });
     }
-    const patientExists = await db.query('SELECT "PatientId" FROM "PatientRegistration" WHERE "PatientId" = $1', [patientIdInt]);
+    const patientExists = await db.query('SELECT "PatientId" FROM "PatientRegistration" WHERE "PatientId" = $1::uuid', [PatientId]);
     if (patientExists.rows.length === 0) {
       return res.status(400).json({ success: false, message: 'PatientId does not exist' });
     }
@@ -442,23 +443,22 @@ exports.createPatientOTAllocation = async (req, res) => {
 
     const insertQuery = `
       INSERT INTO "PatientOTAllocation"
-        ("PatientId", "PatientAppointmentId", "EmergencyBedSlotId", "OTId", "OTSlotId", "SurgeryId",
+        ("PatientId", "RoomAdmissionId", "PatientAppointmentId", "EmergencyBedSlotId", "OTId", "SurgeryId",
          "LeadSurgeonId", "AssistantDoctorId", "AnaesthetistId", "NurseId",
          "OTAllocationDate", "Duration", "OTStartTime", "OTEndTime",
          "OTActualStartTime", "OTActualEndTime", "OperationDescription",
          "OperationStatus", "PreOperationNotes", "PostOperationNotes", "OTDocuments",
          "BillId", "OTAllocationCreatedBy", "Status")
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+      VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
       RETURNING *;
     `;
 
     const { rows } = await db.query(insertQuery, [
-      patientIdInt, // INTEGER
+      PatientId, // UUID
       RoomAdmissionId ? parseInt(RoomAdmissionId, 10) : null,
       PatientAppointmentId ? parseInt(PatientAppointmentId, 10) : null,
       EmergencyBedSlotId ? parseInt(EmergencyBedSlotId, 10) : null,
       parseInt(OTId, 10),
-      OTSlotId ? parseInt(OTSlotId, 10) : null,
       SurgeryId ? parseInt(SurgeryId, 10) : null,
       parseInt(LeadSurgeonId, 10),
       AssistantDoctorId ? parseInt(AssistantDoctorId, 10) : null,
@@ -487,7 +487,6 @@ exports.createPatientOTAllocation = async (req, res) => {
         pta.*,
         p."PatientName", p."PatientNo",
         ot."OTNo",
-        os."OTSlotNo",
         sp."SurgeryName",
         ls."UserName" AS "LeadSurgeonName",
         ad."UserName" AS "AssistantDoctorName",
@@ -498,7 +497,6 @@ exports.createPatientOTAllocation = async (req, res) => {
       FROM "PatientOTAllocation" pta
       LEFT JOIN "PatientRegistration" p ON pta."PatientId" = p."PatientId"
       LEFT JOIN "OT" ot ON pta."OTId" = ot."OTId"
-      LEFT JOIN "OTSlot" os ON pta."OTSlotId" = os."OTSlotId"
       LEFT JOIN "SurgeryProcedure" sp ON pta."SurgeryId" = sp."SurgeryId"
       LEFT JOIN "Users" ls ON pta."LeadSurgeonId" = ls."UserId"
       LEFT JOIN "Users" ad ON pta."AssistantDoctorId" = ad."UserId"
@@ -827,7 +825,6 @@ exports.updatePatientOTAllocation = async (req, res) => {
         pta.*,
         p."PatientName", p."PatientNo",
         ot."OTNo",
-        os."OTSlotNo",
         sp."SurgeryName",
         ls."UserName" AS "LeadSurgeonName",
         ad."UserName" AS "AssistantDoctorName",
@@ -838,7 +835,6 @@ exports.updatePatientOTAllocation = async (req, res) => {
       FROM "PatientOTAllocation" pta
       LEFT JOIN "PatientRegistration" p ON pta."PatientId" = p."PatientId"
       LEFT JOIN "OT" ot ON pta."OTId" = ot."OTId"
-      LEFT JOIN "OTSlot" os ON pta."OTSlotId" = os."OTSlotId"
       LEFT JOIN "SurgeryProcedure" sp ON pta."SurgeryId" = sp."SurgeryId"
       LEFT JOIN "Users" ls ON pta."LeadSurgeonId" = ls."UserId"
       LEFT JOIN "Users" ad ON pta."AssistantDoctorId" = ad."UserId"
@@ -867,6 +863,157 @@ exports.updatePatientOTAllocation = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error updating patient OT allocation',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get count of today's OT scheduled records with OperationStatus = 'Scheduled' or 'In Progress'
+ */
+exports.getTodayOTScheduledCount = async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    
+    // Compare OTAllocationDate with today's date
+    const query = `
+      SELECT COUNT(*) AS count
+      FROM "PatientOTAllocation"
+      WHERE "OTAllocationDate"::date = $1::date
+      AND ("OperationStatus" = 'Scheduled' OR "OperationStatus" = 'In Progress')
+    `;
+
+    const { rows } = await db.query(query, [today]);
+
+    const count = parseInt(rows[0].count, 10) || 0;
+
+    res.status(200).json({
+      success: true,
+      message: 'Today\'s OT scheduled count retrieved successfully',
+      date: today,
+      count: count,
+      data: {
+        date: today,
+        count: count,
+        operationStatus: ['Scheduled', 'In Progress']
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching today\'s OT scheduled count',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get count of today's OT scheduled records (Scheduled or In Progress) and In Progress OTs count
+ * Returns both counts in a single response
+ */
+exports.getTodayOTScheduledAndInProgressCount = async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    
+    // Query to get both counts
+    const query = `
+      SELECT 
+        COUNT(*) FILTER (WHERE "OTAllocationDate"::date = $1::date 
+          AND ("OperationStatus" = 'Scheduled' OR "OperationStatus" = 'In Progress')) AS scheduled_count,
+        COUNT(*) FILTER (WHERE "OperationStatus" = 'In Progress') AS in_progress_count
+      FROM "PatientOTAllocation"
+    `;
+
+    const { rows } = await db.query(query, [today]);
+
+    const scheduledCount = parseInt(rows[0].scheduled_count, 10) || 0;
+    const inProgressCount = parseInt(rows[0].in_progress_count, 10) || 0;
+
+    res.status(200).json({
+      success: true,
+      message: 'Today\'s OT scheduled and In Progress counts retrieved successfully',
+      date: today,
+      counts: {
+        todayScheduled: scheduledCount,
+        inProgress: inProgressCount
+      },
+      data: {
+        date: today,
+        todayScheduledCount: scheduledCount,
+        inProgressCount: inProgressCount,
+        todayScheduledStatus: ['Scheduled', 'In Progress'],
+        inProgressStatus: 'In Progress'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching today\'s OT scheduled and In Progress counts',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get count of OT scheduled records (Scheduled or In Progress) and In Progress OTs count for a specific date
+ * Query parameter: ?date=YYYY-MM-DD (required)
+ * Returns both counts in a single response
+ */
+exports.getOTScheduledAndInProgressCountByDate = async (req, res) => {
+  try {
+    const { date } = req.query;
+    
+    if (!date) {
+      return res.status(400).json({
+        success: false,
+        message: 'Date parameter is required. Please provide date in YYYY-MM-DD format (e.g., ?date=2025-12-03)',
+      });
+    }
+
+    // Validate date format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(date)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid date format. Please use YYYY-MM-DD format (e.g., 2025-12-03)',
+      });
+    }
+
+    // Query to get both counts for the specified date
+    const query = `
+      SELECT 
+        COUNT(*) FILTER (WHERE "OTAllocationDate"::date = $1::date 
+          AND ("OperationStatus" = 'Scheduled' OR "OperationStatus" = 'In Progress')) AS scheduled_count,
+        COUNT(*) FILTER (WHERE "OTAllocationDate"::date = $1::date 
+          AND "OperationStatus" = 'In Progress') AS in_progress_count
+      FROM "PatientOTAllocation"
+    `;
+
+    const { rows } = await db.query(query, [date]);
+
+    const scheduledCount = parseInt(rows[0].scheduled_count, 10) || 0;
+    const inProgressCount = parseInt(rows[0].in_progress_count, 10) || 0;
+
+    res.status(200).json({
+      success: true,
+      message: 'OT scheduled and In Progress counts retrieved successfully',
+      date: date,
+      counts: {
+        scheduled: scheduledCount,
+        inProgress: inProgressCount
+      },
+      data: {
+        date: date,
+        scheduledCount: scheduledCount,
+        inProgressCount: inProgressCount,
+        scheduledStatus: ['Scheduled', 'In Progress'],
+        inProgressStatus: 'In Progress'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching OT scheduled and In Progress counts',
       error: error.message,
     });
   }

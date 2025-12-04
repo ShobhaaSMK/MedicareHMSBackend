@@ -3,6 +3,7 @@ const db = require('../db');
 const allowedStatus = ['Active', 'Inactive'];
 const allowedEmergencyStatus = ['Admitted', 'IPD', 'OT', 'ICU', 'Discharged'];
 const allowedPatientCondition = ['Critical', 'Stable'];
+const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const mapEmergencyAdmissionRow = (row) => ({
   EmergencyAdmissionId: row.EmergencyAdmissionId || row.emergencyadmissionid,
@@ -43,10 +44,14 @@ exports.getAllEmergencyAdmissions = async (req, res) => {
       params.push(emergencyStatus);
     }
     if (patientId) {
-      const patientIdInt = parseInt(patientId, 10);
-      if (!isNaN(patientIdInt)) {
-        conditions.push(`"PatientId" = $${params.length + 1}`);
-        params.push(patientIdInt);
+      if (uuidRegex.test(patientId)) {
+        conditions.push(`"PatientId" = $${params.length + 1}::uuid`);
+        params.push(patientId);
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid patientId. Must be a valid UUID.',
+        });
       }
     }
     if (doctorId) {
@@ -206,9 +211,8 @@ const validateEmergencyAdmissionPayload = (body, requireAll = true) => {
     errors.push('PatientId is required');
   }
   if (body.PatientId !== undefined && body.PatientId !== null) {
-    const patientIdInt = parseInt(body.PatientId, 10);
-    if (isNaN(patientIdInt)) {
-      errors.push('PatientId must be a valid integer');
+    if (!uuidRegex.test(body.PatientId)) {
+      errors.push('PatientId must be a valid UUID');
     }
   }
 
@@ -334,13 +338,13 @@ exports.createEmergencyAdmission = async (req, res) => {
          "EmergencyStatus", "AllocationFromDate", "AllocationToDate", "NumberOfDays", "Diagnosis",
          "TreatementDetails", "PatientCondition", "TransferToIPD", "TransferToOT", "TransferToICU",
          "TransferTo", "TransferDetails", "AdmissionCreatedBy", "Status")
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING *;
     `;
 
     const { rows } = await db.query(insertQuery, [
       parseInt(DoctorId, 10),
-      parseInt(PatientId, 10),
+      PatientId, // UUID, not parsed as integer
       parseInt(EmergencyBedSlotId, 10),
       EmergencyAdmissionDate,
       EmergencyStatus || null,

@@ -118,9 +118,9 @@ const validatePatientAdmitVisitVitalsPayload = (body, requireAll = true) => {
     errors.push('PatientId is required');
   }
   if (body.PatientId !== undefined && body.PatientId !== null) {
-    const patientIdInt = parseInt(body.PatientId, 10);
-    if (isNaN(patientIdInt)) {
-      errors.push('PatientId must be a valid integer');
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(body.PatientId)) {
+      errors.push('PatientId must be a valid UUID');
     }
   }
 
@@ -216,14 +216,14 @@ exports.createPatientAdmitVisitVitals = async (req, res) => {
         ("PatientAdmitVisitVitalsId", "PatientAdmitNurseVisitsId", "PatientId", "RecordedDateTime",
          "DailyOrHourlyVitals", "HeartRate", "BloodPressure", "Temperature", "O2Saturation", "RespiratoryRate",
          "PulseRate", "VitalsStatus", "VitalsRemarks", "VitalsCreatedBy", "Status")
-      VALUES ($1::uuid, $2::uuid, $3, $4::timestamp, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      VALUES ($1::uuid, $2::uuid, $3::uuid, $4::timestamp, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING *;
     `;
 
     const { rows } = await db.query(insertQuery, [
       patientAdmitVisitVitalsId,
       PatientAdmitNurseVisitsId,
-      parseInt(PatientId, 10),
+      PatientId, // UUID
       RecordedDateTime,
       DailyOrHourlyVitals || null,
       HeartRate ? parseInt(HeartRate, 10) : null,
@@ -234,7 +234,7 @@ exports.createPatientAdmitVisitVitals = async (req, res) => {
       PulseRate ? parseInt(PulseRate, 10) : null,
       VitalsStatus || null,
       VitalsRemarks || null,
-      VitalsCreatedBy || null,
+      VitalsCreatedBy ? parseInt(VitalsCreatedBy, 10) : null,
       Status,
     ]);
 

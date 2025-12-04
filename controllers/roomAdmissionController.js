@@ -663,6 +663,46 @@ exports.updateRoomAdmission = async (req, res) => {
   }
 };
 
+/**
+ * Get count of today's IPD admission records with Status = 'Active' and AdmissionStatus != 'Discharged'
+ */
+exports.getTodayIPDAdmissionsCount = async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    
+    const query = `
+      SELECT COUNT(*) AS count
+      FROM "RoomAdmission"
+      WHERE DATE("RoomAllocationDate") = $1::date
+      AND "Status" = 'Active'
+      AND "AdmissionStatus" != 'Discharged'
+    `;
+
+    const { rows } = await db.query(query, [today]);
+
+    const count = parseInt(rows[0].count, 10) || 0;
+
+    res.status(200).json({
+      success: true,
+      message: 'Today\'s IPD admissions count retrieved successfully',
+      date: today,
+      count: count,
+      data: {
+        date: today,
+        count: count,
+        status: 'Active',
+        admissionStatus: 'Not Discharged'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching today\'s IPD admissions count',
+      error: error.message,
+    });
+  }
+};
+
 exports.deleteRoomAdmission = async (req, res) => {
   try {
     const { id } = req.params;

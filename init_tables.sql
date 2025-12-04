@@ -170,6 +170,7 @@ CREATE TABLE IF NOT EXISTS "EmergencyBed" (
     "EmergencyBedNo" VARCHAR(50) NOT NULL UNIQUE,
     "EmergencyRoomNameNo" VARCHAR(100),
     "EmergencyRoomDescription" TEXT,
+    "ChargesPerDay" DECIMAL(10, 2),
     "Status" VARCHAR(50) DEFAULT 'Active',
     "CreatedBy" INTEGER,
     "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -248,6 +249,7 @@ CREATE TABLE IF NOT EXISTS "PatientICUAdmission" (
     "EmergencyBedSlotId" INTEGER,
     "ICUId" INTEGER NOT NULL,
     "ICUPatientStatus" VARCHAR(50),
+    "ICUAdmissionStatus" VARCHAR(50) DEFAULT 'Occupied' CHECK ("ICUAdmissionStatus" IN ('Occupied', 'Discharged')),
     "ICUAllocationFromDate" DATE,
     "ICUAllocationToDate" DATE,
     "NumberOfDays" INTEGER,
@@ -516,6 +518,7 @@ CREATE INDEX IF NOT EXISTS idx_emergencyadmissionvitals_status ON "EmergencyAdmi
 -- PatientAdmitNurseVisits table
 CREATE TABLE IF NOT EXISTS "PatientAdmitNurseVisits" (
     "PatientAdmitNurseVisitsId" UUID PRIMARY KEY,
+    "RoomAdmissionId" INTEGER,
     "PatientId" UUID NOT NULL,
     "VisitDate" DATE NOT NULL,
     "VisitTime" TIME,
@@ -525,6 +528,7 @@ CREATE TABLE IF NOT EXISTS "PatientAdmitNurseVisits" (
     "Status" VARCHAR(50) DEFAULT 'Active',
     "RoomVisitsCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     "RoomVisitsCreatedBy" INTEGER,
+    FOREIGN KEY ("RoomAdmissionId") REFERENCES "RoomAdmission"("RoomAdmissionId") ON DELETE SET NULL,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("RoomVisitsCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
@@ -614,6 +618,7 @@ CREATE TABLE IF NOT EXISTS "PatientAdmitVisitVitals" (
 -- PatientAdmitDoctorVisits table
 CREATE TABLE IF NOT EXISTS "PatientAdmitDoctorVisits" (
     "PatientAdmitDoctorVisitsId" UUID PRIMARY KEY,
+    "RoomAdmissionId" INTEGER,
     "PatientId" UUID NOT NULL,
     "DoctorId" INTEGER NOT NULL,
     "DoctorVisitedDateTime" TIMESTAMP NOT NULL,
@@ -622,6 +627,7 @@ CREATE TABLE IF NOT EXISTS "PatientAdmitDoctorVisits" (
     "Status" VARCHAR(50) DEFAULT 'Active',
     "VisitCreatedBy" INTEGER,
     "VisitCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY ("RoomAdmissionId") REFERENCES "RoomAdmission"("RoomAdmissionId") ON DELETE SET NULL,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
     FOREIGN KEY ("VisitCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL

@@ -161,6 +161,112 @@ exports.getRoomBedsByCategory = async (req, res) => {
   }
 };
 
+/**
+ * Get total count of Active beds from RoomBeds
+ */
+exports.getActiveBedsCount = async (req, res) => {
+  try {
+    const query = `
+      SELECT COUNT(*) AS count
+      FROM "RoomBeds"
+      WHERE "Status" = 'Active'
+    `;
+
+    const { rows } = await db.query(query);
+
+    const count = parseInt(rows[0].count, 10) || 0;
+
+    res.status(200).json({
+      success: true,
+      message: 'Active beds count retrieved successfully',
+      count: count,
+      data: {
+        count: count,
+        status: 'Active'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching active beds count',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get IPD Room counts distribution by RoomType for pie chart report
+ * Returns counts for 'Special', 'Special Shared', and 'Regular' room types
+ * Only counts Active beds
+ */
+exports.getIPDRoomCountsByType = async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        "RoomType",
+        COUNT(*) AS count
+      FROM "RoomBeds"
+      WHERE "Status" = 'Active'
+      GROUP BY "RoomType"
+      ORDER BY 
+        CASE "RoomType"
+          WHEN 'Special' THEN 1
+          WHEN 'Special Shared' THEN 2
+          WHEN 'Regular' THEN 3
+          ELSE 4
+        END
+    `;
+
+    const { rows } = await db.query(query);
+
+    // Initialize counts for all room types
+    const roomTypeCounts = {
+      'Special': 0,
+      'Special Shared': 0,
+      'Regular': 0
+    };
+
+    // Populate counts from query results
+    rows.forEach(row => {
+      const roomType = row.RoomType || row.roomtype;
+      const count = parseInt(row.count, 10) || 0;
+      if (roomTypeCounts.hasOwnProperty(roomType)) {
+        roomTypeCounts[roomType] = count;
+      }
+    });
+
+    // Calculate total
+    const totalCount = Object.values(roomTypeCounts).reduce((sum, count) => sum + count, 0);
+
+    // Format data for pie chart
+    const chartData = Object.entries(roomTypeCounts).map(([roomType, count]) => ({
+      label: roomType,
+      value: count,
+      percentage: totalCount > 0 ? ((count / totalCount) * 100).toFixed(2) : '0.00'
+    }));
+
+    res.status(200).json({
+      success: true,
+      message: 'IPD Room counts by type retrieved successfully',
+      totalCount: totalCount,
+      data: roomTypeCounts,
+      chartData: {
+        labels: chartData.map(item => item.label),
+        values: chartData.map(item => item.value),
+        percentages: chartData.map(item => item.percentage),
+        datasets: chartData
+      },
+      breakdown: chartData
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching IPD room counts by type',
+      error: error.message,
+    });
+  }
+};
+
 exports.getRoomBedsByRoomType = async (req, res) => {
   try {
     const { roomType } = req.params;

@@ -2,6 +2,7 @@ const db = require('../db');
 const { randomUUID } = require('crypto');
 
 const allowedICUPatientStatus = ['Serious', 'Available', 'Critical', 'Stable'];
+const allowedICUAdmissionStatus = ['Occupied', 'Discharged'];
 const allowedStatus = ['Active', 'Inactive'];
 
 const mapPatientICUAdmissionRow = (row) => ({
@@ -9,8 +10,10 @@ const mapPatientICUAdmissionRow = (row) => ({
   PatientId: row.PatientId || row.patientid,
   PatientAppointmentId: row.PatientAppointmentId || row.patientappointmentid || null,
   EmergencyBedSlotId: row.EmergencyBedSlotId || row.emergencybedslotid || null,
+  RoomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
   ICUId: row.ICUId || row.icuid,
   ICUPatientStatus: row.ICUPatientStatus || row.icupatientstatus,
+  ICUAdmissionStatus: row.ICUAdmissionStatus || row.icuadmissionstatus || 'Occupied',
   ICUAllocationFromDate: row.ICUAllocationFromDate || row.icuallocationfromdate,
   ICUAllocationToDate: row.ICUAllocationToDate || row.icuallocationtodate,
   NumberOfDays: row.NumberOfDays || row.numberofdays,
@@ -36,9 +39,8 @@ exports.getAllPatientICUAdmissions = async (req, res) => {
       SELECT 
         pica.*,
         p."PatientName", p."PatientNo",
-        icu."ICUNo",
+        icu."ICUBedNo" AS "ICUNo",
         pa."TokenNo" AS "AppointmentTokenNo",
-        rb."BedNo",
         u."UserName" AS "CreatedByName"
       FROM "PatientICUAdmission" pica
       LEFT JOIN "PatientRegistration" p ON pica."PatientId" = p."PatientId"
@@ -58,10 +60,15 @@ exports.getAllPatientICUAdmissions = async (req, res) => {
       params.push(icuPatientStatus);
     }
     if (patientId) {
-      const patientIdInt = parseInt(patientId, 10);
-      if (!isNaN(patientIdInt)) {
-        conditions.push(`pica."PatientId" = $${params.length + 1}`);
-        params.push(patientIdInt);
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidRegex.test(patientId)) {
+        conditions.push(`pica."PatientId" = $${params.length + 1}::uuid`);
+        params.push(patientId);
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid patientId. Must be a valid UUID.',
+        });
       }
     }
     if (icuId) {
@@ -107,9 +114,8 @@ exports.getPatientICUAdmissionById = async (req, res) => {
       SELECT 
         pica.*,
         p."PatientName", p."PatientNo",
-        icu."ICUNo",
+        icu."ICUBedNo" AS "ICUNo",
         pa."TokenNo" AS "AppointmentTokenNo",
-        rb."BedNo",
         u."UserName" AS "CreatedByName"
       FROM "PatientICUAdmission" pica
       LEFT JOIN "PatientRegistration" p ON pica."PatientId" = p."PatientId"
@@ -140,9 +146,9 @@ const validatePatientICUAdmissionPayload = (body, requireAll = true) => {
     errors.push('PatientId is required');
   }
   if (body.PatientId !== undefined && body.PatientId !== null) {
-    const patientIdInt = parseInt(body.PatientId, 10);
-    if (isNaN(patientIdInt)) {
-      errors.push('PatientId must be a valid integer');
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(body.PatientId)) {
+      errors.push('PatientId must be a valid UUID');
     }
   }
 
@@ -161,6 +167,13 @@ const validatePatientICUAdmissionPayload = (body, requireAll = true) => {
     }
   }
 
+  if (body.RoomAdmissionId !== undefined && body.RoomAdmissionId !== null) {
+    const roomAdmissionIdInt = parseInt(body.RoomAdmissionId, 10);
+    if (isNaN(roomAdmissionIdInt)) {
+      errors.push('RoomAdmissionId must be a valid integer');
+    }
+  }
+
   if (requireAll && body.ICUId === undefined) {
     errors.push('ICUId is required');
   }
@@ -173,6 +186,10 @@ const validatePatientICUAdmissionPayload = (body, requireAll = true) => {
 
   if (body.ICUPatientStatus && !allowedICUPatientStatus.includes(body.ICUPatientStatus)) {
     errors.push('ICUPatientStatus must be Serious, Available, Critical, or Stable');
+  }
+
+  if (body.ICUAdmissionStatus && !allowedICUAdmissionStatus.includes(body.ICUAdmissionStatus)) {
+    errors.push('ICUAdmissionStatus must be Occupied or Discharged');
   }
 
   if (body.ICUAllocationFromDate && !/^\d{4}-\d{2}-\d{2}$/.test(body.ICUAllocationFromDate)) {
@@ -224,8 +241,10 @@ exports.createPatientICUAdmission = async (req, res) => {
       PatientId,
       PatientAppointmentId,
       EmergencyBedSlotId,
+      RoomAdmissionId,
       ICUId,
       ICUPatientStatus,
+      ICUAdmissionStatus = 'Occupied',
       ICUAllocationFromDate,
       ICUAllocationToDate,
       NumberOfDays,
@@ -244,7 +263,7 @@ exports.createPatientICUAdmission = async (req, res) => {
     }
 
     // Validate foreign key existence
-    const patientExists = await db.query('SELECT "PatientId" FROM "PatientRegistration" WHERE "PatientId" = $1', [parseInt(PatientId, 10)]);
+    const patientExists = await db.query('SELECT "PatientId" FROM "PatientRegistration" WHERE "PatientId" = $1::uuid', [PatientId]);
     if (patientExists.rows.length === 0) {
       return res.status(400).json({ success: false, message: 'PatientId does not exist' });
     }
@@ -261,6 +280,13 @@ exports.createPatientICUAdmission = async (req, res) => {
       const emergencyBedSlotExists = await db.query('SELECT "EmergencyBedSlotId" FROM "EmergencyBedSlot" WHERE "EmergencyBedSlotId" = $1', [parseInt(EmergencyBedSlotId, 10)]);
       if (emergencyBedSlotExists.rows.length === 0) {
         return res.status(400).json({ success: false, message: 'EmergencyBedSlotId does not exist' });
+      }
+    }
+
+    if (RoomAdmissionId !== undefined && RoomAdmissionId !== null) {
+      const roomAdmissionExists = await db.query('SELECT "RoomAdmissionId" FROM "RoomAdmission" WHERE "RoomAdmissionId" = $1', [parseInt(RoomAdmissionId, 10)]);
+      if (roomAdmissionExists.rows.length === 0) {
+        return res.status(400).json({ success: false, message: 'RoomAdmissionId does not exist' });
       }
     }
 
@@ -282,22 +308,98 @@ exports.createPatientICUAdmission = async (req, res) => {
       createdByValue = createdByInt;
     }
 
+    // Check if ICU bed is already occupied for the given date range
+    // Only check if ICUAdmissionStatus is 'Occupied' and ICUAllocationFromDate is provided
+    if (ICUAdmissionStatus === 'Occupied' && ICUAllocationFromDate) {
+      // Build the overlap check query
+      // An overlap occurs when date ranges intersect:
+      // - New admission's date range overlaps with existing occupied admission's date range
+      // - Handle NULL ICUAllocationToDate (treat as ongoing/indefinite)
+      let overlapCheckQuery = `
+        SELECT COUNT(*) AS overlap_count
+        FROM "PatientICUAdmission"
+        WHERE "ICUId" = $1
+        AND "ICUAdmissionStatus" = 'Occupied'
+        AND "Status" = 'Active'
+        AND "ICUAllocationFromDate" IS NOT NULL
+        AND (
+      `;
+
+      const overlapParams = [parseInt(ICUId, 10)];
+      let overlapConditions = [];
+
+      if (ICUAllocationToDate) {
+        // Both from and to dates are provided
+        // Check for overlap: existing admission overlaps if:
+        // - Existing from <= New to AND (Existing to >= New from OR Existing to is NULL)
+        overlapConditions.push(`
+          (
+            ("ICUAllocationToDate" IS NOT NULL 
+             AND "ICUAllocationFromDate" <= $${overlapParams.length + 1}::date
+             AND "ICUAllocationToDate" >= $${overlapParams.length + 2}::date)
+            OR
+            ("ICUAllocationToDate" IS NULL 
+             AND "ICUAllocationFromDate" <= $${overlapParams.length + 1}::date)
+          )
+        `);
+        overlapParams.push(ICUAllocationToDate);
+        overlapParams.push(ICUAllocationFromDate);
+      } else {
+        // Only from date is provided (to date is NULL - ongoing admission)
+        // Check if any existing admission overlaps with this ongoing admission
+        // Existing admission overlaps if:
+        // - Existing from <= New from AND (Existing to >= New from OR Existing to is NULL)
+        overlapConditions.push(`
+          (
+            ("ICUAllocationToDate" IS NOT NULL 
+             AND "ICUAllocationFromDate" <= $${overlapParams.length + 1}::date
+             AND "ICUAllocationToDate" >= $${overlapParams.length + 1}::date)
+            OR
+            ("ICUAllocationToDate" IS NULL 
+             AND "ICUAllocationFromDate" <= $${overlapParams.length + 1}::date)
+          )
+        `);
+        overlapParams.push(ICUAllocationFromDate);
+      }
+
+      overlapCheckQuery += overlapConditions.join(' OR ');
+      overlapCheckQuery += ')';
+
+      const overlapResult = await db.query(overlapCheckQuery, overlapParams);
+      const overlapCount = parseInt(overlapResult.rows[0].overlap_count, 10) || 0;
+
+      if (overlapCount > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `ICU bed is already occupied for the specified date range. There are ${overlapCount} existing occupied admission(s) that overlap with the requested dates.`,
+          details: {
+            ICUId: parseInt(ICUId, 10),
+            ICUAllocationFromDate: ICUAllocationFromDate,
+            ICUAllocationToDate: ICUAllocationToDate || 'NULL (ongoing)',
+            overlappingAdmissions: overlapCount
+          }
+        });
+      }
+    }
+
     const insertQuery = `
       INSERT INTO "PatientICUAdmission"
-        ("PatientICUAdmissionId", "PatientId", "PatientAppointmentId", "EmergencyBedSlotId", "ICUId",
-         "ICUPatientStatus", "ICUAllocationFromDate", "ICUAllocationToDate", "NumberOfDays",
+        ("PatientICUAdmissionId", "PatientId", "PatientAppointmentId", "EmergencyBedSlotId", "RoomAdmissionId", "ICUId",
+         "ICUPatientStatus", "ICUAdmissionStatus", "ICUAllocationFromDate", "ICUAllocationToDate", "NumberOfDays",
          "Diagnosis", "TreatementDetails", "PatientCondition", "ICUAllocationCreatedBy", "Status")
-      VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING *;
     `;
 
     const { rows } = await db.query(insertQuery, [
       patientICUAdmissionId,
-      parseInt(PatientId, 10),
+      PatientId, // UUID, not parsed as integer
       PatientAppointmentId ? parseInt(PatientAppointmentId, 10) : null,
       EmergencyBedSlotId ? parseInt(EmergencyBedSlotId, 10) : null,
+      RoomAdmissionId ? parseInt(RoomAdmissionId, 10) : null,
       parseInt(ICUId, 10),
       ICUPatientStatus || null,
+      ICUAdmissionStatus || 'Occupied',
       ICUAllocationFromDate || null,
       ICUAllocationToDate || null,
       NumberOfDays ? parseInt(NumberOfDays, 10) : null,
@@ -344,6 +446,7 @@ exports.updatePatientICUAdmission = async (req, res) => {
       EmergencyBedSlotId,
       ICUId,
       ICUPatientStatus,
+      ICUAdmissionStatus,
       ICUAllocationFromDate,
       ICUAllocationToDate,
       NumberOfDays,
@@ -424,6 +527,10 @@ exports.updatePatientICUAdmission = async (req, res) => {
       updates.push(`"ICUPatientStatus" = $${paramIndex++}`);
       params.push(ICUPatientStatus);
     }
+    if (ICUAdmissionStatus !== undefined) {
+      updates.push(`"ICUAdmissionStatus" = $${paramIndex++}`);
+      params.push(ICUAdmissionStatus);
+    }
     if (ICUAllocationFromDate !== undefined) {
       updates.push(`"ICUAllocationFromDate" = $${paramIndex++}`);
       params.push(ICUAllocationFromDate);
@@ -491,6 +598,89 @@ exports.updatePatientICUAdmission = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error updating patient ICU admission',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get count of total ICU beds and occupied ICU beds for a specific date
+ * Query parameter: ?date=YYYY-MM-DD (required)
+ * Returns:
+ * 1. Total ICU beds count (from ICU table where Status = 'Active')
+ * 2. Occupied ICU beds count (from PatientICUAdmission where date is between ICUAllocationFromDate and ICUAllocationToDate, and ICUAdmissionStatus = 'Occupied')
+ */
+exports.getICUBedsAndOccupiedCountByDate = async (req, res) => {
+  try {
+    const { date } = req.query;
+    
+    if (!date) {
+      return res.status(400).json({
+        success: false,
+        message: 'Date parameter is required. Please provide date in YYYY-MM-DD format (e.g., ?date=2025-12-03)',
+      });
+    }
+
+    // Validate date format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(date)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid date format. Please use YYYY-MM-DD format (e.g., 2025-12-03)',
+      });
+    }
+
+    // Query to get both counts
+    // For occupied beds: date should be between ICUAllocationFromDate and ICUAllocationToDate
+    // If ICUAllocationToDate is NULL, treat as still occupied (date >= ICUAllocationFromDate)
+    const query = `
+      SELECT 
+        (SELECT COUNT(*) FROM "ICU" WHERE "Status" = 'Active') AS total_icu_beds,
+        COUNT(DISTINCT pica."ICUId") FILTER (
+          WHERE pica."ICUAllocationFromDate" IS NOT NULL
+          AND (
+            (pica."ICUAllocationToDate" IS NOT NULL 
+             AND $1::date >= pica."ICUAllocationFromDate" 
+             AND $1::date <= pica."ICUAllocationToDate")
+            OR
+            (pica."ICUAllocationToDate" IS NULL 
+             AND $1::date >= pica."ICUAllocationFromDate")
+          )
+          AND pica."ICUAdmissionStatus" = 'Occupied'
+          AND pica."Status" = 'Active'
+        ) AS occupied_icu_beds
+      FROM "PatientICUAdmission" pica
+    `;
+
+    const { rows } = await db.query(query, [date]);
+
+    const totalICUBeds = parseInt(rows[0].total_icu_beds, 10) || 0;
+    const occupiedICUBeds = parseInt(rows[0].occupied_icu_beds, 10) || 0;
+
+    res.status(200).json({
+      success: true,
+      message: 'ICU beds and occupied count retrieved successfully',
+      date: date,
+      counts: {
+        totalICUBeds: totalICUBeds,
+        occupiedICUBeds: occupiedICUBeds,
+        availableICUBeds: totalICUBeds - occupiedICUBeds
+      },
+      data: {
+        date: date,
+        totalICUBeds: totalICUBeds,
+        occupiedICUBeds: occupiedICUBeds,
+        availableICUBeds: totalICUBeds - occupiedICUBeds,
+        criteria: {
+          totalBeds: 'ICU beds with Status = Active',
+          occupiedBeds: 'PatientICUAdmission records where date is between ICUAllocationFromDate and ICUAllocationToDate, ICUAdmissionStatus = Occupied, and Status = Active'
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching ICU beds and occupied count',
       error: error.message,
     });
   }
