@@ -61,7 +61,7 @@ exports.getAllRoomBeds = async (req, res) => {
     if (conditions.length > 0) {
       query += ' WHERE ' + conditions.join(' AND ');
     }
-    query += ' ORDER BY "BedNo" ASC';
+    query += ' ORDER BY "CreatedAt" DESC';
 
     const { rows } = await db.query(query, params);
     res.status(200).json({
@@ -85,7 +85,7 @@ exports.getRoomBedsById = async (req, res) => {
     if (isNaN(roomBedsId)) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Invalid RoomBedsId. Must be an integer.' 
+        message: 'Invalid RoomBedsId. Must be a valid integer.' 
       });
     }
     const { rows } = await db.query(
@@ -464,7 +464,7 @@ exports.updateRoomBeds = async (req, res) => {
       if (isNaN(roomBedsId)) {
         return res.status(400).json({ 
           success: false, 
-          message: 'Invalid RoomBedsId. Must be an integer.' 
+          message: 'Invalid RoomBedsId. Must be a valid integer.' 
         });
       }
       const existingBed = await db.query(
@@ -523,7 +523,7 @@ exports.updateRoomBeds = async (req, res) => {
     if (isNaN(roomBedsId)) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Invalid RoomBedsId. Must be an integer.' 
+        message: 'Invalid RoomBedsId. Must be a valid integer.' 
       });
     }
     params.push(roomBedsId);
@@ -575,7 +575,7 @@ exports.deleteRoomBeds = async (req, res) => {
     if (isNaN(roomBedsId)) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Invalid RoomBedsId. Must be an integer.' 
+        message: 'Invalid RoomBedsId. Must be a valid integer.' 
       });
     }
     const { rows } = await db.query(

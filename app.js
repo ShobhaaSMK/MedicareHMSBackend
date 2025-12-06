@@ -30,6 +30,7 @@ const billsRoutes = require('./routes/billsRoutes');
 const surgeryProcedureRoutes = require('./routes/surgeryProcedureRoutes');
 const auditLogRoutes = require('./routes/auditLogRoutes');
 const reportsRoutes = require('./routes/reportsRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
 const db = require('./db');
 
 const app = express();
@@ -76,6 +77,7 @@ app.use('/api/bills', billsRoutes);
 app.use('/api/surgery-procedures', surgeryProcedureRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Route not found' });

@@ -85,7 +85,7 @@ exports.getAllRoomAdmissions = async (req, res) => {
     if (roomBedsId) {
       const roomBedsIdInt = parseInt(roomBedsId, 10);
       if (isNaN(roomBedsIdInt)) {
-        return res.status(400).json({ success: false, message: 'Invalid roomBedsId. Must be an integer.' });
+        return res.status(400).json({ success: false, message: 'Invalid roomBedsId. Must be a valid integer.' });
       }
       conditions.push(`ra."RoomBedsId" = $${params.length + 1}`);
       params.push(roomBedsIdInt);
@@ -314,7 +314,8 @@ exports.createRoomAdmission = async (req, res) => {
       return res.status(400).json({ success: false, message: 'AdmittingDoctorId does not exist' });
     }
 
-    const roomBedsExists = await db.query('SELECT "RoomBedsId" FROM "RoomBeds" WHERE "RoomBedsId" = $1', [parseInt(RoomBedsId, 10)]);
+    const roomBedsIdInt = parseInt(RoomBedsId, 10);
+    const roomBedsExists = await db.query('SELECT "RoomBedsId" FROM "RoomBeds" WHERE "RoomBedsId" = $1', [roomBedsIdInt]);
     if (roomBedsExists.rows.length === 0) {
       return res.status(400).json({ success: false, message: 'RoomBedsId does not exist' });
     }
@@ -334,7 +335,11 @@ exports.createRoomAdmission = async (req, res) => {
     }
 
     if (ShiftedTo !== undefined && ShiftedTo !== null) {
-      const shiftedToExists = await db.query('SELECT "RoomBedsId" FROM "RoomBeds" WHERE "RoomBedsId" = $1', [parseInt(ShiftedTo, 10)]);
+      const shiftedToInt = parseInt(ShiftedTo, 10);
+      if (isNaN(shiftedToInt)) {
+        return res.status(400).json({ success: false, message: 'ShiftedTo must be a valid integer' });
+      }
+      const shiftedToExists = await db.query('SELECT "RoomBedsId" FROM "RoomBeds" WHERE "RoomBedsId" = $1', [shiftedToInt]);
       if (shiftedToExists.rows.length === 0) {
         return res.status(400).json({ success: false, message: 'ShiftedTo RoomBedsId does not exist' });
       }
@@ -390,7 +395,7 @@ exports.createRoomAdmission = async (req, res) => {
       CaseSheetDetails || null,
       CaseSheet || null,
       ShiftToAnotherRoom,
-      ShiftedTo || null,
+      ShiftedTo ? parseInt(ShiftedTo, 10) : null,
       ShiftedToDetails || null,
       ScheduleOT,
       OTAdmissionId || null,
@@ -484,7 +489,11 @@ exports.updateRoomAdmission = async (req, res) => {
     }
 
     if (RoomBedsId !== undefined && RoomBedsId !== null) {
-      const roomBedsExists = await db.query('SELECT "RoomBedsId" FROM "RoomBeds" WHERE "RoomBedsId" = $1', [parseInt(RoomBedsId, 10)]);
+      const roomBedsIdInt = parseInt(RoomBedsId, 10);
+      if (isNaN(roomBedsIdInt)) {
+        return res.status(400).json({ success: false, message: 'RoomBedsId must be a valid integer' });
+      }
+      const roomBedsExists = await db.query('SELECT "RoomBedsId" FROM "RoomBeds" WHERE "RoomBedsId" = $1', [roomBedsIdInt]);
       if (roomBedsExists.rows.length === 0) {
         return res.status(400).json({ success: false, message: 'RoomBedsId does not exist' });
       }
@@ -589,7 +598,7 @@ exports.updateRoomAdmission = async (req, res) => {
     }
     if (ShiftedTo !== undefined) {
       updates.push(`"ShiftedTo" = $${paramIndex++}`);
-      params.push(ShiftedTo || null);
+      params.push(ShiftedTo ? parseInt(ShiftedTo, 10) : null);
     }
     if (ShiftedToDetails !== undefined) {
       updates.push(`"ShiftedToDetails" = $${paramIndex++}`);

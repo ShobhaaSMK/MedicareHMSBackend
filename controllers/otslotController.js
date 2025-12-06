@@ -1,6 +1,6 @@
 const db = require('../db');
 
-const allowedStatus = ['Active', 'Inactive'];
+const allowedStatus = ['Active', 'InActive'];
 
 const mapOTSlotRow = (row) => ({
   OTSlotId: row.OTSlotId || row.otslotid,
@@ -17,32 +17,26 @@ const mapOTSlotRow = (row) => ({
 });
 
 /**
- * Generate OTSlotNo in format OTNo_01, OTNo_02, etc.
- * Example: If OTNo is "OT001", slots will be "OT001_01", "OT001_02", etc.
+ * Generate OTSlotNo as integer for the given OT
+ * Returns the next available slot number (1, 2, 3, etc.) for the specified OT
  */
 const generateOTSlotNo = async (otId) => {
-  // Get OTNo from OT table
-  const otResult = await db.query('SELECT "OTNo" FROM "OT" WHERE "OTId" = $1', [otId]);
+  // Verify OT exists
+  const otResult = await db.query('SELECT "OTId" FROM "OT" WHERE "OTId" = $1', [otId]);
   if (otResult.rows.length === 0) {
     throw new Error('OT not found');
   }
-  const otNo = otResult.rows[0].OTNo;
 
   // Find the highest slot number for this OT
-  // Pattern: OTNo_XX where XX is a number
-  const pattern = `${otNo}_%`;
   const query = `
-    SELECT COALESCE(MAX(CAST(SUBSTRING("OTSlotNo" FROM LENGTH($1) + 2) AS INT)), 0) + 1 AS next_seq
+    SELECT COALESCE(MAX("OTSlotNo"), 0) + 1 AS next_seq
     FROM "OTSlot"
-    WHERE "OTSlotNo" LIKE $2
-      AND SUBSTRING("OTSlotNo" FROM LENGTH($1) + 2) ~ '^[0-9]+$'
+    WHERE "OTId" = $1
   `;
-  const { rows } = await db.query(query, [otNo, pattern]);
+  const { rows } = await db.query(query, [otId]);
   const nextSeq = parseInt(rows[0].next_seq, 10) || 1;
 
-  // Format as OTNo_XX (2 digits with leading zeros)
-  const otSlotNo = `${otNo}_${String(nextSeq).padStart(2, '0')}`;
-  return otSlotNo;
+  return nextSeq;
 };
 
 exports.getAllOTSlots = async (req, res) => {
@@ -64,7 +58,7 @@ exports.getAllOTSlots = async (req, res) => {
       if (!allowedStatus.includes(status)) {
         return res.status(400).json({
           success: false,
-          message: 'Invalid status. Must be Active or Inactive.',
+          message: 'Invalid status. Must be Active or InActive.',
         });
       }
       conditions.push(`os."Status" = $${params.length + 1}`);
@@ -220,7 +214,7 @@ const validateOTSlotPayload = (body, requireAll = true) => {
   }
 
   if (body.Status && !allowedStatus.includes(body.Status)) {
-    errors.push('Status must be Active or Inactive');
+    errors.push('Status must be Active or InActive');
   }
 
   return errors;
@@ -248,22 +242,12 @@ exports.createOTSlot = async (req, res) => {
       return res.status(400).json({ success: false, message: 'OTId does not exist' });
     }
 
-    // Generate OTSlotNo
+    // Generate OTSlotNo (integer)
     let otSlotNo;
     try {
       otSlotNo = await generateOTSlotNo(otIdInt);
     } catch (error) {
       return res.status(400).json({ success: false, message: error.message });
-    }
-
-    // Check if OTSlotNo already exists (shouldn't happen, but just in case)
-    const existingSlot = await db.query(
-      'SELECT "OTSlotId" FROM "OTSlot" WHERE "OTSlotNo" = $1',
-      [otSlotNo]
-    );
-    if (existingSlot.rows.length > 0) {
-      // Retry with next number
-      otSlotNo = await generateOTSlotNo(otIdInt);
     }
 
     // Check for overlapping time slots for the same OT
@@ -403,7 +387,7 @@ exports.updateOTSlot = async (req, res) => {
       if (!allowedStatus.includes(Status)) {
         return res.status(400).json({
           success: false,
-          message: 'Status must be Active or Inactive',
+          message: 'Status must be Active or InActive',
         });
       }
       updates.push(`"Status" = $${paramIndex++}`);

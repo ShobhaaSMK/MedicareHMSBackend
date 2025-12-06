@@ -312,6 +312,7 @@ exports.updateICU = async (req, res) => {
       icuId,
     ];
 
+    console.log("***********updateQuery*******", updateQuery,updateParams);
     const { rows } = await db.query(updateQuery, updateParams);
 
     if (rows.length === 0) {

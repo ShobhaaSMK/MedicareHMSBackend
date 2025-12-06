@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS "ICU" (
     "ICUType" VARCHAR(100),
     "ICURoomNameNo" VARCHAR(100),
     "ICUDescription" TEXT,
-    "IsVentilatorAttached" VARCHAR(10) NOT NULL,
+    "IsVentilatorAttached" VARCHAR(10) NOT NULL CHECK ("IsVentilatorAttached" IN ('Yes', 'No')),
     "ICUStartTimeofDay" TIME,
     "ICUEndTimeofDay" TIME,
     "Status" VARCHAR(50) DEFAULT 'Active',
@@ -211,6 +211,26 @@ CREATE TABLE IF NOT EXISTS "OT" (
     "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
+
+-- OTSlot table
+CREATE TABLE IF NOT EXISTS "OTSlot" (
+    "OTSlotId" SERIAL PRIMARY KEY,
+    "OTId" INTEGER NOT NULL,
+    "OTSlotNo" INTEGER NOT NULL,
+    "SlotStartTime" TIME NOT NULL,
+    "SlotEndTime" TIME NOT NULL,
+    "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'InActive')),
+    "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY ("OTId") REFERENCES "OT"("OTId") ON DELETE RESTRICT,
+    UNIQUE ("OTId", "OTSlotNo")
+);
+
+-- Create indexes for OTSlot
+CREATE INDEX IF NOT EXISTS idx_otslot_otid ON "OTSlot"("OTId");
+CREATE INDEX IF NOT EXISTS idx_otslot_status ON "OTSlot"("Status");
+CREATE INDEX IF NOT EXISTS idx_otslot_slotstarttime ON "OTSlot"("SlotStartTime");
+CREATE INDEX IF NOT EXISTS idx_otslot_slotendtime ON "OTSlot"("SlotEndTime");
+CREATE INDEX IF NOT EXISTS idx_otslot_slottime ON "OTSlot"("OTId", "SlotStartTime", "SlotEndTime");
 
 CREATE TABLE IF NOT EXISTS "PatientAppointment" (
     "PatientAppointmentId" SERIAL PRIMARY KEY,

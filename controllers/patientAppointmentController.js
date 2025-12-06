@@ -606,6 +606,7 @@ exports.getTodayActiveAppointmentsCount = async (req, res) => {
     );
 
     const count = parseInt(rows[0].count, 10) || 0;
+   // const count = parseInt(rows[0].count, 10) || 10;
 
     res.status(200).json({
       success: true,
@@ -939,7 +940,8 @@ exports.getActiveTokensCount = async (req, res) => {
     // Build WHERE conditions
     const conditions = [
       'pa."Status" = \'Active\'',
-      '(pa."AppointmentStatus" = \'Waiting\' OR pa."AppointmentStatus" = \'Consulting\')'
+      //'(pa."AppointmentStatus" = \'Waiting\' OR pa."AppointmentStatus" = \'Consulting\')'
+      '(pa."AppointmentStatus" = \'Consulting\')'
     ];
     const params = [];
     
@@ -975,7 +977,7 @@ exports.getActiveTokensCount = async (req, res) => {
       FROM "PatientAppointment" pa
       ${whereClause}
     `;
-    
+    console.log("query *******************",query);
     const { rows } = await db.query(query, params);
     
     const count = parseInt(rows[0].ActiveTokensCount, 10) || 0;
