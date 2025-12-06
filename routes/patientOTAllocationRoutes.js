@@ -2,19 +2,6 @@ const express = require('express');
 const router = express.Router();
 const patientOTAllocationController = require('../controllers/patientOTAllocationController');
 
-/* GET /api/patient-ot-allocations/count/today-scheduled
-Response: {
-  success: Boolean,
-  message: String,
-  date: String (YYYY-MM-DD),
-  count: Number,
-  data: {
-    date: String (YYYY-MM-DD),
-    count: Number,
-    operationStatus: Array<String> // ["Scheduled", "In Progress"]
-  }
-} */
-router.get('/count/today-scheduled', patientOTAllocationController.getTodayOTScheduledCount);
 
 /* GET /api/patient-ot-allocations/count/today-scheduled-inprogress
 Response: {

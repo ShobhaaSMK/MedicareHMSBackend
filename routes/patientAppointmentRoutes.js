@@ -11,19 +11,6 @@ Response: {
 } */
 router.get('/count/today-active', patientAppointmentController.getTodayActiveAppointmentsCount);
 
-/* GET /api/patient-appointments/count/today-opd
-Response: {
-  success: Boolean,
-  message: String,
-  date: String (YYYY-MM-DD),
-  count: Number,
-  data: {
-    date: String (YYYY-MM-DD),
-    count: Number,
-    status: String
-  }
-} */
-router.get('/count/today-opd', patientAppointmentController.getTodayOPDPatientsCount);
 
 /* GET /api/patient-appointments/count/active
 Query params: ?date=String (YYYY-MM-DD) (optional, defaults to today)
@@ -91,18 +78,6 @@ Response: {
 } */
 router.get('/count/active-waiting-consulting', patientAppointmentController.getActiveWaitingOrConsultingCount);
 
-/* GET /api/patient-appointments/count/active-tokens
-Query params: ?appointmentDate=String (YYYY-MM-DD) (optional), ?doctorId=Number (optional)
-Response: {
-  success: Boolean,
-  filters: {
-    appointmentDate: String | null,
-    doctorId: Number | null
-  },
-  count: Number,
-  message: String
-} */
-router.get('/count/active-tokens', patientAppointmentController.getActiveTokensCount);
 
 /* GET /api/patient-appointments
 Query params: ?status=String (optional), ?appointmentStatus=String (optional), ?patientId=String UUID (optional), ?doctorId=Number (optional), ?appointmentDate=String (optional)

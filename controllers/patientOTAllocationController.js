@@ -868,44 +868,6 @@ exports.updatePatientOTAllocation = async (req, res) => {
   }
 };
 
-/**
- * Get count of today's OT scheduled records with OperationStatus = 'Scheduled' or 'In Progress'
- */
-exports.getTodayOTScheduledCount = async (req, res) => {
-  try {
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-    
-    // Compare OTAllocationDate with today's date
-    const query = `
-      SELECT COUNT(*) AS count
-      FROM "PatientOTAllocation"
-      WHERE "OTAllocationDate"::date = $1::date
-      AND ("OperationStatus" = 'Scheduled' OR "OperationStatus" = 'In Progress')
-    `;
-
-    const { rows } = await db.query(query, [today]);
-
-    const count = parseInt(rows[0].count, 10) || 0;
-
-    res.status(200).json({
-      success: true,
-      message: 'Today\'s OT scheduled count retrieved successfully',
-      date: today,
-      count: count,
-      data: {
-        date: today,
-        count: count,
-        operationStatus: ['Scheduled', 'In Progress']
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching today\'s OT scheduled count',
-      error: error.message,
-    });
-  }
-};
 
 /**
  * Get count of today's OT scheduled records (Scheduled or In Progress) and In Progress OTs count
