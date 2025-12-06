@@ -17,8 +17,29 @@ const mapOTRow = (row) => ({
 
 exports.getAllOTs = async (req, res) => {
   try {
-    const { status, otType } = req.query;
+    const { status, otType, page, limit } = req.query;
+    
+    // Parse pagination parameters with defaults
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 10;
+    const offset = (pageNum - 1) * limitNum;
+    
+    // Validate pagination parameters
+    if (pageNum < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Page must be a positive integer',
+      });
+    }
+    if (limitNum < 1 || limitNum > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Limit must be between 1 and 100',
+      });
+    }
+    
     let query = 'SELECT * FROM "OT"';
+    let countQuery = 'SELECT COUNT(*) as total FROM "OT"';
     const params = [];
     const conditions = [];
 
@@ -32,14 +53,29 @@ exports.getAllOTs = async (req, res) => {
     }
 
     if (conditions.length > 0) {
-      query += ' WHERE ' + conditions.join(' AND ');
+      const whereClause = ' WHERE ' + conditions.join(' AND ');
+      query += whereClause;
+      countQuery += whereClause;
     }
     query += ' ORDER BY "CreatedAt" DESC';
+    query += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    params.push(limitNum, offset);
 
+    // Get total count for pagination metadata
+    const countResult = await db.query(countQuery, params.slice(0, -2));
+    const totalCount = parseInt(countResult.rows[0].total, 10);
+    const totalPages = Math.ceil(totalCount / limitNum);
+
+    // Get paginated data
     const { rows } = await db.query(query, params);
+    
     res.status(200).json({
       success: true,
       count: rows.length,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: totalPages,
+      totalCount: totalCount,
       data: rows.map(mapOTRow),
     });
   } catch (error) {

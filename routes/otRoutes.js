@@ -3,10 +3,22 @@ const router = express.Router();
 const otController = require('../controllers/otController');
 
 /* GET /api/ot
-Query params: ?status=String (optional), ?otType=String (optional)
+Query params: 
+  ?status=String (optional) - Filter by status: "Active" | "InActive"
+  ?otType=String (optional) - Filter by operation theater type
+  ?page=Number (optional, defaults to 1) - Page number for pagination (must be >= 1)
+  ?limit=Number (optional, defaults to 10) - Number of items per page (must be between 1 and 100)
+Examples:
+  /api/ot?page=1&limit=10
+  /api/ot?page=2&limit=20&status=Active
+  /api/ot?page=1&limit=5&otType=Emergency
 Response: {
   success: Boolean,
-  count: Number,
+  count: Number, // Number of items in current page
+  page: Number, // Current page number
+  limit: Number, // Items per page
+  totalPages: Number, // Total number of pages
+  totalCount: Number, // Total number of items matching the query
   data: [{
     OTId: Number,
     OTNo: String,
