@@ -10,6 +10,7 @@ Response: {
   data: [{
     EmergencyBedId: Number,
     EmergencyBedNo: String,
+    EmergencyRoomNameNo: String | null,
     EmergencyRoomDescription: String | null,
     ChargesPerDay: Number | null,
     Status: String,
@@ -26,6 +27,7 @@ Response: {
   data: {
     EmergencyBedId: Number,
     EmergencyBedNo: String,
+    EmergencyRoomNameNo: String | null,
     EmergencyRoomDescription: String | null,
     ChargesPerDay: Number | null,
     Status: String,
@@ -42,6 +44,7 @@ Response: {
   data: {
     EmergencyBedId: Number,
     EmergencyBedNo: String,
+    EmergencyRoomNameNo: String | null,
     EmergencyRoomDescription: String | null,
     ChargesPerDay: Number | null,
     Status: String,
@@ -53,6 +56,7 @@ router.get('/:id', emergencyBedController.getEmergencyBedById);
 
 /* POST /api/emergency-beds
 Request: {
+  EmergencyRoomNameNo: String (optional), // character varying 100
   EmergencyRoomDescription: String (optional),
   ChargesPerDay: Number (optional),
   Status: String (optional), // "Active" | "Inactive", defaults to "Active"
@@ -64,6 +68,7 @@ Response: {
   data: {
     EmergencyBedId: Number,
     EmergencyBedNo: String,
+    EmergencyRoomNameNo: String | null,
     EmergencyRoomDescription: String | null,
     ChargesPerDay: Number | null,
     Status: String,
@@ -76,6 +81,7 @@ router.post('/', emergencyBedController.createEmergencyBed);
 /* PUT /api/emergency-beds/:id
 Params: id (Number)
 Request: {
+  EmergencyRoomNameNo: String (optional), // character varying 100
   EmergencyRoomDescription: String (optional),
   ChargesPerDay: Number (optional),
   Status: String (optional), // "Active" | "Inactive"
@@ -87,6 +93,7 @@ Response: {
   data: {
     EmergencyBedId: Number,
     EmergencyBedNo: String,
+    EmergencyRoomNameNo: String | null,
     EmergencyRoomDescription: String | null,
     ChargesPerDay: Number | null,
     Status: String,
@@ -104,6 +111,7 @@ Response: {
   data: {
     EmergencyBedId: Number,
     EmergencyBedNo: String,
+    EmergencyRoomNameNo: String | null,
     EmergencyRoomDescription: String | null,
     ChargesPerDay: Number | null,
     Status: String,
