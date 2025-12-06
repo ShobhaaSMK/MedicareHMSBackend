@@ -1,6 +1,10 @@
-# Ignore the node_modules directory
 node_modules/
-build/
 *.bak
 *.orig
 *.example
+*.log
+.DS_Store
+dist/
+build/
+coverage/
+.nyc_output/

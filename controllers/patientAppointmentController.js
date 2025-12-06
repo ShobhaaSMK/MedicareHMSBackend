@@ -856,47 +856,6 @@ exports.getAppointmentCountsByStatus = async (req, res) => {
   }
 };
 
-/**
- * Get count of active tokens
- * Returns count of appointments where AppointmentStatus is 'Waiting' or 'Consulting' and Status is 'Active'
- * Optional query parameters:
- * - appointmentDate: Filter by specific date (YYYY-MM-DD)
- * - doctorId: Filter by specific doctor (UserId)
- */
-exports.getTodayOPDPatientsCount = async (req, res) => {
-  try {
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-    
-    const query = `
-      SELECT COUNT(*) AS count
-      FROM "PatientAppointment"
-      WHERE "AppointmentDate" = $1::date
-      AND "Status" = 'Active'
-    `;
-
-    const { rows } = await db.query(query, [today]);
-
-    const count = parseInt(rows[0].count, 10);
-
-    res.status(200).json({
-      success: true,
-      message: 'Today\'s OPD patients count retrieved successfully',
-      date: today,
-      count: count,
-      data: {
-        date: today,
-        count: count,
-        status: 'Active'
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching today\'s OPD patients count',
-      error: error.message,
-    });
-  }
-};
 
 /**
  * Get count of PatientAppointment records with Status = 'Active' and AppointmentStatus IN ('Waiting', 'Consulting')
@@ -933,70 +892,4 @@ exports.getActiveWaitingOrConsultingCount = async (req, res) => {
   }
 };
 
-exports.getActiveTokensCount = async (req, res) => {
-  try {
-    const { appointmentDate, doctorId } = req.query;
-    
-    // Build WHERE conditions
-    const conditions = [
-      'pa."Status" = \'Active\'',
-      //'(pa."AppointmentStatus" = \'Waiting\' OR pa."AppointmentStatus" = \'Consulting\')'
-      '(pa."AppointmentStatus" = \'Consulting\')'
-    ];
-    const params = [];
-    
-    if (appointmentDate) {
-      // Validate date format
-      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-      if (!dateRegex.test(appointmentDate)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid date format. Please use YYYY-MM-DD format (e.g., 2025-11-30)',
-        });
-      }
-      conditions.push(`pa."AppointmentDate" = $${params.length + 1}`);
-      params.push(appointmentDate);
-    }
-    
-    if (doctorId) {
-      const doctorIdInt = parseInt(doctorId, 10);
-      if (isNaN(doctorIdInt)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid doctorId. Must be a valid integer.',
-        });
-      }
-      conditions.push(`pa."DoctorId" = $${params.length + 1}`);
-      params.push(doctorIdInt);
-    }
-    
-    const whereClause = 'WHERE ' + conditions.join(' AND ');
-    
-    const query = `
-      SELECT COUNT(*) AS "ActiveTokensCount"
-      FROM "PatientAppointment" pa
-      ${whereClause}
-    `;
-    console.log("query *******************",query);
-    const { rows } = await db.query(query, params);
-    
-    const count = parseInt(rows[0].ActiveTokensCount, 10) || 0;
-    
-    res.status(200).json({
-      success: true,
-      filters: {
-        appointmentDate: appointmentDate || null,
-        doctorId: doctorId || null,
-      },
-      count: count,
-      message: `Found ${count} active token(s) with status Waiting or Consulting`,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching active tokens count',
-      error: error.message,
-    });
-  }
-};
 

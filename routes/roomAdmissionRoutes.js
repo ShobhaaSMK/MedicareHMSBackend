@@ -2,20 +2,6 @@ const express = require('express');
 const router = express.Router();
 const roomAdmissionController = require('../controllers/roomAdmissionController');
 
-/* GET /api/room-admissions/count/today-ipd
-Response: {
-  success: Boolean,
-  message: String,
-  date: String (YYYY-MM-DD),
-  count: Number,
-  data: {
-    date: String (YYYY-MM-DD),
-    count: Number,
-    status: String, // "Active"
-    admissionStatus: String // "Not Discharged"
-  }
-} */
-router.get('/count/today-ipd', roomAdmissionController.getTodayIPDAdmissionsCount);
 
 /* GET /api/room-admissions
 Query Parameters:
