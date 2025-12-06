@@ -12,22 +12,22 @@ if ($listening) {
     $pids = @()
     foreach ($line in $listening) {
         $parts = $line.ToString().Trim() -split '\s+'
-        $pid = $parts[-1]
-        if ($pid -match '^\d+$') {
-            if ($pids -notcontains $pid) {
-                $pids += $pid
+        $processId = $parts[-1]
+        if ($processId -match '^\d+$') {
+            if ($pids -notcontains $processId) {
+                $pids += $processId
             }
         }
     }
 
     if ($pids.Count -gt 0) {
-        foreach ($pid in $pids) {
-            Write-Host "Killing process $pid using port $Port..." -ForegroundColor Red
-            $result = taskkill /PID $pid /F 2>&1
+        foreach ($processId in $pids) {
+            Write-Host "Killing process $processId using port $Port..." -ForegroundColor Red
+            $result = taskkill /PID $processId /F 2>&1
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "[SUCCESS] Killed process $pid" -ForegroundColor Green
+                Write-Host "[SUCCESS] Killed process $processId" -ForegroundColor Green
             } else {
-                Write-Host "[FAILED] Could not kill process $pid" -ForegroundColor Red
+                Write-Host "[FAILED] Could not kill process $processId" -ForegroundColor Red
             }
         }
     } else {
