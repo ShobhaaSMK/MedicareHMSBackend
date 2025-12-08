@@ -713,3 +713,389 @@ exports.deleteRoomAdmission = async (req, res) => {
   }
 };
 
+/**
+ * Get Room Capacity Overview data - RoomType wise with Total Beds, Occupied, Available, and Percentage
+ * Returns capacity overview for each room type
+ */
+exports.getRoomCapacityOverview = async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        rb."RoomType",
+        COUNT(DISTINCT rb."RoomBedsId") AS "TotalBeds",
+        COUNT(DISTINCT CASE 
+          WHEN ra."Status" = 'Active' 
+          AND ra."AdmissionStatus" != 'Discharged' 
+          THEN ra."RoomBedsId" 
+        END) AS "Occupied"
+      FROM "RoomBeds" rb
+      LEFT JOIN "RoomAdmission" ra ON rb."RoomBedsId" = ra."RoomBedsId"
+      WHERE rb."Status" = 'Active'
+      GROUP BY rb."RoomType"
+      ORDER BY 
+        CASE rb."RoomType"
+          WHEN 'Special' THEN 1
+          WHEN 'Special Shared' THEN 2
+          WHEN 'Regular' THEN 3
+          ELSE 4
+        END
+    `;
+
+    const { rows } = await db.query(query);
+
+    // Format data with calculations
+    const capacityData = rows.map(row => {
+      const roomType = row.RoomType || row.roomtype;
+      const totalBeds = parseInt(row.TotalBeds || row.totalbeds, 10) || 0;
+      const occupied = parseInt(row.Occupied || row.occupied, 10) || 0;
+      const available = totalBeds - occupied;
+      const percentage = totalBeds > 0 ? Math.round((occupied / totalBeds) * 100) : 0;
+
+      // Format room type name for display
+      let roomTypeName = roomType;
+      if (roomType === 'Regular') {
+        roomTypeName = 'Regular Ward';
+      } else if (roomType === 'Special') {
+        roomTypeName = 'Special Room';
+      } else if (roomType === 'Special Shared') {
+        roomTypeName = 'Special Shared Room';
+      }
+
+      return {
+        roomType: roomTypeName,
+        percentage: percentage,
+        totalBeds: totalBeds,
+        occupied: occupied,
+        available: available
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Room Capacity Overview data retrieved successfully',
+      data: capacityData
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching Room Capacity Overview data',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get RoomAdmissions Data with detailed information
+ * Returns Bed No, Patient Name, Age/Gender, Room Type, Admission Date, Admitted By, Diagnosis, AdmissionStatus
+ * Optional query parameters:
+ * - status: Filter by status (Active, Inactive)
+ * - admissionStatus: Filter by admission status (Active, Surgery Scheduled, Moved to ICU, Discharged)
+ */
+exports.getRoomAdmissionsData = async (req, res) => {
+  try {
+    const { status, admissionStatus } = req.query;
+    
+    let query = `
+      SELECT 
+        ra."RoomAdmissionId",
+        rb."BedNo",
+        p."PatientName",
+        p."Age",
+        p."Gender",
+        rb."RoomType",
+        ra."RoomAllocationDate" AS "AdmissionDate",
+        u."UserName" AS "AdmittedBy",
+        ra."CaseSheetDetails" AS "Diagnosis",
+        ra."AdmissionStatus",
+        ra."Status",
+        ra."ScheduleOT"
+      FROM "RoomAdmission" ra
+      INNER JOIN "RoomBeds" rb ON ra."RoomBedsId" = rb."RoomBedsId"
+      INNER JOIN "PatientRegistration" p ON ra."PatientId" = p."PatientId"
+      LEFT JOIN "Users" u ON ra."AllocatedBy" = u."UserId"
+    `;
+    
+    const params = [];
+    const conditions = [];
+    
+    if (status) {
+      conditions.push(`ra."Status" = $${params.length + 1}`);
+      params.push(status);
+    }
+    
+    if (admissionStatus) {
+      conditions.push(`ra."AdmissionStatus" = $${params.length + 1}`);
+      params.push(admissionStatus);
+    }
+    
+    // Default: Only show active admissions that are not discharged
+    if (!status && !admissionStatus) {
+      conditions.push(`ra."Status" = $${params.length + 1}`);
+      params.push('Active');
+      conditions.push(`ra."AdmissionStatus" != $${params.length + 1}`);
+      params.push('Discharged');
+    }
+    
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+    
+    query += ' ORDER BY ra."RoomAllocationDate" DESC';
+    console.log("query****************", query);
+    const { rows } = await db.query(query, params);
+    
+    // Format data with separate Age and Gender fields
+    const formattedData = rows.map(row => {
+      const age = row.Age || row.age || null;
+      const gender = row.Gender || row.gender || null;
+      
+      return {
+        roomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
+        bedNo: row.BedNo || row.bedno || null,
+        patientName: row.PatientName || row.patientname || null,
+        age: age !== null ? parseInt(age, 10) : null,
+        gender: gender || null,
+        roomType: row.RoomType || row.roomtype || null,
+        admissionDate: row.AdmissionDate || row.admissiondate || null,
+        admittedBy: row.AdmittedBy || row.admittedby || null,
+        diagnosis: row.Diagnosis || row.diagnosis || null,
+        admissionStatus: row.AdmissionStatus || row.admissionstatus || null,
+        status: row.Status || row.status || null,
+        scheduleOT: row.ScheduleOT || row.scheduleot || null
+      };
+    });
+    
+    res.status(200).json({
+      success: true,
+      message: 'RoomAdmissions data retrieved successfully',
+      count: formattedData.length,
+      data: formattedData
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching RoomAdmissions data',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get RoomAdmissions Data by ID
+ * Returns detailed room admission data for a specific roomAdmissionId
+ * Path parameter: roomAdmissionId (required)
+ */
+exports.getRoomAdmissionsDataById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const roomAdmissionId = parseInt(id, 10);
+    
+    if (isNaN(roomAdmissionId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid RoomAdmissionId. Must be an integer.'
+      });
+    }
+    
+    const query = `
+      SELECT 
+        ra."RoomAdmissionId",
+        rb."BedNo",
+        p."PatientName",
+        p."Age",
+        p."Gender",
+        rb."RoomType",
+        ra."RoomAllocationDate" AS "AdmissionDate",
+        u."UserName" AS "AdmittedBy",
+        ra."CaseSheetDetails" AS "Diagnosis",
+        ra."AdmissionStatus",
+        ra."Status",
+        ra."ScheduleOT"
+      FROM "RoomAdmission" ra
+      INNER JOIN "RoomBeds" rb ON ra."RoomBedsId" = rb."RoomBedsId"
+      INNER JOIN "PatientRegistration" p ON ra."PatientId" = p."PatientId"
+      LEFT JOIN "Users" u ON ra."AllocatedBy" = u."UserId"
+      WHERE ra."RoomAdmissionId" = $1
+    `;
+    
+    const { rows } = await db.query(query, [roomAdmissionId]);
+    
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: `Room admission with ID ${roomAdmissionId} not found`
+      });
+    }
+    
+    // Format data with separate Age and Gender fields
+    const row = rows[0];
+    const age = row.Age || row.age || null;
+    const gender = row.Gender || row.gender || null;
+    
+    const formattedData = {
+      roomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
+      bedNo: row.BedNo || row.bedno || null,
+      patientName: row.PatientName || row.patientname || null,
+      age: age !== null ? parseInt(age, 10) : null,
+      gender: gender || null,
+      roomType: row.RoomType || row.roomtype || null,
+      admissionDate: row.AdmissionDate || row.admissiondate || null,
+      admittedBy: row.AdmittedBy || row.admittedby || null,
+      diagnosis: row.Diagnosis || row.diagnosis || null,
+      admissionStatus: row.AdmissionStatus || row.admissionstatus || null,
+      status: row.Status || row.status || null,
+      scheduleOT: row.ScheduleOT || row.scheduleot || null
+    };
+    
+    res.status(200).json({
+      success: true,
+      message: 'RoomAdmission data retrieved successfully',
+      data: formattedData
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching RoomAdmission data',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get Total Admissions Count
+ * Returns count of all admissions from RoomAdmission table
+ * Optional query parameter: ?status=String (to filter by status)
+ */
+exports.getTotalAdmissionsCount = async (req, res) => {
+  try {
+    const { status } = req.query;
+    
+    let query = 'SELECT COUNT(*) AS count FROM "RoomAdmission"';
+    const params = [];
+    
+    if (status) {
+      query += ' WHERE "Status" = $1';
+      params.push(status);
+    }
+    
+    const { rows } = await db.query(query, params);
+    
+    const count = parseInt(rows[0].count, 10) || 0;
+    
+    res.status(200).json({
+      success: true,
+      message: 'Total admissions count retrieved successfully',
+      count: count,
+      data: {
+        count: count,
+        status: status || 'All'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching total admissions count',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get Room Admissions Dashboard Metrics
+ * Returns comprehensive metrics including:
+ * - Total Admissions
+ * - Active patients
+ * - Bed Occupancy (occupied/total)
+ * - Occupied beds
+ * - Available Beds
+ * - Ready for admission (same as available beds)
+ * - Average Stay duration in days
+ */
+exports.getRoomAdmissionsDashboardMetrics = async (req, res) => {
+  try {
+    const query = `
+      WITH bed_counts AS (
+        SELECT 
+          COUNT(DISTINCT rb."RoomBedsId") FILTER (WHERE rb."Status" = 'Active') AS total_beds,
+          COUNT(DISTINCT ra."RoomBedsId") FILTER (
+            WHERE ra."Status" = 'Active' 
+            AND ra."AdmissionStatus" != 'Discharged'
+          ) AS occupied_beds
+        FROM "RoomBeds" rb
+        LEFT JOIN "RoomAdmission" ra ON rb."RoomBedsId" = ra."RoomBedsId"
+        WHERE rb."Status" = 'Active'
+      ),
+      admission_counts AS (
+        SELECT 
+          COUNT(*) AS total_admissions,
+          COUNT(*) FILTER (
+            WHERE "Status" = 'Active' 
+            AND "AdmissionStatus" != 'Discharged'
+          ) AS active_patients
+        FROM "RoomAdmission"
+      ),
+      avg_stay AS (
+        SELECT 
+          COALESCE(
+            AVG(
+              CASE 
+                WHEN "RoomVacantDate" IS NOT NULL THEN
+                  EXTRACT(EPOCH FROM ("RoomVacantDate" - "RoomAllocationDate")) / 86400.0
+                ELSE
+                  EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - "RoomAllocationDate")) / 86400.0
+              END
+            ),
+            0
+          ) AS avg_stay_days
+        FROM "RoomAdmission"
+        WHERE "Status" = 'Active'
+      )
+      SELECT 
+        ac.total_admissions,
+        ac.active_patients,
+        bc.total_beds,
+        bc.occupied_beds,
+        (bc.total_beds - bc.occupied_beds) AS available_beds,
+        ast.avg_stay_days
+      FROM bed_counts bc
+      CROSS JOIN admission_counts ac
+      CROSS JOIN avg_stay ast
+    `;
+
+    const { rows } = await db.query(query);
+
+    const totalAdmissions = parseInt(rows[0].total_admissions || rows[0].totaladmissions, 10) || 0;
+    const activePatients = parseInt(rows[0].active_patients || rows[0].activepatients, 10) || 0;
+    const totalBeds = parseInt(rows[0].total_beds || rows[0].totalbeds, 10) || 0;
+    const occupiedBeds = parseInt(rows[0].occupied_beds || rows[0].occupiedbeds, 10) || 0;
+    const availableBeds = parseInt(rows[0].available_beds || rows[0].availablebeds, 10) || 0;
+    const avgStayDays = parseFloat(rows[0].avg_stay_days || rows[0].avgstaydays || 0) || 0;
+
+    // Format bed occupancy as "occupied/total"
+    const bedOccupancy = totalBeds > 0 ? `${occupiedBeds}/${totalBeds}` : '0/0';
+
+    // Round average stay to 1 decimal place
+    const avgStay = Math.round(avgStayDays * 10) / 10;
+
+    res.status(200).json({
+      success: true,
+      message: 'Room Admissions Dashboard metrics retrieved successfully',
+      data: {
+        totalAdmissions: totalAdmissions,
+        activePatients: activePatients,
+        bedOccupancy: bedOccupancy,
+        occupiedBeds: occupiedBeds,
+        availableBeds: availableBeds,
+        readyForAdmission: availableBeds,
+        avgStay: avgStay
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching Room Admissions Dashboard metrics',
+      error: error.message,
+    });
+  }
+};
+

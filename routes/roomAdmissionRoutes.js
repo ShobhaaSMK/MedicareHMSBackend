@@ -47,6 +47,98 @@ Response: {
 } */
 router.get('/', roomAdmissionController.getAllRoomAdmissions);
 
+/* GET /api/room-admissions/capacity-overview
+Response: {
+  success: Boolean,
+  message: String,
+  data: [{
+    roomType: String, // "Regular Ward", "Special Room", "Special Shared Room"
+    percentage: Number, // 0-100
+    totalBeds: Number,
+    occupied: Number,
+    available: Number
+  }]
+} */
+router.get('/capacity-overview', roomAdmissionController.getRoomCapacityOverview);
+
+/* GET /api/room-admissions/count/total
+Query Parameters:
+  - status: String (optional), // "Active" | "Inactive"
+Response: {
+  success: Boolean,
+  message: String,
+  count: Number,
+  data: {
+    count: Number,
+    status: String // "All" | "Active" | "Inactive"
+  }
+} */
+router.get('/count/total', roomAdmissionController.getTotalAdmissionsCount);
+
+/* GET /api/room-admissions/dashboard-metrics
+Response: {
+  success: Boolean,
+  message: String,
+  data: {
+    totalAdmissions: Number,
+    activePatients: Number,
+    bedOccupancy: String, // "9/39" format (occupied/total)
+    occupiedBeds: Number,
+    availableBeds: Number,
+    readyForAdmission: Number,
+    avgStay: Number // Average stay duration in days (rounded to 1 decimal)
+  }
+} */
+router.get('/dashboard-metrics', roomAdmissionController.getRoomAdmissionsDashboardMetrics);
+
+/* GET /api/room-admissions/data
+Query Parameters:
+  - status: String (optional), // "Active" | "Inactive"
+  - admissionStatus: String (optional), // "Active" | "Surgery Scheduled" | "Moved to ICU" | "Discharged"
+Response: {
+  success: Boolean,
+  message: String,
+  count: Number,
+  data: [{
+    roomAdmissionId: Number,
+    bedNo: String,
+    patientName: String,
+    age: Number | null,
+    gender: String | null,
+    roomType: String,
+    admissionDate: Date,
+    admittedBy: String,
+    diagnosis: String | null,
+    admissionStatus: String,
+    status: String, // "Active" | "Inactive"
+    scheduleOT: String // "Yes" | "No"
+  }]
+} */
+router.get('/data', roomAdmissionController.getRoomAdmissionsData);
+
+/* GET /api/room-admissions/data/:id
+Path Parameters:
+  - id: Number (required), // RoomAdmissionId
+Response: {
+  success: Boolean,
+  message: String,
+  data: {
+    roomAdmissionId: Number,
+    bedNo: String,
+    patientName: String,
+    age: Number | null,
+    gender: String | null,
+    roomType: String,
+    admissionDate: Date,
+    admittedBy: String,
+    diagnosis: String | null,
+    admissionStatus: String,
+    status: String, // "Active" | "Inactive"
+    scheduleOT: String // "Yes" | "No"
+  }
+} */
+router.get('/data/:id', roomAdmissionController.getRoomAdmissionsDataById);
+
 /* GET /api/room-admissions/:id
 Path Parameters:
   - id: Number, (required)

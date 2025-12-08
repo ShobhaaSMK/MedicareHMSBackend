@@ -167,6 +167,50 @@ Response: {
 } */
 router.get('/with-details', patientLabTestController.getPatientLabTestsWithDetails);
 
+/* GET /api/patient-lab-tests/with-details/room-admission/:id
+Path Parameters:
+  - id: Number (required), // RoomAdmissionId
+Response: {
+  success: Boolean,
+  message: String,
+  count: Number,
+  roomAdmissionId: Number,
+  data: Array<{
+    PatientLabTestsId: Number,
+    PatientType: String,
+    AppointmentId: Number | null,
+    TestStatus: String,
+    LabTestDone: String,
+    Priority: String | null,
+    ReportsUrl: String | null,
+    TestDoneDateTime: Date | null,
+    Status: String,
+    CreatedDate: Date,
+    Patient: {
+      PatientId: String (UUID),
+      PatientName: String,
+      PatientNo: String,
+      PhoneNo: String | null,
+      Gender: String | null,
+      Age: Number | null,
+      Address: String | null
+    },
+    LabTest: {
+      LabTestId: Number,
+      TestName: String,
+      DisplayTestId: String,
+      TestCategory: String | null,
+      Description: String | null,
+      Charges: Number | null
+    },
+    Appointment: Object | null,
+    RoomAdmission: Object | null,
+    Bill: Object | null,
+    CreatedBy: Object | null
+  }>
+} */
+router.get('/with-details/room-admission/:id', patientLabTestController.getPatientLabTestsWithDetailsById);
+
 /* GET /api/patient-lab-tests
 Query Parameters:
   - status: String | null, // "Active" | "Inactive"

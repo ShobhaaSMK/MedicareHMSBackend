@@ -91,6 +91,55 @@ exports.getPatientAdmitDoctorVisitsById = async (req, res) => {
   }
 };
 
+/**
+ * Get Patient Admit Doctor Visits by RoomAdmissionId
+ * Returns all doctor visits for a specific room admission
+ * Path parameter: roomAdmissionId (required)
+ */
+exports.getPatientAdmitDoctorVisitsByRoomAdmissionId = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const roomAdmissionId = parseInt(id, 10);
+    
+    if (isNaN(roomAdmissionId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid RoomAdmissionId. Must be an integer.'
+      });
+    }
+    
+    const query = `
+      SELECT * 
+      FROM "PatientAdmitDoctorVisits" 
+      WHERE "RoomAdmissionId" = $1
+      ORDER BY "DoctorVisitedDateTime" DESC
+    `;
+    
+    const { rows } = await db.query(query, [roomAdmissionId]);
+    
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: `No doctor visits found for RoomAdmissionId ${roomAdmissionId}`
+      });
+    }
+    
+    res.status(200).json({
+      success: true,
+      message: `Doctor visits retrieved successfully for RoomAdmissionId ${roomAdmissionId}`,
+      count: rows.length,
+      roomAdmissionId: roomAdmissionId,
+      data: rows.map(mapPatientAdmitDoctorVisitsRow)
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching patient admit doctor visits by RoomAdmissionId',
+      error: error.message,
+    });
+  }
+};
+
 const validatePatientAdmitDoctorVisitsPayload = (body, requireAll = true) => {
   const errors = [];
 

@@ -28,6 +28,30 @@ Response: {
 } */
 router.get('/', patientAdmitNurseVisitsController.getAllPatientAdmitNurseVisits);
 
+/* GET /api/patient-admit-nurse-visits/room-admission/:id
+Path Parameters:
+  - id: Number (required), // RoomAdmissionId
+Response: {
+  success: Boolean,
+  message: String,
+  count: Number,
+  roomAdmissionId: Number,
+  data: Array<{
+    PatientAdmitNurseVisitsId: String (UUID),
+    RoomAdmissionId: Number,
+    PatientId: String (UUID),
+    VisitDate: Date,
+    VisitTime: String (HH:MM:SS) | null,
+    PatientStatus: String | null, // "Stable" | "NotStable"
+    SupervisionDetails: String | null,
+    Remarks: String | null,
+    Status: String, // "Active" | "Inactive"
+    RoomVisitsCreatedAt: Date,
+    RoomVisitsCreatedBy: Number | null
+  }>
+} */
+router.get('/room-admission/:id', patientAdmitNurseVisitsController.getPatientNurseVisitsByRoomAdmissionId);
+
 /* GET /api/patient-admit-nurse-visits/:id
 Path Parameters:
   - id: String (UUID), (required)
