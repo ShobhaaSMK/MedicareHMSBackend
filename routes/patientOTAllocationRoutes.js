@@ -107,6 +107,7 @@ Response: {
     PatientAppointmentId: Number | null,
     EmergencyBedSlotId: Number | null,
     OTId: Number,
+    OTSlotId: Number | null,
     SurgeryId: Number | null,
     LeadSurgeonId: Number,
     AssistantDoctorId: Number | null,
@@ -136,7 +137,11 @@ Response: {
     AnaesthetistName: String | null,
     NurseName: String | null,
     BillNo: String | null,
-    CreatedByName: String | null
+    CreatedByName: String | null,
+    OTSlotNo: Number | null,
+    SlotStartTime: String (HH:MM:SS) | null,
+    SlotEndTime: String (HH:MM:SS) | null,
+    OTSlotStatus: String | null // "Active" | "InActive"
   }
 } */
 router.get('/:id', patientOTAllocationController.getPatientOTAllocationById);

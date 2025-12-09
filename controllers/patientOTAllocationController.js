@@ -9,6 +9,7 @@ const mapPatientOTAllocationRow = (row) => ({
   PatientAppointmentId: row.PatientAppointmentId || row.patientappointmentid || null,
   EmergencyBedSlotId: row.EmergencyBedSlotId || row.emergencybedslotid || null,
   OTId: row.OTId || row.otid,
+  OTSlotId: row.OTSlotId || row.otslotid || null,
   SurgeryId: row.SurgeryId || row.surgeryid || null,
   LeadSurgeonId: row.LeadSurgeonId || row.leadsurgeonid,
   AssistantDoctorId: row.AssistantDoctorId || row.assistantdoctorid || null,
@@ -40,6 +41,11 @@ const mapPatientOTAllocationRow = (row) => ({
   NurseName: row.NurseName || row.nursename || null,
   BillNo: row.BillNo || row.billno || null,
   CreatedByName: row.CreatedByName || row.createdbyname || null,
+  // OT Slot fields
+  OTSlotNo: row.OTSlotNo || row.otslotno || null,
+  SlotStartTime: row.SlotStartTime || row.slotstarttime || null,
+  SlotEndTime: row.SlotEndTime || row.slotendtime || null,
+  OTSlotStatus: row.OTSlotStatus || row.otslotstatus || null,
 });
 
 exports.getAllPatientOTAllocations = async (req, res) => {
@@ -156,10 +162,15 @@ exports.getPatientOTAllocationById = async (req, res) => {
         an."UserName" AS "AnaesthetistName",
         n."UserName" AS "NurseName",
         b."BillNo",
-        u."UserName" AS "CreatedByName"
+        u."UserName" AS "CreatedByName",
+        os."OTSlotNo",
+        os."SlotStartTime",
+        os."SlotEndTime",
+        os."Status" AS "OTSlotStatus"
       FROM "PatientOTAllocation" pta
       LEFT JOIN "PatientRegistration" p ON pta."PatientId" = p."PatientId"
       LEFT JOIN "OT" ot ON pta."OTId" = ot."OTId"
+      LEFT JOIN "OTSlot" os ON pta."OTSlotId" = os."OTSlotId"
       LEFT JOIN "SurgeryProcedure" sp ON pta."SurgeryId" = sp."SurgeryId"
       LEFT JOIN "Users" ls ON pta."LeadSurgeonId" = ls."UserId"
       LEFT JOIN "Users" ad ON pta."AssistantDoctorId" = ad."UserId"
@@ -572,11 +583,11 @@ exports.updatePatientOTAllocation = async (req, res) => {
 
     // Validate foreign key existence if provided
     if (PatientId !== undefined && PatientId !== null) {
-      const patientIdInt = parseInt(PatientId, 10);
-      if (isNaN(patientIdInt)) {
-        return res.status(400).json({ success: false, message: 'PatientId must be a valid integer' });
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(PatientId)) {
+        return res.status(400).json({ success: false, message: 'PatientId must be a valid UUID' });
       }
-      const patientExists = await db.query('SELECT "PatientId" FROM "PatientRegistration" WHERE "PatientId" = $1', [patientIdInt]);
+      const patientExists = await db.query('SELECT "PatientId" FROM "PatientRegistration" WHERE "PatientId" = $1::uuid', [PatientId]);
       if (patientExists.rows.length === 0) {
         return res.status(400).json({ success: false, message: 'PatientId does not exist' });
       }
@@ -704,8 +715,8 @@ exports.updatePatientOTAllocation = async (req, res) => {
     let paramIndex = 1;
 
     if (PatientId !== undefined) {
-      updates.push(`"PatientId" = $${paramIndex++}`);
-      params.push(PatientId !== null ? parseInt(PatientId, 10) : null); // INTEGER
+      updates.push(`"PatientId" = $${paramIndex++}::uuid`);
+      params.push(PatientId !== null ? PatientId : null); // UUID
     }
     if (PatientAppointmentId !== undefined) {
       updates.push(`"PatientAppointmentId" = $${paramIndex++}`);
