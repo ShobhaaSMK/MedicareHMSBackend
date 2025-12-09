@@ -469,7 +469,7 @@ exports.updateRoomAdmission = async (req, res) => {
     if (isNaN(roomAdmissionId)) {
       return res.status(400).json({ 
         success: false, 
-        message: 'Invalid RoomAdmissionId. Must be an integer.' 
+        message: `Invalid RoomAdmissionId. Must be an integer. Received: ${id} (type: ${typeof id})`
       });
     }
 
@@ -893,7 +893,7 @@ exports.getRoomAdmissionsDataById = async (req, res) => {
     if (isNaN(roomAdmissionId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid RoomAdmissionId. Must be an integer.'
+        message: `Invalid RoomAdmissionId. Must be an integer. Received: ${id} (type: ${typeof id})`
       });
     }
     
