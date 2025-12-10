@@ -3,14 +3,14 @@ const router = express.Router();
 const icuDoctorVisitsController = require('../controllers/icuDoctorVisitsController');
 
 /* GET /api/icu-doctor-visits
-Query params: ?status=String (optional), ?patientId=Number (optional), ?doctorId=Number (optional), ?icuAdmissionId=String UUID (optional), ?fromDate=String (optional), ?toDate=String (optional)
+Query params: ?status=String (optional), ?patientId=String UUID (optional), ?doctorId=Number (optional), ?icuAdmissionId=String UUID (optional), ?fromDate=String (optional), ?toDate=String (optional)
 Response: {
   success: Boolean,
   count: Number,
   data: [{
     ICUDoctorVisitsId: String (UUID),
     ICUAdmissionId: String (UUID),
-    PatientId: Number,
+    PatientId: String (UUID),
     DoctorId: Number,
     DoctorVisitedDateTime: Date,
     VisitsDetails: String | null,
@@ -27,6 +27,33 @@ Response: {
 } */
 router.get('/', icuDoctorVisitsController.getAllICUDoctorVisits);
 
+/* GET /api/icu-doctor-visits/icu-admission/:icuAdmissionId
+Path Parameters:
+  - icuAdmissionId: String (UUID), (required)
+Response: {
+  success: Boolean,
+  count: Number,
+  icuAdmissionId: String (UUID),
+  data: Array<{
+    ICUDoctorVisitsId: String (UUID),
+    ICUAdmissionId: String (UUID),
+    PatientId: String (UUID),
+    DoctorId: Number,
+    DoctorVisitedDateTime: Date,
+    VisitsDetails: String | null,
+    PatientCondition: String | null,
+    Status: String,
+    VisitCreatedBy: Number | null,
+    VisitCreatedAt: Date,
+    PatientName: String | null,
+    PatientNo: String | null,
+    DoctorName: String | null,
+    ICUNo: String | null,
+    CreatedByName: String | null
+  }>
+} */
+router.get('/icu-admission/:icuAdmissionId', icuDoctorVisitsController.getICUDoctorVisitsByICUAdmissionId);
+
 /* GET /api/icu-doctor-visits/:id
 Params: id (String - UUID)
 Response: {
@@ -34,7 +61,7 @@ Response: {
   data: {
     ICUDoctorVisitsId: String (UUID),
     ICUAdmissionId: String (UUID),
-    PatientId: Number,
+    PatientId: String (UUID),
     DoctorId: Number,
     DoctorVisitedDateTime: Date,
     VisitsDetails: String | null,
@@ -54,7 +81,7 @@ router.get('/:id', icuDoctorVisitsController.getICUDoctorVisitsById);
 /* POST /api/icu-doctor-visits
 Request: {
   ICUAdmissionId: String UUID (required),
-  PatientId: Number (required),
+  PatientId: String UUID (required),
   DoctorId: Number (required),
   DoctorVisitedDateTime: String (required), // ISO format (YYYY-MM-DD HH:MM:SS or YYYY-MM-DDTHH:MM:SS)
   VisitsDetails: String (optional),
@@ -68,7 +95,7 @@ Response: {
   data: {
     ICUDoctorVisitsId: String (UUID),
     ICUAdmissionId: String (UUID),
-    PatientId: Number,
+    PatientId: String (UUID),
     DoctorId: Number,
     DoctorVisitedDateTime: Date,
     VisitsDetails: String | null,
@@ -89,7 +116,7 @@ router.post('/', icuDoctorVisitsController.createICUDoctorVisits);
 Params: id (String - UUID)
 Request: {
   ICUAdmissionId: String UUID (optional),
-  PatientId: Number (optional),
+  PatientId: String UUID (optional),
   DoctorId: Number (optional),
   DoctorVisitedDateTime: String (optional), // ISO format (YYYY-MM-DD HH:MM:SS or YYYY-MM-DDTHH:MM:SS)
   VisitsDetails: String (optional),
@@ -103,7 +130,7 @@ Response: {
   data: {
     ICUDoctorVisitsId: String (UUID),
     ICUAdmissionId: String (UUID),
-    PatientId: Number,
+    PatientId: String (UUID),
     DoctorId: Number,
     DoctorVisitedDateTime: Date,
     VisitsDetails: String | null,
@@ -128,7 +155,7 @@ Response: {
   data: {
     ICUDoctorVisitsId: String (UUID),
     ICUAdmissionId: String (UUID),
-    PatientId: Number,
+    PatientId: String (UUID),
     DoctorId: Number,
     DoctorVisitedDateTime: Date,
     VisitsDetails: String | null,

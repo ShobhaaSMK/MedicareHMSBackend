@@ -27,6 +27,33 @@ Response: {
 } */
 router.get('/', icuNurseVisitVitalsController.getAllICUNurseVisitVitals);
 
+/* GET /api/icu-nurse-visit-vitals/icu-nurse-visits/:icuNurseVisitsId
+Path Parameters:
+  - icuNurseVisitsId: String (UUID), (required)
+Response: {
+  success: Boolean,
+  count: Number,
+  icuNurseVisitsId: String (UUID),
+  data: Array<{
+    ICUNurseVisitVitalsId: String (UUID),
+    ICUNurseVisitsId: String (UUID),
+    PatientId: Number,
+    RecordedDateTime: Date,
+    HeartRate: Number | null,
+    BloodPressure: String | null,
+    Temperature: Number | null,
+    O2Saturation: Number | null,
+    RespiratoryRate: Number | null,
+    PulseRate: Number | null,
+    VitalsStatus: String | null,
+    VitalsRemarks: String | null,
+    VitalsCreatedBy: Number | null,
+    VitalsCreatedAt: Date,
+    Status: String
+  }>
+} */
+router.get('/icu-nurse-visits/:icuNurseVisitsId', icuNurseVisitVitalsController.getICUNurseVisitVitalsByICUNurseVisitsId);
+
 /* GET /api/icu-nurse-visit-vitals/:id
 Params: id (String - UUID)
 Response: {

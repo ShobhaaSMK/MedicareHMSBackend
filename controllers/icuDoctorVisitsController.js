@@ -30,7 +30,7 @@ exports.getAllICUDoctorVisits = async (req, res) => {
         idv.*,
         p."PatientName", p."PatientNo",
         d."UserName" AS "DoctorName",
-        icu."ICUNo",
+        icu."ICUBedNo" AS "ICUNo",
         u."UserName" AS "CreatedByName"
       FROM "ICUDoctorVisits" idv
       LEFT JOIN "PatientRegistration" p ON idv."PatientId" = p."PatientId"
@@ -47,10 +47,10 @@ exports.getAllICUDoctorVisits = async (req, res) => {
       params.push(status);
     }
     if (patientId) {
-      const patientIdInt = parseInt(patientId, 10);
-      if (!isNaN(patientIdInt)) {
-        conditions.push(`idv."PatientId" = $${params.length + 1}`);
-        params.push(patientIdInt);
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidRegex.test(patientId)) {
+        conditions.push(`idv."PatientId" = $${params.length + 1}::uuid`);
+        params.push(patientId);
       }
     }
     if (doctorId) {
@@ -102,7 +102,7 @@ exports.getICUDoctorVisitsById = async (req, res) => {
         idv.*,
         p."PatientName", p."PatientNo",
         d."UserName" AS "DoctorName",
-        icu."ICUNo",
+        icu."ICUBedNo" AS "ICUNo",
         u."UserName" AS "CreatedByName"
       FROM "ICUDoctorVisits" idv
       LEFT JOIN "PatientRegistration" p ON idv."PatientId" = p."PatientId"
@@ -129,6 +129,54 @@ exports.getICUDoctorVisitsById = async (req, res) => {
   }
 };
 
+exports.getICUDoctorVisitsByICUAdmissionId = async (req, res) => {
+  try {
+    const { icuAdmissionId } = req.params;
+    
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(icuAdmissionId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid ICUAdmissionId. Must be a valid UUID.',
+      });
+    }
+
+    const { rows } = await db.query(
+      `
+      SELECT 
+        idv.*,
+        p."PatientName", p."PatientNo",
+        d."UserName" AS "DoctorName",
+        icu."ICUBedNo" AS "ICUNo",
+        u."UserName" AS "CreatedByName"
+      FROM "ICUDoctorVisits" idv
+      LEFT JOIN "PatientRegistration" p ON idv."PatientId" = p."PatientId"
+      LEFT JOIN "Users" d ON idv."DoctorId" = d."UserId"
+      LEFT JOIN "PatientICUAdmission" pica ON idv."ICUAdmissionId" = pica."PatientICUAdmissionId"
+      LEFT JOIN "ICU" icu ON pica."ICUId" = icu."ICUId"
+      LEFT JOIN "Users" u ON idv."VisitCreatedBy" = u."UserId"
+      WHERE idv."ICUAdmissionId" = $1::uuid
+      ORDER BY idv."DoctorVisitedDateTime" DESC
+      `,
+      [icuAdmissionId]
+    );
+
+    res.status(200).json({
+      success: true,
+      count: rows.length,
+      icuAdmissionId: icuAdmissionId,
+      data: rows.map(mapICUDoctorVisitsRow),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching ICU doctor visits by ICU admission ID',
+      error: error.message,
+    });
+  }
+};
+
 const validateICUDoctorVisitsPayload = (body, requireAll = true) => {
   const errors = [];
 
@@ -143,9 +191,13 @@ const validateICUDoctorVisitsPayload = (body, requireAll = true) => {
     errors.push('PatientId is required');
   }
   if (body.PatientId !== undefined && body.PatientId !== null) {
-    const patientIdInt = parseInt(body.PatientId, 10);
-    if (isNaN(patientIdInt)) {
-      errors.push('PatientId must be a valid integer');
+    if (typeof body.PatientId !== 'string') {
+      errors.push('PatientId must be a valid UUID string');
+    } else {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(body.PatientId)) {
+        errors.push('PatientId must be a valid UUID');
+      }
     }
   }
 
@@ -219,7 +271,7 @@ exports.createICUDoctorVisits = async (req, res) => {
       return res.status(400).json({ success: false, message: 'ICUAdmissionId does not exist' });
     }
 
-    const patientExists = await db.query('SELECT "PatientId" FROM "PatientRegistration" WHERE "PatientId" = $1', [parseInt(PatientId, 10)]);
+    const patientExists = await db.query('SELECT "PatientId" FROM "PatientRegistration" WHERE "PatientId" = $1::uuid', [PatientId]);
     if (patientExists.rows.length === 0) {
       return res.status(400).json({ success: false, message: 'PatientId does not exist' });
     }
@@ -246,14 +298,14 @@ exports.createICUDoctorVisits = async (req, res) => {
       INSERT INTO "ICUDoctorVisits"
         ("ICUDoctorVisitsId", "ICUAdmissionId", "PatientId", "DoctorId", "DoctorVisitedDateTime",
          "VisitsDetails", "PatientCondition", "Status", "VisitCreatedBy")
-      VALUES ($1::uuid, $2::uuid, $3, $4, $5::timestamp, $6, $7, $8, $9)
+      VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::timestamp, $6, $7, $8, $9)
       RETURNING *;
     `;
 
     const { rows } = await db.query(insertQuery, [
       icuDoctorVisitsId,
       ICUAdmissionId,
-      parseInt(PatientId, 10),
+      PatientId,
       parseInt(DoctorId, 10),
       DoctorVisitedDateTime,
       VisitsDetails || null,
@@ -311,7 +363,7 @@ exports.updateICUDoctorVisits = async (req, res) => {
     }
 
     if (PatientId !== undefined && PatientId !== null) {
-      const patientExists = await db.query('SELECT "PatientId" FROM "PatientRegistration" WHERE "PatientId" = $1', [parseInt(PatientId, 10)]);
+      const patientExists = await db.query('SELECT "PatientId" FROM "PatientRegistration" WHERE "PatientId" = $1::uuid', [PatientId]);
       if (patientExists.rows.length === 0) {
         return res.status(400).json({ success: false, message: 'PatientId does not exist' });
       }
@@ -349,8 +401,8 @@ exports.updateICUDoctorVisits = async (req, res) => {
       params.push(ICUAdmissionId);
     }
     if (PatientId !== undefined) {
-      updates.push(`"PatientId" = $${paramIndex++}`);
-      params.push(PatientId !== null ? parseInt(PatientId, 10) : null);
+      updates.push(`"PatientId" = $${paramIndex++}::uuid`);
+      params.push(PatientId !== null ? PatientId : null);
     }
     if (DoctorId !== undefined) {
       updates.push(`"DoctorId" = $${paramIndex++}`);

@@ -208,6 +208,59 @@ Response: {
 } */
 router.get('/icu-beds-details/:id', patientICUAdmissionController.getICUBedsDetailsMgmtByICUId);
 
+/* GET /api/patient-icu-admissions/icu-beds-details/bed/:icuBedId
+Path Parameters:
+  - icuBedId: String (required), // ICUBedNo
+Response: {
+  success: Boolean,
+  message: String,
+  data: {
+    // ICU Bed Details
+    icuId: Number,
+    icuBedNo: String,
+    icuType: String | null,
+    icuRoomNameNo: String | null,
+    icuDescription: String | null,
+    isVentilatorAttached: String, // "Yes" | "No"
+    icuStartTimeofDay: Time | null,
+    icuEndTimeofDay: Time | null,
+    icuStatus: String, // "Active" | "Inactive"
+    icuCreatedBy: Number | null,
+    icuCreatedAt: Date | null,
+    // Array of all admission records for this bed
+    admissions: Array<{
+      patientICUAdmissionId: String (UUID) | null,
+      patientId: String (UUID) | null,
+      patientAppointmentId: Number | null,
+      emergencyBedSlotId: Number | null,
+      roomAdmissionId: Number | null,
+      icuPatientStatus: String | null,
+      icuAdmissionStatus: String | null,
+      icuAllocationFromDate: Date | null,
+      icuAllocationToDate: Date | null,
+      numberOfDays: Number | null,
+      diagnosis: String | null,
+      treatementDetails: String | null,
+      patientCondition: String | null,
+      icuAllocationCreatedBy: Number | null,
+      icuAllocationCreatedAt: Date | null,
+      admissionStatus: String | null,
+      onVentilator: String | null,
+      patientName: String | null,
+      patientNo: String | null,
+      patientAge: Number | null,
+      patientGender: String | null,
+      patientPhoneNo: String | null,
+      appointmentTokenNo: Number | null,
+      appointmentDate: Date | null,
+      appointmentTime: Time | null,
+      createdByName: String | null
+    }>,
+    admissionCount: Number
+  }
+} */
+router.get('/icu-beds-details/bed/:icuBedId', patientICUAdmissionController.getICUBedsDetailsMgmtByICUBedId);
+
 /* GET /api/patient-icu-admissions/icu-management/:id
 Path Parameters:
   - id: String (UUID), (required) // PatientICUAdmissionId

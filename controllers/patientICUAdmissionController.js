@@ -1303,6 +1303,154 @@ exports.getICUBedsDetailsMgmtByICUId = async (req, res) => {
       admissions: admissions,
       admissionCount: admissions.length
     };
+console.log('formattedDataformattedDataformattedDataformattedData',formattedData);
+    res.status(200).json({
+      success: true,
+      message: 'ICU bed details with admission records retrieved successfully',
+      data: formattedData
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching ICU bed details with admission records',
+      error: error.message,
+    });
+  }
+};
+
+exports.getICUBedsDetailsMgmtByICUBedId = async (req, res) => {
+  try {
+    const { icuBedId } = req.params;
+    
+    if (!icuBedId || typeof icuBedId !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid ICUBedId. Must be a valid string (ICUBedNo).'
+      });
+    }
+
+    // Query to get ICU bed details with all admission records for the specific ICUBedNo
+    const query = `
+      SELECT 
+        -- ICU Bed Details
+        icu."ICUId",
+        icu."ICUBedNo",
+        icu."ICUType",
+        icu."ICURoomNameNo",
+        icu."ICUDescription",
+        icu."IsVentilatorAttached",
+        icu."ICUStartTimeofDay",
+        icu."ICUEndTimeofDay",
+        icu."Status" AS "ICUStatus",
+        icu."CreatedBy" AS "ICUCreatedBy",
+        icu."CreatedAt" AS "ICUCreatedAt",
+        -- PatientICUAdmission Details
+        pica."PatientICUAdmissionId",
+        pica."PatientId",
+        pica."PatientAppointmentId",
+        pica."EmergencyBedSlotId",
+        pica."RoomAdmissionId",
+        pica."ICUPatientStatus",
+        pica."ICUAdmissionStatus",
+        pica."ICUAllocationFromDate",
+        pica."ICUAllocationToDate",
+        pica."NumberOfDays",
+        pica."Diagnosis",
+        pica."TreatementDetails",
+        pica."PatientCondition",
+        pica."ICUAllocationCreatedBy",
+        pica."ICUAllocationCreatedAt",
+        pica."Status" AS "AdmissionStatus",
+        pica."OnVentilator",
+        -- Patient Details
+        p."PatientName",
+        p."PatientNo",
+        p."Age",
+        p."Gender",
+        p."PhoneNo" AS "PatientPhoneNo",
+        -- Appointment Details
+        pa."TokenNo" AS "AppointmentTokenNo",
+        pa."AppointmentDate",
+        pa."AppointmentTime",
+        -- Created By User Details
+        u."UserName" AS "CreatedByName"
+      FROM "ICU" icu
+      LEFT JOIN "PatientICUAdmission" pica ON icu."ICUId" = pica."ICUId"
+      LEFT JOIN "PatientRegistration" p ON pica."PatientId" = p."PatientId"
+      LEFT JOIN "PatientAppointment" pa ON pica."PatientAppointmentId" = pa."PatientAppointmentId"
+      LEFT JOIN "Users" u ON pica."ICUAllocationCreatedBy" = u."UserId"
+      WHERE icu."ICUBedNo" = $1
+      ORDER BY pica."ICUAllocationFromDate" DESC NULLS LAST
+    `;
+
+    const { rows } = await db.query(query, [icuBedId]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: `ICU bed with bed number "${icuBedId}" not found`
+      });
+    }
+
+    // Get ICU bed details from first row
+    const firstRow = rows[0];
+    const icuBedDetails = {
+      icuId: firstRow.ICUId || firstRow.icuid || null,
+      icuBedNo: firstRow.ICUBedNo || firstRow.icubedno || null,
+      icuType: firstRow.ICUType || firstRow.icutype || null,
+      icuRoomNameNo: firstRow.ICURoomNameNo || firstRow.icuroomnameno || null,
+      icuDescription: firstRow.ICUDescription || firstRow.icudescription || null,
+      isVentilatorAttached: firstRow.IsVentilatorAttached || firstRow.isventilatorattached || null,
+      icuStartTimeofDay: firstRow.ICUStartTimeofDay || firstRow.icustarttimeofday || null,
+      icuEndTimeofDay: firstRow.ICUEndTimeofDay || firstRow.icuendtimeofday || null,
+      icuStatus: firstRow.ICUStatus || firstRow.icustatus || null,
+      icuCreatedBy: firstRow.ICUCreatedBy || firstRow.icucreatedby || null,
+      icuCreatedAt: firstRow.ICUCreatedAt || firstRow.icucreatedat || null
+    };
+
+    // Collect all admission records
+    const admissions = [];
+    rows.forEach(row => {
+      if (row.PatientICUAdmissionId || row.patienticuadmissionid) {
+        admissions.push({
+          patientICUAdmissionId: row.PatientICUAdmissionId || row.patienticuadmissionid || null,
+          patientId: row.PatientId || row.patientid || null,
+          patientAppointmentId: row.PatientAppointmentId || row.patientappointmentid || null,
+          emergencyBedSlotId: row.EmergencyBedSlotId || row.emergencybedslotid || null,
+          roomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
+          icuPatientStatus: row.ICUPatientStatus || row.icupatientstatus || null,
+          icuAdmissionStatus: row.ICUAdmissionStatus || row.icuadmissionstatus || null,
+          icuAllocationFromDate: row.ICUAllocationFromDate || row.icuallocationfromdate || null,
+          icuAllocationToDate: row.ICUAllocationToDate || row.icuallocationtodate || null,
+          numberOfDays: row.NumberOfDays || row.numberofdays || null,
+          diagnosis: row.Diagnosis || row.diagnosis || null,
+          treatementDetails: row.TreatementDetails || row.treatementdetails || null,
+          patientCondition: row.PatientCondition || row.patientcondition || null,
+          icuAllocationCreatedBy: row.ICUAllocationCreatedBy || row.icuallocationcreatedby || null,
+          icuAllocationCreatedAt: row.ICUAllocationCreatedAt || row.icuallocationcreatedat || null,
+          admissionStatus: row.AdmissionStatus || row.admissionstatus || null,
+          onVentilator: row.OnVentilator || row.onventilator || null,
+          // Patient Details
+          patientName: row.PatientName || row.patientname || null,
+          patientNo: row.PatientNo || row.patientno || null,
+          patientAge: row.Age || row.age || null,
+          patientGender: row.Gender || row.gender || null,
+          patientPhoneNo: row.PatientPhoneNo || row.patientphoneno || null,
+          // Appointment Details
+          appointmentTokenNo: row.AppointmentTokenNo || row.appointmenttokenno || null,
+          appointmentDate: row.AppointmentDate || row.appointmentdate || null,
+          appointmentTime: row.AppointmentTime || row.appointmenttime || null,
+          // Created By
+          createdByName: row.CreatedByName || row.createdbyname || null
+        });
+      }
+    });
+
+    const formattedData = {
+      ...icuBedDetails,
+      admissions: admissions,
+      admissionCount: admissions.length
+    };
 
     res.status(200).json({
       success: true,

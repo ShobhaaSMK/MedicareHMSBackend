@@ -96,6 +96,43 @@ exports.getICUNurseVisitVitalsById = async (req, res) => {
   }
 };
 
+exports.getICUNurseVisitVitalsByICUNurseVisitsId = async (req, res) => {
+  try {
+    const { icuNurseVisitsId } = req.params;
+    
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(icuNurseVisitsId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid ICUNurseVisitsId. Must be a valid UUID.',
+      });
+    }
+
+    const { rows } = await db.query(
+      `
+      SELECT * FROM "ICUNurseVisitVitals"
+      WHERE "ICUNurseVisitsId" = $1::uuid
+      ORDER BY "RecordedDateTime" DESC
+      `,
+      [icuNurseVisitsId]
+    );
+
+    res.status(200).json({
+      success: true,
+      count: rows.length,
+      icuNurseVisitsId: icuNurseVisitsId,
+      data: rows.map(mapICUNurseVisitVitalsRow),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching ICU nurse visit vitals by ICU nurse visits ID',
+      error: error.message,
+    });
+  }
+};
+
 const validateICUNurseVisitVitalsPayload = (body, requireAll = true) => {
   const errors = [];
 

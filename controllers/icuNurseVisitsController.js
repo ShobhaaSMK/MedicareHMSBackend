@@ -30,7 +30,7 @@ exports.getAllICUNurseVisits = async (req, res) => {
         inv.*,
         p."PatientName", p."PatientNo",
         n."UserName" AS "NurseName",
-        icu."ICUNo",
+        icu."ICUBedNo" AS "ICUNo",
         u."UserName" AS "CreatedByName"
       FROM "ICUNurseVisits" inv
       LEFT JOIN "PatientRegistration" p ON inv."PatientId" = p."PatientId"
@@ -47,10 +47,10 @@ exports.getAllICUNurseVisits = async (req, res) => {
       params.push(status);
     }
     if (patientId) {
-      const patientIdInt = parseInt(patientId, 10);
-      if (!isNaN(patientIdInt)) {
-        conditions.push(`inv."PatientId" = $${params.length + 1}`);
-        params.push(patientIdInt);
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidRegex.test(patientId)) {
+        conditions.push(`inv."PatientId" = $${params.length + 1}::uuid`);
+        params.push(patientId);
       }
     }
     if (nurseId) {
@@ -102,7 +102,7 @@ exports.getICUNurseVisitsById = async (req, res) => {
         inv.*,
         p."PatientName", p."PatientNo",
         n."UserName" AS "NurseName",
-        icu."ICUNo",
+        icu."ICUBedNo" AS "ICUNo",
         u."UserName" AS "CreatedByName"
       FROM "ICUNurseVisits" inv
       LEFT JOIN "PatientRegistration" p ON inv."PatientId" = p."PatientId"
@@ -129,6 +129,54 @@ exports.getICUNurseVisitsById = async (req, res) => {
   }
 };
 
+exports.getICUNurseVisitsByICUAdmissionId = async (req, res) => {
+  try {
+    const { icuAdmissionId } = req.params;
+    
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(icuAdmissionId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid ICUAdmissionId. Must be a valid UUID.',
+      });
+    }
+
+    const { rows } = await db.query(
+      `
+      SELECT 
+        inv.*,
+        p."PatientName", p."PatientNo",
+        n."UserName" AS "NurseName",
+        icu."ICUBedNo" AS "ICUNo",
+        u."UserName" AS "CreatedByName"
+      FROM "ICUNurseVisits" inv
+      LEFT JOIN "PatientRegistration" p ON inv."PatientId" = p."PatientId"
+      LEFT JOIN "Users" n ON inv."NurseId" = n."UserId"
+      LEFT JOIN "PatientICUAdmission" pica ON inv."ICUAdmissionId" = pica."PatientICUAdmissionId"
+      LEFT JOIN "ICU" icu ON pica."ICUId" = icu."ICUId"
+      LEFT JOIN "Users" u ON inv."VisitCreatedBy" = u."UserId"
+      WHERE inv."ICUAdmissionId" = $1::uuid
+      ORDER BY inv."NurseVisitedDateTime" DESC
+      `,
+      [icuAdmissionId]
+    );
+
+    res.status(200).json({
+      success: true,
+      count: rows.length,
+      icuAdmissionId: icuAdmissionId,
+      data: rows.map(mapICUNurseVisitsRow),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching ICU nurse visits by ICU admission ID',
+      error: error.message,
+    });
+  }
+};
+
 const validateICUNurseVisitsPayload = (body, requireAll = true) => {
   const errors = [];
 
@@ -143,9 +191,13 @@ const validateICUNurseVisitsPayload = (body, requireAll = true) => {
     errors.push('PatientId is required');
   }
   if (body.PatientId !== undefined && body.PatientId !== null) {
-    const patientIdInt = parseInt(body.PatientId, 10);
-    if (isNaN(patientIdInt)) {
-      errors.push('PatientId must be a valid integer');
+    if (typeof body.PatientId !== 'string') {
+      errors.push('PatientId must be a valid UUID string');
+    } else {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(body.PatientId)) {
+        errors.push('PatientId must be a valid UUID');
+      }
     }
   }
 
@@ -219,7 +271,16 @@ exports.createICUNurseVisits = async (req, res) => {
       return res.status(400).json({ success: false, message: 'ICUAdmissionId does not exist' });
     }
 
-    const patientExists = await db.query('SELECT "PatientId" FROM "PatientRegistration" WHERE "PatientId" = $1', [parseInt(PatientId, 10)]);
+    // Validate UUID formats
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(ICUAdmissionId)) {
+      return res.status(400).json({ success: false, message: 'ICUAdmissionId must be a valid UUID format' });
+    }
+    if (!uuidRegex.test(PatientId)) {
+      return res.status(400).json({ success: false, message: 'PatientId must be a valid UUID format' });
+    }
+
+    const patientExists = await db.query('SELECT "PatientId" FROM "PatientRegistration" WHERE "PatientId" = $1::uuid', [PatientId]);
     if (patientExists.rows.length === 0) {
       return res.status(400).json({ success: false, message: 'PatientId does not exist' });
     }
@@ -246,14 +307,14 @@ exports.createICUNurseVisits = async (req, res) => {
       INSERT INTO "ICUNurseVisits"
         ("ICUNurseVisitsId", "ICUAdmissionId", "PatientId", "NurseId", "NurseVisitedDateTime",
          "NurseVisitsDetails", "PatientCondition", "Status", "VisitCreatedBy")
-      VALUES ($1::uuid, $2::uuid, $3, $4, $5::timestamp, $6, $7, $8, $9)
+      VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::timestamp, $6, $7, $8, $9)
       RETURNING *;
     `;
 
     const { rows } = await db.query(insertQuery, [
       icuNurseVisitsId,
       ICUAdmissionId,
-      parseInt(PatientId, 10),
+      PatientId,
       parseInt(NurseId, 10),
       NurseVisitedDateTime,
       NurseVisitsDetails || null,
@@ -268,17 +329,47 @@ exports.createICUNurseVisits = async (req, res) => {
       data: mapICUNurseVisitsRow(rows[0]),
     });
   } catch (error) {
+    console.error('Error creating ICU nurse visit:', error);
+    console.error('Error details:', {
+      code: error.code,
+      message: error.message,
+      detail: error.detail,
+      constraint: error.constraint,
+    });
+    
     if (error.code === '23503') {
       return res.status(400).json({
         success: false,
         message: 'Invalid foreign key reference. Please ensure all referenced IDs exist.',
         error: error.message,
+        detail: error.detail,
       });
     }
+    
+    if (error.code === '23502') {
+      return res.status(400).json({
+        success: false,
+        message: 'Required field is missing (NOT NULL constraint violation).',
+        error: error.message,
+        detail: error.detail,
+      });
+    }
+    
+    if (error.code === '22P02') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid data type. Please check that all UUIDs and integers are in the correct format.',
+        error: error.message,
+        detail: error.detail,
+      });
+    }
+    
     res.status(500).json({
       success: false,
       message: 'Error creating ICU nurse visit',
       error: error.message,
+      detail: error.detail || null,
+      code: error.code || null,
     });
   }
 };
@@ -311,7 +402,7 @@ exports.updateICUNurseVisits = async (req, res) => {
     }
 
     if (PatientId !== undefined && PatientId !== null) {
-      const patientExists = await db.query('SELECT "PatientId" FROM "PatientRegistration" WHERE "PatientId" = $1', [parseInt(PatientId, 10)]);
+      const patientExists = await db.query('SELECT "PatientId" FROM "PatientRegistration" WHERE "PatientId" = $1::uuid', [PatientId]);
       if (patientExists.rows.length === 0) {
         return res.status(400).json({ success: false, message: 'PatientId does not exist' });
       }
@@ -349,8 +440,8 @@ exports.updateICUNurseVisits = async (req, res) => {
       params.push(ICUAdmissionId);
     }
     if (PatientId !== undefined) {
-      updates.push(`"PatientId" = $${paramIndex++}`);
-      params.push(PatientId !== null ? parseInt(PatientId, 10) : null);
+      updates.push(`"PatientId" = $${paramIndex++}::uuid`);
+      params.push(PatientId !== null ? PatientId : null);
     }
     if (NurseId !== undefined) {
       updates.push(`"NurseId" = $${paramIndex++}`);
