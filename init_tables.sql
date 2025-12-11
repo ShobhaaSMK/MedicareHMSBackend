@@ -379,7 +379,8 @@ CREATE TABLE IF NOT EXISTS "PatientLabTest" (
     "RoomAdmissionId" INTEGER,
     "EmergencyBedSlotId" INTEGER,
     "BillId" INTEGER,
-    "Priority" VARCHAR(50),
+    "OrderedByDoctorId" INTEGER,
+    "Priority" VARCHAR(50) CHECK ("Priority" IN ('Normal', 'Urgent')),
     "LabTestDone" VARCHAR(10) DEFAULT 'No',
     "ReportsUrl" TEXT,
     "TestStatus" VARCHAR(50) CHECK ("TestStatus" IN ('Pending', 'InProgress', 'Completed')),
@@ -392,7 +393,8 @@ CREATE TABLE IF NOT EXISTS "PatientLabTest" (
     FOREIGN KEY ("AppointmentId") REFERENCES "PatientAppointment"("PatientAppointmentId") ON DELETE SET NULL,
     FOREIGN KEY ("RoomAdmissionId") REFERENCES "RoomAdmission"("RoomAdmissionId") ON DELETE SET NULL,
     FOREIGN KEY ("EmergencyBedSlotId") REFERENCES "EmergencyBedSlot"("EmergencyBedSlotId") ON DELETE SET NULL,
-    FOREIGN KEY ("BillId") REFERENCES "Bills"("BillId") ON DELETE SET NULL
+    FOREIGN KEY ("BillId") REFERENCES "Bills"("BillId") ON DELETE SET NULL,
+    FOREIGN KEY ("OrderedByDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
 -- SurgeryProcedure table (created before PatientOTAllocation which references it)
@@ -597,6 +599,31 @@ CREATE TABLE IF NOT EXISTS "ICUNurseVisitVitals" (
     "ICUNurseVisitsId" UUID NOT NULL,
     "PatientId" UUID NOT NULL,
     "RecordedDateTime" TIMESTAMP NOT NULL,
+    "HeartRate" VARCHAR(50),
+    "BloodPressure" VARCHAR(50),
+    "Temperature" VARCHAR(50),
+    "O2Saturation" VARCHAR(50),
+    "RespiratoryRate" VARCHAR(50),
+    "PulseRate" VARCHAR(50),
+    "VitalsRemarks" TEXT,
+    "VitalsCreatedBy" INTEGER,
+    "VitalsCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'InActive')),
+    FOREIGN KEY ("ICUNurseVisitsId") REFERENCES "ICUNurseVisits"("ICUNurseVisitsId") ON DELETE RESTRICT,
+    FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
+    FOREIGN KEY ("VitalsCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+);
+
+-- ICUVisitVitals table
+CREATE TABLE IF NOT EXISTS "ICUVisitVitals" (
+    "ICUVisitVitalsId" UUID PRIMARY KEY,
+    "ICUAdmissionId" UUID NOT NULL,
+    "PatientId" UUID NOT NULL,
+    "NurseId" INTEGER,
+    "NurseVisitsDetails" TEXT,
+    "PatientCondition" VARCHAR(50) CHECK ("PatientCondition" IN ('Stable', 'Notstable')),
+    "DailyOrHourlyVitals" VARCHAR(50) CHECK ("DailyOrHourlyVitals" IN ('Daily', 'Hourly')),
+    "RecordedDateTime" TIMESTAMP NOT NULL,
     "HeartRate" INTEGER,
     "BloodPressure" VARCHAR(50),
     "Temperature" DECIMAL(5, 2),
@@ -608,31 +635,9 @@ CREATE TABLE IF NOT EXISTS "ICUNurseVisitVitals" (
     "VitalsCreatedBy" INTEGER,
     "VitalsCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
-    FOREIGN KEY ("ICUNurseVisitsId") REFERENCES "ICUNurseVisits"("ICUNurseVisitsId") ON DELETE RESTRICT,
+    FOREIGN KEY ("ICUAdmissionId") REFERENCES "PatientICUAdmission"("PatientICUAdmissionId") ON DELETE RESTRICT,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
-    FOREIGN KEY ("VitalsCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
-);
-
--- PatientAdmitVisitVitals table
-CREATE TABLE IF NOT EXISTS "PatientAdmitVisitVitals" (
-    "PatientAdmitVisitVitalsId" UUID PRIMARY KEY,
-    "PatientAdmitNurseVisitsId" UUID NOT NULL,
-    "PatientId" UUID NOT NULL,
-    "RecordedDateTime" TIMESTAMP NOT NULL,
-    "DailyOrHourlyVitals" VARCHAR(50) CHECK ("DailyOrHourlyVitals" IN ('Daily Vitals', 'Hourly Vitals')),
-    "HeartRate" INTEGER,
-    "BloodPressure" VARCHAR(50),
-    "Temperature" DECIMAL(5, 2),
-    "O2Saturation" DECIMAL(5, 2),
-    "RespiratoryRate" INTEGER,
-    "PulseRate" INTEGER,
-    "VitalsStatus" VARCHAR(50),
-    "VitalsRemarks" TEXT,
-    "VitalsCreatedBy" INTEGER,
-    "VitalsCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    "Status" VARCHAR(50) DEFAULT 'Active',
-    FOREIGN KEY ("PatientAdmitNurseVisitsId") REFERENCES "PatientAdmitNurseVisits"("PatientAdmitNurseVisitsId") ON DELETE RESTRICT,
-    FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
+    FOREIGN KEY ("NurseId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
     FOREIGN KEY ("VitalsCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
@@ -654,6 +659,33 @@ CREATE TABLE IF NOT EXISTS "PatientAdmitDoctorVisits" (
     FOREIGN KEY ("VisitCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
+-- PatientAdmitVisitVitals table
+CREATE TABLE IF NOT EXISTS "PatientAdmitVisitVitals" (
+    "PatientAdmitVisitVitalsId" UUID PRIMARY KEY,
+    "RoomAdmissionId" INTEGER,
+    "PatientId" UUID NOT NULL,
+    "NurseId" INTEGER,
+    "PatientStatus" VARCHAR(50) CHECK ("PatientStatus" IN ('Stable', 'Notstable')),
+    "RecordedDateTime" TIMESTAMP NOT NULL,
+    "VisitRemarks" TEXT,
+    "DailyOrHourlyVitals" VARCHAR(50) CHECK ("DailyOrHourlyVitals" IN ('Daily', 'Hourly')),
+    "HeartRate" INTEGER,
+    "BloodPressure" VARCHAR(50),
+    "Temperature" INTEGER,
+    "O2Saturation" INTEGER,
+    "RespiratoryRate" INTEGER,
+    "PulseRate" INTEGER,
+    "VitalsStatus" VARCHAR(50),
+    "VitalsRemarks" TEXT,
+    "VitalsCreatedBy" INTEGER,
+    "VitalsCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
+    FOREIGN KEY ("RoomAdmissionId") REFERENCES "RoomAdmission"("RoomAdmissionId") ON DELETE SET NULL,
+    FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
+    FOREIGN KEY ("NurseId") REFERENCES "Users"("UserId") ON DELETE SET NULL,
+    FOREIGN KEY ("VitalsCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+);
+
 -- Create indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_users_roleid ON "Users"("RoleId");
 CREATE INDEX IF NOT EXISTS idx_users_doctordepartmentid ON "Users"("DoctorDepartmentId");
@@ -671,6 +703,7 @@ CREATE INDEX IF NOT EXISTS idx_patientlabtest_patienttype ON "PatientLabTest"("P
 CREATE INDEX IF NOT EXISTS idx_patientlabtest_status ON "PatientLabTest"("Status");
 CREATE INDEX IF NOT EXISTS idx_patientlabtest_teststatus ON "PatientLabTest"("TestStatus");
 CREATE INDEX IF NOT EXISTS idx_patientlabtest_roomadmissionid ON "PatientLabTest"("RoomAdmissionId");
+CREATE INDEX IF NOT EXISTS idx_patientlabtest_orderedbydoctorid ON "PatientLabTest"("OrderedByDoctorId");
 CREATE INDEX IF NOT EXISTS idx_emergencyadmission_doctorid ON "EmergencyAdmission"("DoctorId");
 CREATE INDEX IF NOT EXISTS idx_emergencyadmission_patientid ON "EmergencyAdmission"("PatientId");
 CREATE INDEX IF NOT EXISTS idx_emergencyadmission_emergencybedslotid ON "EmergencyAdmission"("EmergencyBedSlotId");
@@ -704,6 +737,14 @@ CREATE INDEX IF NOT EXISTS idx_icunursevisitvitals_patientid ON "ICUNurseVisitVi
 CREATE INDEX IF NOT EXISTS idx_icunursevisitvitals_recordeddatetime ON "ICUNurseVisitVitals"("RecordedDateTime");
 CREATE INDEX IF NOT EXISTS idx_icunursevisitvitals_vitalsstatus ON "ICUNurseVisitVitals"("VitalsStatus");
 CREATE INDEX IF NOT EXISTS idx_icunursevisitvitals_status ON "ICUNurseVisitVitals"("Status");
+CREATE INDEX IF NOT EXISTS idx_icuvisitvitals_icuadmissionid ON "ICUVisitVitals"("ICUAdmissionId");
+CREATE INDEX IF NOT EXISTS idx_icuvisitvitals_patientid ON "ICUVisitVitals"("PatientId");
+CREATE INDEX IF NOT EXISTS idx_icuvisitvitals_nurseid ON "ICUVisitVitals"("NurseId");
+CREATE INDEX IF NOT EXISTS idx_icuvisitvitals_dailyorhourlyvitals ON "ICUVisitVitals"("DailyOrHourlyVitals");
+CREATE INDEX IF NOT EXISTS idx_icuvisitvitals_patientcondition ON "ICUVisitVitals"("PatientCondition");
+CREATE INDEX IF NOT EXISTS idx_icuvisitvitals_recordeddatetime ON "ICUVisitVitals"("RecordedDateTime");
+CREATE INDEX IF NOT EXISTS idx_icuvisitvitals_vitalsstatus ON "ICUVisitVitals"("VitalsStatus");
+CREATE INDEX IF NOT EXISTS idx_icuvisitvitals_status ON "ICUVisitVitals"("Status");
 CREATE INDEX IF NOT EXISTS idx_patientotallocation_patientid ON "PatientOTAllocation"("PatientId");
 CREATE INDEX IF NOT EXISTS idx_patientotallocation_patientappointmentid ON "PatientOTAllocation"("PatientAppointmentId");
 CREATE INDEX IF NOT EXISTS idx_patientotallocation_otid ON "PatientOTAllocation"("OTId");
@@ -712,15 +753,18 @@ CREATE INDEX IF NOT EXISTS idx_patientotallocation_leadsurgeonid ON "PatientOTAl
 CREATE INDEX IF NOT EXISTS idx_patientotallocation_operationstatus ON "PatientOTAllocation"("OperationStatus");
 CREATE INDEX IF NOT EXISTS idx_patientotallocation_allocationdate ON "PatientOTAllocation"("OTAllocationDate");
 CREATE INDEX IF NOT EXISTS idx_patientotallocation_status ON "PatientOTAllocation"("Status");
-CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_patientadmitnursevisitsid ON "PatientAdmitVisitVitals"("PatientAdmitNurseVisitsId");
-CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_patientid ON "PatientAdmitVisitVitals"("PatientId");
-CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_recordeddatetime ON "PatientAdmitVisitVitals"("RecordedDateTime");
-CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_vitalsstatus ON "PatientAdmitVisitVitals"("VitalsStatus");
-CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_status ON "PatientAdmitVisitVitals"("Status");
 CREATE INDEX IF NOT EXISTS idx_patientadmitdoctorvisits_patientid ON "PatientAdmitDoctorVisits"("PatientId");
 CREATE INDEX IF NOT EXISTS idx_patientadmitdoctorvisits_doctorid ON "PatientAdmitDoctorVisits"("DoctorId");
 CREATE INDEX IF NOT EXISTS idx_patientadmitdoctorvisits_visiteddatetime ON "PatientAdmitDoctorVisits"("DoctorVisitedDateTime");
 CREATE INDEX IF NOT EXISTS idx_patientadmitdoctorvisits_status ON "PatientAdmitDoctorVisits"("Status");
+CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_roomadmissionid ON "PatientAdmitVisitVitals"("RoomAdmissionId");
+CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_patientid ON "PatientAdmitVisitVitals"("PatientId");
+CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_nurseid ON "PatientAdmitVisitVitals"("NurseId");
+CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_patientstatus ON "PatientAdmitVisitVitals"("PatientStatus");
+CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_dailyorhourlyvitals ON "PatientAdmitVisitVitals"("DailyOrHourlyVitals");
+CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_recordeddatetime ON "PatientAdmitVisitVitals"("RecordedDateTime");
+CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_vitalsstatus ON "PatientAdmitVisitVitals"("VitalsStatus");
+CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_status ON "PatientAdmitVisitVitals"("Status");
 
 -- AuditLog table
 CREATE TABLE IF NOT EXISTS "AuditLog" (

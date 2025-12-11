@@ -125,7 +125,7 @@ Response: {
     AppointmentId: Number | null,
     EmergencyBedSlotId: Number | null,
     BillId: Number | null,
-    Priority: String | null,
+    Priority: String | null, // "Normal" | "Urgent"
     LabTestDone: String, // "Yes" | "No"
     ReportsUrl: String | null,
     TestStatus: String | null, // "Pending" | "InProgress" | "Completed"
@@ -181,7 +181,7 @@ Response: {
     AppointmentId: Number | null,
     TestStatus: String,
     LabTestDone: String,
-    Priority: String | null,
+    Priority: String | null, // "Normal" | "Urgent"
     ReportsUrl: String | null,
     TestDoneDateTime: Date | null,
     Status: String,
@@ -230,7 +230,7 @@ Response: {
     RoomAdmissionId: Number | null,
     EmergencyBedSlotId: Number | null,
     BillId: Number | null,
-    Priority: String | null,
+    Priority: String | null, // "Normal" | "Urgent"
     LabTestDone: String, // "Yes" | "No"
     ReportsUrl: String | null,
     TestStatus: String | null, // "Pending" | "InProgress" | "Completed"
@@ -263,7 +263,7 @@ Response: {
     RoomAdmissionId: Number | null,
     EmergencyBedSlotId: Number | null,
     BillId: Number | null,
-    Priority: String | null,
+    Priority: String | null, // "Normal" | "Urgent"
     LabTestDone: String, // "Yes" | "No"
     ReportsUrl: String | null,
     TestStatus: String | null, // "Pending" | "InProgress" | "Completed"
@@ -311,7 +311,7 @@ Response: {
     RoomAdmissionId: Number | null,
     EmergencyBedSlotId: Number | null,
     BillId: Number | null,
-    Priority: String | null,
+    Priority: String | null, // "Normal" | "Urgent"
     LabTestDone: String, // "Yes" | "No"
     ReportsUrl: String | null,
     TestStatus: String | null, // "Pending" | "InProgress" | "Completed"
@@ -361,7 +361,7 @@ Response: {
     RoomAdmissionId: Number | null,
     EmergencyBedSlotId: Number | null,
     BillId: Number | null,
-    Priority: String | null,
+    Priority: String | null, // "Normal" | "Urgent"
     LabTestDone: String, // "Yes" | "No"
     ReportsUrl: String | null,
     TestStatus: String | null, // "Pending" | "InProgress" | "Completed"

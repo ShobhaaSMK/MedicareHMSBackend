@@ -4,6 +4,7 @@ const allowedPatientTypes = ['OPD', 'Emergency', 'IPD', 'Direct'];
 const allowedLabTestDone = ['Yes', 'No'];
 const allowedStatus = ['Active', 'Inactive'];
 const allowedTestStatus = ['Pending', 'InProgress', 'Completed'];
+const allowedPriority = ['Normal', 'Urgent'];
 
 const mapPatientLabTestRow = (row) => ({
   PatientLabTestsId: row.PatientLabTestsId || row.patientlabtestsid,
@@ -14,6 +15,7 @@ const mapPatientLabTestRow = (row) => ({
   RoomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
   EmergencyBedSlotId: row.EmergencyBedSlotId || row.emergencybedslotid || null,
   BillId: row.BillId || row.billid || null,
+  OrderedByDoctorId: row.OrderedByDoctorId || row.orderedbydoctorid || null,
   Priority: row.Priority || row.priority,
   LabTestDone: row.LabTestDone || row.labtestdone,
   ReportsUrl: row.ReportsUrl || row.reportsurl,
@@ -27,6 +29,7 @@ const mapPatientLabTestRow = (row) => ({
   TestName: row.TestName || row.testname || null,
   DisplayTestId: row.DisplayTestId || row.displaytestid || null,
   CreatedByName: row.CreatedByName || row.createdbyname || null,
+  OrderedByDoctorName: row.OrderedByDoctorName || row.orderedbydoctorname || null,
   AppointmentTokenNo: row.AppointmentTokenNo || row.appointmenttokenno || null,
   BillNo: row.BillNo || row.billno || null,
 });
@@ -34,21 +37,57 @@ const mapPatientLabTestRow = (row) => ({
 exports.getAllPatientLabTests = async (req, res) => {
   try {
     const { status, patientType, testStatus, patientId, labTestId } = req.query;
+    
+    // Check if OrderedByDoctorId column exists
+    let hasOrderedByDoctorId = false;
+    try {
+      const columnCheck = await db.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientLabTest' 
+        AND column_name = 'OrderedByDoctorId'
+      `);
+      hasOrderedByDoctorId = columnCheck.rows.length > 0;
+    } catch (err) {
+      // If check fails, assume column doesn't exist
+      hasOrderedByDoctorId = false;
+    }
+    
     let query = `
       SELECT 
         plt.*,
         p."PatientName", p."PatientNo",
         lt."TestName", lt."DisplayTestId",
+        lt."TestCategory",
         pa."TokenNo" AS "AppointmentTokenNo",
         b."BillNo",
-        u."UserName" AS "CreatedByName"
+        pa."PatientAppointmentId",
+        pa."AppointmentDate",
+        pa."AppointmentTime",
+        pa."AppointmentStatus",
+        pa."ConsultationCharge",
+        pa."Diagnosis" AS "AppointmentDiagnosis",
+        p."PatientId" AS "PatientId", 
+        p."PhoneNo" AS "PatientPhoneNo",
+        p."Gender" AS "PatientGender",
+        p."Age" AS "PatientAge",
+        plt."OrderedByDoctorId"
       FROM "PatientLabTest" plt
       LEFT JOIN "PatientRegistration" p ON plt."PatientId" = p."PatientId"
       LEFT JOIN "LabTest" lt ON plt."LabTestId" = lt."LabTestId"
       LEFT JOIN "PatientAppointment" pa ON plt."AppointmentId" = pa."PatientAppointmentId"
       LEFT JOIN "Bills" b ON plt."BillId" = b."BillId"
-      LEFT JOIN "Users" u ON plt."CreatedBy"::text = u."UserId"::text
     `;
+    
+    // Add OrderedByDoctorName to SELECT if column exists
+    if (hasOrderedByDoctorId) {
+      query = query.replace(
+        'b."BillNo",',
+        'b."BillNo",\n        doc."UserName" AS "OrderedByDoctorName",'
+      );
+      query += '\n      LEFT JOIN "Users" doc ON plt."OrderedByDoctorId" = doc."UserId"';
+    }
     const params = [];
     const conditions = [];
 
@@ -118,14 +157,12 @@ exports.getPatientLabTestById = async (req, res) => {
         p."PatientName", p."PatientNo",
         lt."TestName", lt."DisplayTestId",
         pa."TokenNo" AS "AppointmentTokenNo",
-        b."BillNo",
-        u."UserName" AS "CreatedByName"
+        b."BillNo"
       FROM "PatientLabTest" plt
       LEFT JOIN "PatientRegistration" p ON plt."PatientId" = p."PatientId"
       LEFT JOIN "LabTest" lt ON plt."LabTestId" = lt."LabTestId"
       LEFT JOIN "PatientAppointment" pa ON plt."AppointmentId" = pa."PatientAppointmentId"
       LEFT JOIN "Bills" b ON plt."BillId" = b."BillId"
-      LEFT JOIN "Users" u ON plt."CreatedBy"::text = u."UserId"::text
       WHERE plt."PatientLabTestsId" = $1
       `,
       [patientLabTestId]
@@ -202,6 +239,10 @@ const validatePatientLabTestPayload = (body, requireAll = true) => {
     errors.push('TestStatus must be Pending, InProgress, or Completed');
   }
 
+  if (body.Priority && !allowedPriority.includes(body.Priority)) {
+    errors.push('Priority must be Normal or Urgent');
+  }
+
   if (body.Status && !allowedStatus.includes(body.Status)) {
     errors.push('Status must be Active or Inactive');
   }
@@ -210,6 +251,13 @@ const validatePatientLabTestPayload = (body, requireAll = true) => {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(body.CreatedBy)) {
       errors.push('CreatedBy must be a valid UUID');
+    }
+  }
+
+  if (body.OrderedByDoctorId !== undefined && body.OrderedByDoctorId !== null) {
+    const orderedByDoctorIdInt = parseInt(body.OrderedByDoctorId, 10);
+    if (isNaN(orderedByDoctorIdInt)) {
+      errors.push('OrderedByDoctorId must be a valid integer');
     }
   }
 
@@ -231,6 +279,7 @@ exports.createPatientLabTest = async (req, res) => {
       RoomAdmissionId,
       EmergencyBedSlotId,
       BillId,
+      OrderedByDoctorId,
       Priority,
       LabTestDone = 'No',
       ReportsUrl,
@@ -310,13 +359,28 @@ exports.createPatientLabTest = async (req, res) => {
       billIdValue = billIdInt;
     }
 
+    // Validate OrderedByDoctorId if provided
+    let orderedByDoctorIdValue = null;
+    if (OrderedByDoctorId !== undefined && OrderedByDoctorId !== null && OrderedByDoctorId !== '') {
+      const orderedByDoctorIdInt = parseInt(OrderedByDoctorId, 10);
+      if (isNaN(orderedByDoctorIdInt)) {
+        return res.status(400).json({ success: false, message: 'OrderedByDoctorId must be a valid integer' });
+      }
+      // Check if doctor exists
+      const doctorExists = await db.query('SELECT "UserId" FROM "Users" WHERE "UserId" = $1', [orderedByDoctorIdInt]);
+      if (doctorExists.rows.length === 0) {
+        return res.status(400).json({ success: false, message: 'OrderedByDoctorId does not exist' });
+      }
+      orderedByDoctorIdValue = orderedByDoctorIdInt;
+    }
+
     // PatientLabTestsId is auto-generated by PostgreSQL SERIAL, so we don't include it in INSERT
     const insertQuery = `
       INSERT INTO "PatientLabTest"
-        ("PatientType", "PatientId", "LabTestId", "AppointmentId", "RoomAdmissionId", "EmergencyBedSlotId", "BillId",
+        ("PatientType", "PatientId", "LabTestId", "AppointmentId", "RoomAdmissionId", "EmergencyBedSlotId", "BillId", "OrderedByDoctorId",
          "Priority", "LabTestDone", "ReportsUrl", "TestStatus", "TestDoneDateTime",
          "Status", "CreatedBy")
-      VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING *;
     `;
 
@@ -328,6 +392,7 @@ exports.createPatientLabTest = async (req, res) => {
       roomAdmissionIdValue,
       emergencyBedSlotIdValue,
       billIdValue,
+      orderedByDoctorIdValue,
       Priority ? Priority.trim() : null,
       LabTestDone,
       ReportsUrl ? ReportsUrl.trim() : null,
@@ -383,6 +448,7 @@ exports.updatePatientLabTest = async (req, res) => {
       RoomAdmissionId,
       EmergencyBedSlotId,
       BillId,
+      OrderedByDoctorId,
       Priority,
       LabTestDone,
       ReportsUrl,
@@ -444,6 +510,23 @@ exports.updatePatientLabTest = async (req, res) => {
       billIdValue = null;
     }
 
+    // Validate OrderedByDoctorId if provided
+    let orderedByDoctorIdValue = null;
+    if (OrderedByDoctorId !== undefined && OrderedByDoctorId !== null && OrderedByDoctorId !== '') {
+      const orderedByDoctorIdInt = parseInt(OrderedByDoctorId, 10);
+      if (isNaN(orderedByDoctorIdInt)) {
+        return res.status(400).json({ success: false, message: 'OrderedByDoctorId must be a valid integer' });
+      }
+      // Check if doctor exists
+      const doctorExists = await db.query('SELECT "UserId" FROM "Users" WHERE "UserId" = $1', [orderedByDoctorIdInt]);
+      if (doctorExists.rows.length === 0) {
+        return res.status(400).json({ success: false, message: 'OrderedByDoctorId does not exist' });
+      }
+      orderedByDoctorIdValue = orderedByDoctorIdInt;
+    } else if (OrderedByDoctorId === null) {
+      orderedByDoctorIdValue = null;
+    }
+
     // Validate CreatedBy if provided
     let createdByValue = null;
     if (CreatedBy !== undefined && CreatedBy !== null) {
@@ -463,14 +546,15 @@ exports.updatePatientLabTest = async (req, res) => {
         "AppointmentId" = COALESCE($4, "AppointmentId"),
         "EmergencyBedSlotId" = COALESCE($5, "EmergencyBedSlotId"),
         "BillId" = COALESCE($6, "BillId"),
-        "Priority" = COALESCE($7, "Priority"),
-        "LabTestDone" = COALESCE($8, "LabTestDone"),
-        "ReportsUrl" = COALESCE($9, "ReportsUrl"),
-        "TestStatus" = COALESCE($10, "TestStatus"),
-        "TestDoneDateTime" = COALESCE($11, "TestDoneDateTime"),
-        "Status" = COALESCE($12, "Status"),
-        "CreatedBy" = COALESCE($13::uuid, "CreatedBy")
-      WHERE "PatientLabTestsId" = $14
+        "OrderedByDoctorId" = COALESCE($7, "OrderedByDoctorId"),
+        "Priority" = COALESCE($8, "Priority"),
+        "LabTestDone" = COALESCE($9, "LabTestDone"),
+        "ReportsUrl" = COALESCE($10, "ReportsUrl"),
+        "TestStatus" = COALESCE($11, "TestStatus"),
+        "TestDoneDateTime" = COALESCE($12, "TestDoneDateTime"),
+        "Status" = COALESCE($13, "Status"),
+        "CreatedBy" = COALESCE($14::uuid, "CreatedBy")
+      WHERE "PatientLabTestsId" = $15
       RETURNING *;
     `;
 
@@ -481,6 +565,7 @@ exports.updatePatientLabTest = async (req, res) => {
       appointmentIdValue,
       emergencyBedSlotIdValue,
       billIdValue,
+      orderedByDoctorIdValue,
       Priority ? Priority.trim() : null,
       LabTestDone || null,
       ReportsUrl ? ReportsUrl.trim() : null,
@@ -673,6 +758,21 @@ exports.getPatientLabTestsWithDetails = async (req, res) => {
   try {
     const { status, testStatus, patientId, labTestId, appointmentId, roomAdmissionId } = req.query;
 
+    // Check if OrderedByDoctorId column exists
+    let hasOrderedByDoctorId = false;
+    try {
+      const columnCheck = await db.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientLabTest' 
+        AND column_name = 'OrderedByDoctorId'
+      `);
+      hasOrderedByDoctorId = columnCheck.rows.length > 0;
+    } catch (err) {
+      hasOrderedByDoctorId = false;
+    }
+
     let query = `
       SELECT 
         -- PatientLabTest fields
@@ -681,18 +781,21 @@ exports.getPatientLabTestsWithDetails = async (req, res) => {
         plt."PatientId",
         plt."LabTestId",
         plt."AppointmentId",
+        plt."RoomAdmissionId",
         plt."EmergencyBedSlotId",
         plt."BillId",
+        ${hasOrderedByDoctorId ? 'plt."OrderedByDoctorId",' : ''}
         plt."Priority",
         plt."LabTestDone",
         plt."ReportsUrl",
         plt."TestStatus",
-        plt."TestDoneDateTime",
+        
         plt."Status",
         plt."CreatedBy",
         plt."CreatedDate",
         
         -- Patient details
+        p."PatientId",
         p."PatientName",
         p."PatientNo",
         p."PhoneNo" AS "PatientPhoneNo",
@@ -703,6 +806,7 @@ exports.getPatientLabTestsWithDetails = async (req, res) => {
         -- LabTest details
         lt."TestName",
         lt."DisplayTestId",
+        
         lt."TestCategory",
         lt."Description" AS "LabTestDescription",
         lt."Charges" AS "LabTestCharges",
@@ -723,18 +827,16 @@ exports.getPatientLabTestsWithDetails = async (req, res) => {
         appt_doctor."PhoneNo" AS "AppointmentDoctorPhone",
         appt_doctor."DoctorQualification" AS "AppointmentDoctorQualification",
         appt_dept."DepartmentName" AS "AppointmentDoctorDepartment",
-        
-        
+        ${hasOrderedByDoctorId ? `-- Ordered By Doctor details
+        doc."UserName" AS "OrderedByDoctorName",
+        doc."EmailId" AS "OrderedByDoctorEmail",
+        doc."PhoneNo" AS "OrderedByDoctorPhone",
+        ` : ''}
         -- Bill details
         b."BillNo",
         b."BillDateTime",
         b."Amount" AS "BillAmount",
-        b."PaidStatus",
-        
-        -- Created By details
-        creator."UserName" AS "CreatedByName",
-        creator."EmailId" AS "CreatedByEmail"
-        
+        b."PaidStatus"
       FROM "PatientLabTest" plt
       LEFT JOIN "PatientRegistration" p ON plt."PatientId" = p."PatientId"
       LEFT JOIN "LabTest" lt ON plt."LabTestId" = lt."LabTestId"
@@ -745,7 +847,7 @@ exports.getPatientLabTestsWithDetails = async (req, res) => {
       LEFT JOIN "Users" room_doctor ON ra."AdmittingDoctorId" = room_doctor."UserId"
       LEFT JOIN "DoctorDepartment" room_dept ON room_doctor."DoctorDepartmentId" = room_dept."DoctorDepartmentId"
       LEFT JOIN "Bills" b ON plt."BillId" = b."BillId"
-      LEFT JOIN "Users" creator ON plt."CreatedBy"::text = creator."UserId"::text
+      ${hasOrderedByDoctorId ? 'LEFT JOIN "Users" doc ON plt."OrderedByDoctorId" = doc."UserId"' : ''}
     `;
 
     const conditions = [];
@@ -1026,12 +1128,7 @@ exports.getPatientLabTestsWithDetailsById = async (req, res) => {
         b."BillNo",
         b."BillDateTime",
         b."Amount" AS "BillAmount",
-        b."PaidStatus",
-        
-        -- Created By details
-        creator."UserName" AS "CreatedByName",
-        creator."EmailId" AS "CreatedByEmail"
-        
+        b."PaidStatus"
       FROM "PatientLabTest" plt
       LEFT JOIN "PatientRegistration" p ON plt."PatientId" = p."PatientId"
       LEFT JOIN "LabTest" lt ON plt."LabTestId" = lt."LabTestId"
@@ -1043,7 +1140,6 @@ exports.getPatientLabTestsWithDetailsById = async (req, res) => {
       LEFT JOIN "Users" room_doctor ON ra."AdmittingDoctorId" = room_doctor."UserId"
       LEFT JOIN "DoctorDepartment" room_dept ON room_doctor."DoctorDepartmentId" = room_dept."DoctorDepartmentId"
       LEFT JOIN "Bills" b ON plt."BillId" = b."BillId"
-      LEFT JOIN "Users" creator ON plt."CreatedBy"::text = creator."UserId"::text
       WHERE plt."RoomAdmissionId" = $1
       ORDER BY plt."CreatedDate" DESC
     `;

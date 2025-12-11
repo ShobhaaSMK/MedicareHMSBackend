@@ -6,6 +6,51 @@ const allowedICUAdmissionStatus = ['Occupied', 'Discharged'];
 const allowedStatus = ['Active', 'Inactive'];
 const allowedYesNo = ['Yes', 'No'];
 
+/**
+ * Internal utility function to check if an ICU bed is already occupied
+ * @param {number} icuId - The ICU ID to check
+ * @returns {Promise<{isOccupied: boolean, admission: object|null}>} - Object containing isOccupied flag and admission details if found
+ */
+const checkIfICUBedIsOccupied = async (icuId) => {
+  try {
+    const icuIdInt = parseInt(icuId, 10);
+    if (isNaN(icuIdInt)) {
+      throw new Error('ICUId must be a valid integer');
+    }
+
+    const query = `
+      SELECT 
+        pica.*,
+        p."PatientName", p."PatientNo",
+        icu."ICUBedNo" AS "ICUNo"
+      FROM "PatientICUAdmission" pica
+      LEFT JOIN "PatientRegistration" p ON pica."PatientId" = p."PatientId"
+      LEFT JOIN "ICU" icu ON pica."ICUId" = icu."ICUId"
+      WHERE pica."ICUId" = $1
+      AND pica."ICUAdmissionStatus" = 'Occupied'
+      AND pica."Status" = 'Active'
+      ORDER BY pica."ICUAllocationFromDate" DESC
+      LIMIT 1
+    `;
+
+    const { rows } = await db.query(query, [icuIdInt]);
+
+    if (rows.length > 0) {
+      return {
+        isOccupied: true,
+        admission: mapPatientICUAdmissionRow(rows[0])
+      };
+    }
+
+    return {
+      isOccupied: false,
+      admission: null
+    };
+  } catch (error) {
+    throw error;
+  }
+};
+
 const mapPatientICUAdmissionRow = (row) => ({
   PatientICUAdmissionId: row.PatientICUAdmissionId || row.patienticuadmissionid,
   PatientId: row.PatientId || row.patientid,
@@ -378,7 +423,7 @@ exports.createPatientICUAdmission = async (req, res) => {
       if (overlapCount > 0) {
         return res.status(400).json({
           success: false,
-          message: `ICU bed is already occupied for the specified date range. There are ${overlapCount} existing occupied admission(s) that overlap with the requested dates.`,
+          message: `ICU bed is already occupied for the specified date range. Please select a different ICU Bed or date range.`,
           details: {
             ICUId: parseInt(ICUId, 10),
             ICUAllocationFromDate: ICUAllocationFromDate,
@@ -1638,6 +1683,61 @@ exports.getICUAdmissionsforICUMgmtByPatientICUAdmissionId = async (req, res) => 
   }
 };
 
+/**
+ * Check if an ICU bed is already occupied
+ * Query parameter: ?icuId=INTEGER (required)
+ * Returns: Object with isOccupied flag and admission details if found
+ */
+exports.checkIfICUBedIsOccupied = async (req, res) => {
+  try {
+    const { icuId } = req.query;
+
+    if (!icuId) {
+      return res.status(400).json({
+        success: false,
+        message: 'ICUId parameter is required. Please provide ICUId as a query parameter (e.g., ?icuId=1)',
+      });
+    }
+
+    const icuIdInt = parseInt(icuId, 10);
+    if (isNaN(icuIdInt)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid ICUId. Must be a valid integer.',
+      });
+    }
+
+    // Verify ICU exists
+    const icuExists = await db.query('SELECT "ICUId" FROM "ICU" WHERE "ICUId" = $1', [icuIdInt]);
+    if (icuExists.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: `ICU bed with ID ${icuIdInt} does not exist`,
+      });
+    }
+
+    const result = await checkIfICUBedIsOccupied(icuIdInt);
+
+    res.status(200).json({
+      success: true,
+      message: result.isOccupied 
+        ? 'ICU bed is currently occupied' 
+        : 'ICU bed is available',
+      data: {
+        icuId: icuIdInt,
+        isOccupied: result.isOccupied,
+        admission: result.admission
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error checking ICU bed occupancy status',
+      error: error.message,
+    });
+  }
+};
+
 exports.deletePatientICUAdmission = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1663,4 +1763,7 @@ exports.deletePatientICUAdmission = async (req, res) => {
     });
   }
 };
+
+// Export the internal utility function for use by other modules
+exports.checkIfICUBedIsOccupiedInternal = checkIfICUBedIsOccupied;
 

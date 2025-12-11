@@ -53,6 +53,31 @@ Response: {
 } */
 router.get('/available-beds', patientICUAdmissionController.getAvailableICUBeds);
 
+/* GET /api/patient-icu-admissions/check-occupied
+Query Parameters:
+  - icuId: Number (required) - The ICU ID to check
+Response: {
+  success: Boolean,
+  message: String,
+  data: {
+    icuId: Number,
+    isOccupied: Boolean,
+    admission: {
+      PatientICUAdmissionId: String (UUID) | null,
+      PatientId: String (UUID) | null,
+      ICUId: Number | null,
+      ICUAdmissionStatus: String | null, // "Occupied" | "Discharged"
+      ICUAllocationFromDate: Date | null,
+      ICUAllocationToDate: Date | null,
+      PatientName: String | null,
+      PatientNo: String | null,
+      ICUNo: String | null,
+      // ... other admission fields
+    } | null
+  }
+} */
+router.get('/check-occupied', patientICUAdmissionController.checkIfICUBedIsOccupied);
+
 /* GET /api/patient-icu-admissions/icu-management
 Response: {
   success: Boolean,

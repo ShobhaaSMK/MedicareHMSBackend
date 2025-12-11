@@ -178,7 +178,15 @@ async function initializeTables() {
 
     // Execute the SQL script
     // The SQL file uses IF NOT EXISTS clauses, so it's safe to execute multiple times
-    await pool.query(sql);
+    try {
+      await pool.query(sql);
+      console.log('✓ SQL script executed successfully');
+    } catch (sqlError) {
+      console.error('✗ Error executing SQL script:', sqlError.message);
+      console.error('SQL Error Code:', sqlError.code);
+      console.error('SQL Error Detail:', sqlError.detail);
+      throw sqlError;
+    }
 
     // Check which tables exist
     const tablesQuery = `
@@ -188,7 +196,7 @@ async function initializeTables() {
       AND table_type = 'BASE TABLE'
         AND table_name IN (
           'Roles', 'Users', 'DoctorDepartment', 'PatientRegistration',
-          'RoomBeds', 'LabTest', 'ICU', 'EmergencyBed', 'OT', 'PatientAppointment', 'PatientLabTest', 'RoomAdmission', 'EmergencyAdmission', 'EmergencyAdmissionVitals', 'PatientOTAllocation', 'PatientAdmitNurseVisits', 'PatientICUAdmission', 'ICUDoctorVisits', 'ICUNurseVisits', 'ICUNurseVisitVitals', 'PatientAdmitVisitVitals', 'PatientAdmitDoctorVisits'
+          'RoomBeds', 'LabTest', 'ICU', 'EmergencyBed', 'OT', 'PatientAppointment', 'PatientLabTest', 'RoomAdmission', 'EmergencyAdmission', 'EmergencyAdmissionVitals', 'PatientOTAllocation', 'PatientAdmitNurseVisits', 'PatientICUAdmission', 'ICUDoctorVisits', 'ICUNurseVisits', 'ICUNurseVisitVitals', 'ICUVisitVitals', 'PatientAdmitVisitVitals', 'PatientAdmitDoctorVisits'
         )
       ORDER BY table_name;
     `;
