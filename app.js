@@ -20,8 +20,6 @@ const emergencyAdmissionVitalsRoutes = require('./routes/emergencyAdmissionVital
 const patientAdmitNurseVisitsRoutes = require('./routes/patientAdmitNurseVisitsRoutes');
 const patientICUAdmissionRoutes = require('./routes/patientICUAdmissionRoutes');
 const icuDoctorVisitsRoutes = require('./routes/icuDoctorVisitsRoutes');
-const icuNurseVisitsRoutes = require('./routes/icuNurseVisitsRoutes');
-const icuNurseVisitVitalsRoutes = require('./routes/icuNurseVisitVitalsRoutes');
 const icuVisitVitalsRoutes = require('./routes/icuVisitVitalsRoutes');
 const patientAdmitVisitVitalsRoutes = require('./routes/patientAdmitVisitVitalsRoutes');
 const patientAdmitDoctorVisitsRoutes = require('./routes/patientAdmitDoctorVisitsRoutes');
@@ -68,8 +66,6 @@ app.use('/api/emergency-admission-vitals', emergencyAdmissionVitalsRoutes);
 app.use('/api/patient-admit-nurse-visits', patientAdmitNurseVisitsRoutes);
 app.use('/api/patient-icu-admissions', patientICUAdmissionRoutes);
 app.use('/api/icu-doctor-visits', icuDoctorVisitsRoutes);
-app.use('/api/icu-nurse-visits', icuNurseVisitsRoutes);
-app.use('/api/icu-nurse-visit-vitals', icuNurseVisitVitalsRoutes);
 app.use('/api/icu-visit-vitals', icuVisitVitalsRoutes);
 app.use('/api/patient-admit-visit-vitals', patientAdmitVisitVitalsRoutes);
 app.use('/api/patient-admit-doctor-visits', patientAdmitDoctorVisitsRoutes);
