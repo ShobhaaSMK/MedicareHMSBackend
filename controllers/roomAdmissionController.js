@@ -1099,3 +1099,165 @@ exports.getRoomAdmissionsDashboardMetrics = async (req, res) => {
   }
 };
 
+/**
+ * Check room availability for admission
+ * Query parameters:
+ *   - roomBedsId: INTEGER (required) - The RoomBedsId to check
+ *   - checkDate: DATE (optional) - Date to check availability for (defaults to today)
+ * 
+ * Returns:
+ *   - isAvailable: Boolean - Whether the room is available
+ *   - reason: String - Reason for availability/unavailability
+ *   - conflictingAdmissions: Array - List of conflicting admissions if not available
+ */
+exports.checkRoomAvailability = async (req, res) => {
+  try {
+    // Accept both roomBedsId and RoomBedsId (case-insensitive)
+    const roomBedsId = req.query.roomBedsId || req.query.RoomBedsId;
+    const checkDate = req.query.checkDate || req.query.AllocationDate;
+
+    // Validate roomBedsId
+    if (!roomBedsId) {
+      return res.status(400).json({
+        success: false,
+        message: 'roomBedsId (or RoomBedsId) is required',
+      });
+    }
+
+    const roomBedsIdInt = parseInt(roomBedsId, 10);
+    if (isNaN(roomBedsIdInt)) {
+      return res.status(400).json({
+        success: false,
+        message: 'roomBedsId must be a valid integer',
+      });
+    }
+
+    // Validate checkDate if provided
+    let checkDateValue = new Date();
+    if (checkDate) {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(checkDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'checkDate must be in YYYY-MM-DD format',
+        });
+      }
+      checkDateValue = new Date(checkDate + 'T00:00:00');
+      if (isNaN(checkDateValue.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: 'checkDate must be a valid date',
+        });
+      }
+    }
+
+    // Format checkDate for SQL query (YYYY-MM-DD)
+    const checkDateStr = checkDateValue.toISOString().split('T')[0];
+
+    // Check if room bed exists
+    const roomBedCheck = await db.query(
+      'SELECT "RoomBedsId", "BedNo", "RoomNo" FROM "RoomBeds" WHERE "RoomBedsId" = $1',
+      [roomBedsIdInt]
+    );
+
+    if (roomBedCheck.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Room bed not found',
+      });
+    }
+
+    const roomBed = roomBedCheck.rows[0];
+
+    // Query to find conflicting admissions
+    // A room is NOT available if:
+    // 1. AdmissionStatus is 'Active' or 'Surgery Scheduled' AND
+    //    (RoomVacantDate is NULL OR RoomVacantDate is in the future relative to checkDate)
+    // 2. The checkDate falls between RoomAllocationDate and RoomVacantDate (if RoomVacantDate exists)
+    const query = `
+      SELECT 
+        ra."RoomAdmissionId",
+        ra."RoomAllocationDate",
+        ra."RoomVacantDate",
+        ra."AdmissionStatus",
+        ra."Status",
+        p."PatientName",
+        p."PatientNo"
+      FROM "RoomAdmission" ra
+      LEFT JOIN "PatientRegistration" p ON ra."PatientId" = p."PatientId"
+      WHERE ra."RoomBedsId" = $1
+        AND ra."Status" = 'Active'
+        AND (
+          -- Active or Surgery Scheduled admissions that haven't been vacated
+          (
+            ra."AdmissionStatus" IN ('Active', 'Surgery Scheduled')
+            AND (
+              ra."RoomVacantDate" IS NULL 
+              OR ra."RoomVacantDate"::date > $2::date
+            )
+          )
+          OR
+          -- Check if checkDate falls within the allocation period
+          (
+            ra."RoomAllocationDate"::date <= $2::date
+            AND (
+              ra."RoomVacantDate" IS NULL 
+              OR ra."RoomVacantDate"::date >= $2::date
+            )
+            AND ra."AdmissionStatus" != 'Discharged'
+          )
+        )
+      ORDER BY ra."RoomAllocationDate" DESC
+    `;
+
+    const { rows } = await db.query(query, [roomBedsIdInt, checkDateStr]);
+
+    const isAvailable = rows.length === 0;
+    let reason = '';
+    const conflictingAdmissions = rows.map(row => ({
+      RoomAdmissionId: row.RoomAdmissionId,
+      PatientName: row.PatientName || 'Unknown',
+      PatientNo: row.PatientNo || 'N/A',
+      RoomAllocationDate: row.RoomAllocationDate,
+      RoomVacantDate: row.RoomVacantDate,
+      AdmissionStatus: row.AdmissionStatus,
+    }));
+
+    if (isAvailable) {
+      reason = `Room ${roomBed.RoomNo || 'N/A'}, Bed ${roomBed.BedNo || 'N/A'} is available for admission on ${checkDateStr}`;
+    } else {
+      const activeAdmissions = rows.filter(r => r.AdmissionStatus === 'Active');
+      const scheduledAdmissions = rows.filter(r => r.AdmissionStatus === 'Surgery Scheduled');
+      
+      if (activeAdmissions.length > 0) {
+        reason = `Room is currently occupied by ${activeAdmissions.length} active admission(s)`;
+      } else if (scheduledAdmissions.length > 0) {
+        reason = `Room has ${scheduledAdmissions.length} surgery scheduled admission(s)`;
+      } else {
+        reason = `Room has ${rows.length} conflicting admission(s)`;
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Room availability checked successfully',
+      data: {
+        roomBedsId: roomBedsIdInt,
+        roomNo: roomBed.RoomNo,
+        bedNo: roomBed.BedNo,
+        checkDate: checkDateStr,
+        isAvailable: isAvailable,
+        reason: reason,
+        conflictingAdmissions: conflictingAdmissions,
+        conflictingCount: rows.length,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error checking room availability',
+      error: error.message,
+    });
+  }
+};
+

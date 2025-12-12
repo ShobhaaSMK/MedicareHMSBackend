@@ -196,7 +196,7 @@ async function initializeTables() {
       AND table_type = 'BASE TABLE'
         AND table_name IN (
           'Roles', 'Users', 'DoctorDepartment', 'PatientRegistration',
-          'RoomBeds', 'LabTest', 'ICU', 'EmergencyBed', 'OT', 'PatientAppointment', 'PatientLabTest', 'RoomAdmission', 'EmergencyAdmission', 'EmergencyAdmissionVitals', 'PatientOTAllocation', 'PatientAdmitNurseVisits', 'PatientICUAdmission', 'ICUDoctorVisits', 'ICUVisitVitals', 'PatientAdmitVisitVitals', 'PatientAdmitDoctorVisits'
+          'RoomBeds', 'LabTest', 'ICU', 'EmergencyBed', 'OT', 'PatientAppointment', 'PatientLabTest', 'RoomAdmission', 'EmergencyAdmission', 'EmergencyAdmissionVitals', 'PatientOTAllocation', 'PatientICUAdmission', 'ICUDoctorVisits', 'ICUVisitVitals', 'PatientAdmitVisitVitals', 'PatientAdmitDoctorVisits'
         )
       ORDER BY table_name;
     `;

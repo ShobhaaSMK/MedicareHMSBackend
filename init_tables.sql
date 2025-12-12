@@ -538,25 +538,6 @@ CREATE INDEX IF NOT EXISTS idx_emergencyadmissionvitals_recordeddatetime ON "Eme
 CREATE INDEX IF NOT EXISTS idx_emergencyadmissionvitals_vitalsstatus ON "EmergencyAdmissionVitals"("VitalsStatus");
 CREATE INDEX IF NOT EXISTS idx_emergencyadmissionvitals_status ON "EmergencyAdmissionVitals"("Status");
 
--- PatientAdmitNurseVisits table
-CREATE TABLE IF NOT EXISTS "PatientAdmitNurseVisits" (
-    "PatientAdmitNurseVisitsId" UUID PRIMARY KEY,
-    "RoomAdmissionId" INTEGER,
-    "PatientId" UUID NOT NULL,
-    "VisitDate" DATE NOT NULL,
-    "VisitTime" TIME,
-    "PatientStatus" VARCHAR(50),
-    "SupervisionDetails" TEXT,
-    "Remarks" TEXT,
-    "Status" VARCHAR(50) DEFAULT 'Active',
-    "RoomVisitsCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    "RoomVisitsCreatedBy" INTEGER,
-    FOREIGN KEY ("RoomAdmissionId") REFERENCES "RoomAdmission"("RoomAdmissionId") ON DELETE SET NULL,
-    FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
-    FOREIGN KEY ("RoomVisitsCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
-);
-
-
 -- ICUDoctorVisits table
 CREATE TABLE IF NOT EXISTS "ICUDoctorVisits" (
     "ICUDoctorVisitsId" UUID PRIMARY KEY,
@@ -672,10 +653,6 @@ CREATE INDEX IF NOT EXISTS idx_emergencyadmission_emergencystatus ON "EmergencyA
 CREATE INDEX IF NOT EXISTS idx_emergencyadmission_status ON "EmergencyAdmission"("Status");
 CREATE INDEX IF NOT EXISTS idx_emergencyadmission_admissiondate ON "EmergencyAdmission"("EmergencyAdmissionDate");
 CREATE INDEX IF NOT EXISTS idx_emergencyadmission_allocationfromdate ON "EmergencyAdmission"("AllocationFromDate");
-CREATE INDEX IF NOT EXISTS idx_patientadmitnursevisits_patientid ON "PatientAdmitNurseVisits"("PatientId");
-CREATE INDEX IF NOT EXISTS idx_patientadmitnursevisits_visitdate ON "PatientAdmitNurseVisits"("VisitDate");
-CREATE INDEX IF NOT EXISTS idx_patientadmitnursevisits_patientstatus ON "PatientAdmitNurseVisits"("PatientStatus");
-CREATE INDEX IF NOT EXISTS idx_patientadmitnursevisits_status ON "PatientAdmitNurseVisits"("Status");
 CREATE INDEX IF NOT EXISTS idx_patienticuadmission_patientid ON "PatientICUAdmission"("PatientId");
 CREATE INDEX IF NOT EXISTS idx_patienticuadmission_patientappointmentid ON "PatientICUAdmission"("PatientAppointmentId");
 CREATE INDEX IF NOT EXISTS idx_patienticuadmission_icuid ON "PatientICUAdmission"("ICUId");

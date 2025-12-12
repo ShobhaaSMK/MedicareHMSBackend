@@ -11,7 +11,7 @@ const allowedYesNo = ['Yes', 'No'];
  * @param {number} icuId - The ICU ID to check
  * @returns {Promise<{isOccupied: boolean, admission: object|null}>} - Object containing isOccupied flag and admission details if found
  */
-const checkIfICUBedIsOccupied = async (icuId) => {
+const checkIfICUBedIsOccupiedInternal = async (icuId) => {
   try {
     const icuIdInt = parseInt(icuId, 10);
     if (isNaN(icuIdInt)) {
@@ -1716,7 +1716,7 @@ exports.checkIfICUBedIsOccupied = async (req, res) => {
       });
     }
 
-    const result = await checkIfICUBedIsOccupied(icuIdInt);
+    const result = await checkIfICUBedIsOccupiedInternal(icuIdInt);
 
     res.status(200).json({
       success: true,
@@ -1764,6 +1764,163 @@ exports.deletePatientICUAdmission = async (req, res) => {
   }
 };
 
+/**
+ * Check ICU availability for admission
+ * Query parameters:
+ *   - icuId: INTEGER (required) - The ICUId to check
+ *   - checkDate: DATE (optional) - Date to check availability for (defaults to today)
+ *   - allocationFromDate: DATE (optional) - Alternative parameter name for checkDate
+ * 
+ * Returns:
+ *   - isAvailable: Boolean - Whether the ICU is available
+ *   - reason: String - Reason for availability/unavailability
+ *   - conflictingAdmissions: Array - List of conflicting admissions if not available
+ */
+exports.checkICUAvailability = async (req, res) => {
+  try {
+    // Accept both icuId and ICUId (case-insensitive)
+    const icuId = req.query.icuId || req.query.ICUId;
+    // Accept checkDate, allocationFromDate, or ICUAllocationFromDate
+    const checkDate = req.query.checkDate || req.query.allocationFromDate || req.query.ICUAllocationFromDate;
+
+    // Validate icuId
+    if (!icuId) {
+      return res.status(400).json({
+        success: false,
+        message: 'icuId (or ICUId) is required',
+      });
+    }
+
+    const icuIdInt = parseInt(icuId, 10);
+    if (isNaN(icuIdInt)) {
+      return res.status(400).json({
+        success: false,
+        message: 'icuId must be a valid integer',
+      });
+    }
+
+    // Validate checkDate if provided
+    let checkDateValue = new Date();
+    if (checkDate) {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(checkDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'checkDate must be in YYYY-MM-DD format',
+        });
+      }
+      checkDateValue = new Date(checkDate + 'T00:00:00');
+      if (isNaN(checkDateValue.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: 'checkDate must be a valid date',
+        });
+      }
+    }
+
+    // Format checkDate for SQL query (YYYY-MM-DD)
+    const checkDateStr = checkDateValue.toISOString().split('T')[0];
+
+    // Check if ICU exists
+    const icuCheck = await db.query(
+      'SELECT "ICUId", "ICUBedNo", "ICUType", "ICURoomNameNo" FROM "ICU" WHERE "ICUId" = $1 AND "Status" = \'Active\'',
+      [icuIdInt]
+    );
+
+    if (icuCheck.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'ICU not found or not active',
+      });
+    }
+
+    const icu = icuCheck.rows[0];
+
+    // Query to find conflicting admissions
+    // An ICU is NOT available if:
+    // 1. ICUAdmissionStatus = 'Occupied' AND
+    // 2. Status = 'Active' AND
+    // 3. The checkDate falls between ICUAllocationFromDate and ICUAllocationToDate
+    //    (or ICUAllocationToDate is NULL and checkDate >= ICUAllocationFromDate)
+    const query = `
+      SELECT 
+        pica."PatientICUAdmissionId",
+        pica."ICUAllocationFromDate",
+        pica."ICUAllocationToDate",
+        pica."ICUAdmissionStatus",
+        pica."Status",
+        pica."ICUPatientStatus",
+        p."PatientName",
+        p."PatientNo"
+      FROM "PatientICUAdmission" pica
+      LEFT JOIN "PatientRegistration" p ON pica."PatientId" = p."PatientId"
+      WHERE pica."ICUId" = $1
+        AND pica."Status" = 'Active'
+        AND pica."ICUAdmissionStatus" = 'Occupied'
+        AND pica."ICUAllocationFromDate" IS NOT NULL
+        AND (
+          -- Check if checkDate falls within the allocation period
+          (
+            pica."ICUAllocationToDate" IS NOT NULL
+            AND $2::date >= pica."ICUAllocationFromDate"
+            AND $2::date <= pica."ICUAllocationToDate"
+          )
+          OR
+          -- Ongoing admission (ICUAllocationToDate is NULL)
+          (
+            pica."ICUAllocationToDate" IS NULL
+            AND $2::date >= pica."ICUAllocationFromDate"
+          )
+        )
+      ORDER BY pica."ICUAllocationFromDate" DESC
+    `;
+
+    const { rows } = await db.query(query, [icuIdInt, checkDateStr]);
+
+    const isAvailable = rows.length === 0;
+    let reason = '';
+    const conflictingAdmissions = rows.map(row => ({
+      PatientICUAdmissionId: row.PatientICUAdmissionId,
+      PatientName: row.PatientName || 'Unknown',
+      PatientNo: row.PatientNo || 'N/A',
+      ICUAllocationFromDate: row.ICUAllocationFromDate,
+      ICUAllocationToDate: row.ICUAllocationToDate,
+      ICUAdmissionStatus: row.ICUAdmissionStatus,
+      ICUPatientStatus: row.ICUPatientStatus || null,
+    }));
+
+    if (isAvailable) {
+      reason = `ICU Bed ${icu.ICUBedNo || 'N/A'} (${icu.ICUType || 'N/A'}) is available for admission on ${checkDateStr}`;
+    } else {
+      const occupiedCount = rows.length;
+      const patientNames = rows.map(r => r.PatientName || 'Unknown').join(', ');
+      reason = `ICU is currently occupied by ${occupiedCount} patient(s): ${patientNames}`;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'ICU availability checked successfully',
+      data: {
+        icuId: icuIdInt,
+        icuBedNo: icu.ICUBedNo,
+        icuType: icu.ICUType,
+        icuRoomNameNo: icu.ICURoomNameNo,
+        checkDate: checkDateStr,
+        isAvailable: isAvailable,
+        reason: reason,
+        conflictingAdmissions: conflictingAdmissions,
+        conflictingCount: rows.length,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error checking ICU availability',
+      error: error.message,
+    });
+  }
+};
+
 // Export the internal utility function for use by other modules
-exports.checkIfICUBedIsOccupiedInternal = checkIfICUBedIsOccupied;
+exports.checkIfICUBedIsOccupiedInternal = checkIfICUBedIsOccupiedInternal;
 

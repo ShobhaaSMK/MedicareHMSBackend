@@ -34,7 +34,7 @@ exports.getAllLabTests = async (req, res) => {
       query += ' WHERE ' + conditions.join(' AND ');
     }
     query += ' ORDER BY "CreatedAt" DESC';
-
+    console.log(query);
     const { rows } = await db.query(query, params);
     res.status(200).json({
       success: true,
