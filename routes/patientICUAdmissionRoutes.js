@@ -78,6 +78,37 @@ Response: {
 } */
 router.get('/check-occupied', patientICUAdmissionController.checkIfICUBedIsOccupied);
 
+/* GET /api/patient-icu-admissions/check-availability
+Query Parameters:
+  - icuId: Number (required) - The ICUId to check availability for
+  - checkDate: String (optional) - Date to check availability for in YYYY-MM-DD format (defaults to today)
+  - allocationFromDate: String (optional) - Alternative parameter name for checkDate
+  - ICUAllocationFromDate: String (optional) - Alternative parameter name for checkDate
+Response: {
+  success: Boolean,
+  message: String,
+  data: {
+    icuId: Number,
+    icuBedNo: String | null,
+    icuType: String | null,
+    icuRoomNameNo: String | null,
+    checkDate: String (YYYY-MM-DD),
+    isAvailable: Boolean,
+    reason: String,
+    conflictingAdmissions: Array<{
+      PatientICUAdmissionId: String (UUID),
+      PatientName: String | null,
+      PatientNo: String | null,
+      ICUAllocationFromDate: Date,
+      ICUAllocationToDate: Date | null,
+      ICUAdmissionStatus: String,
+      ICUPatientStatus: String | null
+    }>,
+    conflictingCount: Number
+  }
+} */
+router.get('/check-availability', patientICUAdmissionController.checkICUAvailability);
+
 /* GET /api/patient-icu-admissions/icu-management
 Response: {
   success: Boolean,

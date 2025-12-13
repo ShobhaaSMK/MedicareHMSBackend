@@ -176,6 +176,70 @@ Response: {
     AllocatedByName: String | null
   }
 } */
+/* GET /api/room-admissions/check-availability
+Query Parameters:
+  - roomBedsId: Number (required) - The RoomBedsId to check availability for
+  - checkDate: String (optional) - Date to check availability for in YYYY-MM-DD format (defaults to today)
+Response: {
+  success: Boolean,
+  message: String,
+  data: {
+    roomBedsId: Number,
+    roomNo: String | null,
+    bedNo: String | null,
+    checkDate: String (YYYY-MM-DD),
+    isAvailable: Boolean,
+    reason: String,
+    conflictingAdmissions: Array<{
+      RoomAdmissionId: Number,
+      PatientName: String | null,
+      PatientNo: String | null,
+      RoomAllocationDate: Date,
+      RoomVacantDate: Date | null,
+      AdmissionStatus: String
+    }>,
+    conflictingCount: Number
+  }
+} */
+router.get('/check-availability', roomAdmissionController.checkRoomAvailability);
+
+/* GET /api/room-admissions/:id
+Path Parameters:
+  - id: Number, (required)
+Response: {
+  success: Boolean,
+  data: {
+    RoomAdmissionId: Number,
+    PatientAppointmentId: Number | null,
+    EmergencyBedSlotId: Number | null,
+    AdmittingDoctorId: Number,
+    PatientId: String (UUID),
+    RoomBedsId: Number,
+    RoomAllocationDate: Date,
+    RoomVacantDate: Date | null,
+    AdmissionStatus: String, // "Active" | "Surgery Scheduled" | "Moved to ICU" | "Discharged"
+    CaseSheetDetails: String | null,
+    CaseSheet: String | null,
+    ShiftToAnotherRoom: String, // "Yes" | "No"
+    ShiftedTo: String | null,
+    ShiftedToDetails: String | null,
+    ScheduleOT: String, // "Yes" | "No"
+    OTAdmissionId: Number | null,
+    IsLinkedToICU: String, // "Yes" | "No"
+    ICUAdmissionId: String (UUID) | null,
+    BillId: Number | null,
+    AllocatedBy: Number | null,
+    AllocatedAt: Date,
+    Status: String, // "Active" | "Inactive"
+    PatientName: String | null,
+    PatientNo: String | null,
+    AdmittingDoctorName: String | null,
+    AppointmentTokenNo: Number | null,
+    BedNo: String | null,
+    RoomNo: String | null,
+    AllocatedByName: String | null
+  }
+} */
 router.get('/:id', roomAdmissionController.getRoomAdmissionById);
 
 /* POST /api/room-admissions

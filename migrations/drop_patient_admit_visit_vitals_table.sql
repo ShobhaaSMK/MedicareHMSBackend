@@ -6,7 +6,6 @@
 DO $$
 BEGIN
     -- Drop indexes first
-    DROP INDEX IF EXISTS idx_patientadmitvisitvitals_patientadmitnursevisitsid;
     DROP INDEX IF EXISTS idx_patientadmitvisitvitals_patientid;
     DROP INDEX IF EXISTS idx_patientadmitvisitvitals_nurseid;
     DROP INDEX IF EXISTS idx_patientadmitvisitvitals_patientstatus;
