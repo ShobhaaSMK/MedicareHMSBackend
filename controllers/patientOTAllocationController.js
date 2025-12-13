@@ -9,7 +9,8 @@ const mapPatientOTAllocationRow = (row) => ({
   PatientAppointmentId: row.PatientAppointmentId || row.patientappointmentid || null,
   EmergencyBedSlotId: row.EmergencyBedSlotId || row.emergencybedslotid || null,
   OTId: row.OTId || row.otid,
-  OTSlotId: row.OTSlotId || row.otslotid || null,
+  OTSlotId: row.OTSlotId || row.otslotid || null, // Deprecated: use OTSlotIds array
+  OTSlotIds: row.OTSlotIds || null, // Array of slot IDs
   SurgeryId: row.SurgeryId || row.surgeryid || null,
   LeadSurgeonId: row.LeadSurgeonId || row.leadsurgeonid,
   AssistantDoctorId: row.AssistantDoctorId || row.assistantdoctorid || null,
@@ -41,11 +42,13 @@ const mapPatientOTAllocationRow = (row) => ({
   NurseName: row.NurseName || row.nursename || null,
   BillNo: row.BillNo || row.billno || null,
   CreatedByName: row.CreatedByName || row.createdbyname || null,
-  // OT Slot fields
+  // OT Slot fields (single slot - deprecated)
   OTSlotNo: row.OTSlotNo || row.otslotno || null,
   SlotStartTime: row.SlotStartTime || row.slotstarttime || null,
   SlotEndTime: row.SlotEndTime || row.slotendtime || null,
   OTSlotStatus: row.OTSlotStatus || row.otslotstatus || null,
+  // OT Slots array (multiple slots)
+  OTSlots: row.OTSlots || null, // Array of slot objects with details
 });
 
 exports.getAllPatientOTAllocations = async (req, res) => {
@@ -128,6 +131,52 @@ exports.getAllPatientOTAllocations = async (req, res) => {
     query += ' ORDER BY pta."OTAllocationDate" DESC, pta."OTStartTime" DESC';
 
     const { rows } = await db.query(query, params);
+    
+    // Fetch slot IDs for all allocations
+    if (rows.length > 0) {
+      const allocationIds = rows.map(r => r.PatientOTAllocationId || r.patientotallocationid);
+      const { rows: slotRows } = await db.query(
+        `
+        SELECT 
+          pas."PatientOTAllocationId",
+          pas."OTSlotId",
+          os."OTSlotNo",
+          os."SlotStartTime",
+          os."SlotEndTime",
+          os."Status" AS "OTSlotStatus"
+        FROM "PatientOTAllocationSlots" pas
+        INNER JOIN "OTSlot" os ON pas."OTSlotId" = os."OTSlotId"
+        WHERE pas."PatientOTAllocationId" = ANY($1::int[])
+        ORDER BY pas."PatientOTAllocationId", os."SlotStartTime" ASC
+        `,
+        [allocationIds]
+      );
+      
+      // Group slots by allocation ID
+      const slotsByAllocation = {};
+      slotRows.forEach(slot => {
+        const allocId = slot.PatientOTAllocationId;
+        if (!slotsByAllocation[allocId]) {
+          slotsByAllocation[allocId] = [];
+        }
+        slotsByAllocation[allocId].push({
+          OTSlotId: slot.OTSlotId,
+          OTSlotNo: slot.OTSlotNo,
+          SlotStartTime: slot.SlotStartTime,
+          SlotEndTime: slot.SlotEndTime,
+          OTSlotStatus: slot.OTSlotStatus,
+        });
+      });
+      
+      // Attach slot data to each row
+      rows.forEach(row => {
+        const allocId = row.PatientOTAllocationId || row.patientotallocationid;
+        const slots = slotsByAllocation[allocId] || [];
+        row.OTSlotIds = slots.map(s => s.OTSlotId);
+        row.OTSlots = slots;
+      });
+    }
+    
     res.status(200).json({
       success: true,
       count: rows.length,
@@ -162,15 +211,10 @@ exports.getPatientOTAllocationById = async (req, res) => {
         an."UserName" AS "AnaesthetistName",
         n."UserName" AS "NurseName",
         b."BillNo",
-        u."UserName" AS "CreatedByName",
-        os."OTSlotNo",
-        os."SlotStartTime",
-        os."SlotEndTime",
-        os."Status" AS "OTSlotStatus"
+        u."UserName" AS "CreatedByName"
       FROM "PatientOTAllocation" pta
       LEFT JOIN "PatientRegistration" p ON pta."PatientId" = p."PatientId"
       LEFT JOIN "OT" ot ON pta."OTId" = ot."OTId"
-      LEFT JOIN "OTSlot" os ON pta."OTSlotId" = os."OTSlotId"
       LEFT JOIN "SurgeryProcedure" sp ON pta."SurgeryId" = sp."SurgeryId"
       LEFT JOIN "Users" ls ON pta."LeadSurgeonId" = ls."UserId"
       LEFT JOIN "Users" ad ON pta."AssistantDoctorId" = ad."UserId"
@@ -187,7 +231,34 @@ exports.getPatientOTAllocationById = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Patient OT allocation not found' });
     }
 
-    res.status(200).json({ success: true, data: mapPatientOTAllocationRow(rows[0]) });
+    // Fetch slot details from junction table
+    const { rows: slotRows } = await db.query(
+      `
+      SELECT 
+        os."OTSlotId",
+        os."OTSlotNo",
+        os."SlotStartTime",
+        os."SlotEndTime",
+        os."Status" AS "OTSlotStatus"
+      FROM "PatientOTAllocationSlots" pas
+      INNER JOIN "OTSlot" os ON pas."OTSlotId" = os."OTSlotId"
+      WHERE pas."PatientOTAllocationId" = $1
+      ORDER BY os."SlotStartTime" ASC
+      `,
+      [otAllocationId]
+    );
+
+    const resultRow = rows[0];
+    resultRow.OTSlotIds = slotRows.map(s => s.OTSlotId);
+    resultRow.OTSlots = slotRows.map(s => ({
+      OTSlotId: s.OTSlotId,
+      OTSlotNo: s.OTSlotNo,
+      SlotStartTime: s.SlotStartTime,
+      SlotEndTime: s.SlotEndTime,
+      OTSlotStatus: s.OTSlotStatus,
+    }));
+
+    res.status(200).json({ success: true, data: mapPatientOTAllocationRow(resultRow) });
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -242,10 +313,26 @@ const validatePatientOTAllocationPayload = (body, requireAll = true) => {
     }
   }
 
+  // Support both OTSlotId (single, deprecated) and OTSlotIds (array)
   if (body.OTSlotId !== undefined && body.OTSlotId !== null) {
     const otSlotIdInt = parseInt(body.OTSlotId, 10);
     if (isNaN(otSlotIdInt)) {
       errors.push('OTSlotId must be a valid integer');
+    }
+  }
+  
+  if (body.OTSlotIds !== undefined && body.OTSlotIds !== null) {
+    if (!Array.isArray(body.OTSlotIds)) {
+      errors.push('OTSlotIds must be an array');
+    } else if (body.OTSlotIds.length === 0) {
+      errors.push('OTSlotIds array cannot be empty');
+    } else {
+      body.OTSlotIds.forEach((slotId, index) => {
+        const slotIdInt = parseInt(slotId, 10);
+        if (isNaN(slotIdInt)) {
+          errors.push(`OTSlotIds[${index}] must be a valid integer`);
+        }
+      });
     }
   }
 
@@ -348,6 +435,8 @@ exports.createPatientOTAllocation = async (req, res) => {
       PatientAppointmentId,
       EmergencyBedSlotId,
       OTId,
+      OTSlotId, // Deprecated: single slot
+      OTSlotIds, // Array of slot IDs
       SurgeryId,
       LeadSurgeonId,
       AssistantDoctorId,
@@ -368,6 +457,14 @@ exports.createPatientOTAllocation = async (req, res) => {
       OTAllocationCreatedBy,
       Status = 'Active',
     } = req.body;
+
+    // Normalize OTSlotIds: support both OTSlotId (single) and OTSlotIds (array) for backward compatibility
+    let normalizedOTSlotIds = [];
+    if (OTSlotIds !== undefined && OTSlotIds !== null && Array.isArray(OTSlotIds)) {
+      normalizedOTSlotIds = OTSlotIds;
+    } else if (OTSlotId !== undefined && OTSlotId !== null) {
+      normalizedOTSlotIds = [OTSlotId]; // Convert single to array
+    }
 
     // Validate foreign key existence
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -394,9 +491,35 @@ exports.createPatientOTAllocation = async (req, res) => {
       }
     }
 
-    const otExists = await db.query('SELECT "OTId" FROM "OT" WHERE "OTId" = $1', [parseInt(OTId, 10)]);
+    const otIdInt = parseInt(OTId, 10);
+    const otExists = await db.query('SELECT "OTId" FROM "OT" WHERE "OTId" = $1', [otIdInt]);
     if (otExists.rows.length === 0) {
       return res.status(400).json({ success: false, message: 'OTId does not exist' });
+    }
+
+    // Validate OTSlotIds if provided
+    if (normalizedOTSlotIds.length > 0) {
+      for (const slotId of normalizedOTSlotIds) {
+        const slotIdInt = parseInt(slotId, 10);
+        if (isNaN(slotIdInt)) {
+          return res.status(400).json({ success: false, message: `Invalid OTSlotId: ${slotId}` });
+        }
+        
+        // Verify slot exists and belongs to the specified OT
+        const slotExists = await db.query(
+          'SELECT "OTSlotId", "OTId" FROM "OTSlot" WHERE "OTSlotId" = $1',
+          [slotIdInt]
+        );
+        if (slotExists.rows.length === 0) {
+          return res.status(400).json({ success: false, message: `OTSlotId ${slotIdInt} does not exist` });
+        }
+        if (slotExists.rows[0].OTId !== otIdInt) {
+          return res.status(400).json({ 
+            success: false, 
+            message: `OTSlotId ${slotIdInt} does not belong to OTId ${otIdInt}` 
+          });
+        }
+      }
     }
 
     if (SurgeryId !== undefined && SurgeryId !== null) {
@@ -452,79 +575,136 @@ exports.createPatientOTAllocation = async (req, res) => {
       createdByValue = createdByInt;
     }
 
-    const insertQuery = `
-      INSERT INTO "PatientOTAllocation"
-        ("PatientId", "RoomAdmissionId", "PatientAppointmentId", "EmergencyBedSlotId", "OTId", "SurgeryId",
-         "LeadSurgeonId", "AssistantDoctorId", "AnaesthetistId", "NurseId",
-         "OTAllocationDate", "Duration", "OTStartTime", "OTEndTime",
-         "OTActualStartTime", "OTActualEndTime", "OperationDescription",
-         "OperationStatus", "PreOperationNotes", "PostOperationNotes", "OTDocuments",
-         "BillId", "OTAllocationCreatedBy", "Status")
-      VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
-      RETURNING *;
-    `;
+    // Use transaction to ensure atomicity
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    const { rows } = await db.query(insertQuery, [
-      PatientId, // UUID
-      RoomAdmissionId ? parseInt(RoomAdmissionId, 10) : null,
-      PatientAppointmentId ? parseInt(PatientAppointmentId, 10) : null,
-      EmergencyBedSlotId ? parseInt(EmergencyBedSlotId, 10) : null,
-      parseInt(OTId, 10),
-      SurgeryId ? parseInt(SurgeryId, 10) : null,
-      parseInt(LeadSurgeonId, 10),
-      AssistantDoctorId ? parseInt(AssistantDoctorId, 10) : null,
-      AnaesthetistId ? parseInt(AnaesthetistId, 10) : null,
-      NurseId ? parseInt(NurseId, 10) : null,
-      OTAllocationDate,
-      Duration || null,
-      OTStartTime || null,
-      OTEndTime || null,
-      OTActualStartTime || null,
-      OTActualEndTime || null,
-      OperationDescription || null,
-      OperationStatus,
-      PreOperationNotes || null,
-      PostOperationNotes || null,
-      OTDocuments || null,
-      BillId ? parseInt(BillId, 10) : null,
-      createdByValue,
-      Status,
-    ]);
+      const insertQuery = `
+        INSERT INTO "PatientOTAllocation"
+          ("PatientId", "RoomAdmissionId", "PatientAppointmentId", "EmergencyBedSlotId", "OTId", "SurgeryId",
+           "LeadSurgeonId", "AssistantDoctorId", "AnaesthetistId", "NurseId",
+           "OTAllocationDate", "Duration", "OTStartTime", "OTEndTime",
+           "OTActualStartTime", "OTActualEndTime", "OperationDescription",
+           "OperationStatus", "PreOperationNotes", "PostOperationNotes", "OTDocuments",
+           "BillId", "OTAllocationCreatedBy", "Status")
+        VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+        RETURNING *;
+      `;
 
-    // Fetch the created record with joined data
-    const { rows: joinedRows } = await db.query(
-      `
-      SELECT 
-        pta.*,
-        p."PatientName", p."PatientNo",
-        ot."OTNo",
-        sp."SurgeryName",
-        ls."UserName" AS "LeadSurgeonName",
-        ad."UserName" AS "AssistantDoctorName",
-        an."UserName" AS "AnaesthetistName",
-        n."UserName" AS "NurseName",
-        b."BillNo",
-        u."UserName" AS "CreatedByName"
-      FROM "PatientOTAllocation" pta
-      LEFT JOIN "PatientRegistration" p ON pta."PatientId" = p."PatientId"
-      LEFT JOIN "OT" ot ON pta."OTId" = ot."OTId"
-      LEFT JOIN "SurgeryProcedure" sp ON pta."SurgeryId" = sp."SurgeryId"
-      LEFT JOIN "Users" ls ON pta."LeadSurgeonId" = ls."UserId"
-      LEFT JOIN "Users" ad ON pta."AssistantDoctorId" = ad."UserId"
-      LEFT JOIN "Users" an ON pta."AnaesthetistId" = an."UserId"
-      LEFT JOIN "Users" n ON pta."NurseId" = n."UserId"
-      LEFT JOIN "Bills" b ON pta."BillId" = b."BillId"
-      LEFT JOIN "Users" u ON pta."OTAllocationCreatedBy" = u."UserId"
-      WHERE pta."PatientOTAllocationId" = $1
-      `,
-      [rows[0].PatientOTAllocationId]
-    );
+      const { rows } = await client.query(insertQuery, [
+        PatientId, // UUID
+        RoomAdmissionId ? parseInt(RoomAdmissionId, 10) : null,
+        PatientAppointmentId ? parseInt(PatientAppointmentId, 10) : null,
+        EmergencyBedSlotId ? parseInt(EmergencyBedSlotId, 10) : null,
+        otIdInt,
+        SurgeryId ? parseInt(SurgeryId, 10) : null,
+        parseInt(LeadSurgeonId, 10),
+        AssistantDoctorId ? parseInt(AssistantDoctorId, 10) : null,
+        AnaesthetistId ? parseInt(AnaesthetistId, 10) : null,
+        NurseId ? parseInt(NurseId, 10) : null,
+        OTAllocationDate,
+        Duration || null,
+        OTStartTime || null,
+        OTEndTime || null,
+        OTActualStartTime || null,
+        OTActualEndTime || null,
+        OperationDescription || null,
+        OperationStatus,
+        PreOperationNotes || null,
+        PostOperationNotes || null,
+        OTDocuments || null,
+        BillId ? parseInt(BillId, 10) : null,
+        createdByValue,
+        Status,
+      ]);
 
-    res.status(201).json({
-      success: true,
-      message: 'Patient OT allocation created successfully',
-      data: mapPatientOTAllocationRow(joinedRows[0]),
-    });
+      const patientOTAllocationId = rows[0].PatientOTAllocationId;
+
+      // Insert into junction table if slots are provided
+      if (normalizedOTSlotIds.length > 0) {
+        const slotInsertQuery = `
+          INSERT INTO "PatientOTAllocationSlots" ("PatientOTAllocationId", "OTSlotId")
+          VALUES ($1, $2)
+          ON CONFLICT ("PatientOTAllocationId", "OTSlotId") DO NOTHING
+        `;
+        for (const slotId of normalizedOTSlotIds) {
+          await client.query(slotInsertQuery, [patientOTAllocationId, parseInt(slotId, 10)]);
+        }
+      }
+
+      await client.query('COMMIT');
+
+      // Fetch the created record with joined data and slots
+      const { rows: joinedRows } = await db.query(
+        `
+        SELECT 
+          pta.*,
+          p."PatientName", p."PatientNo",
+          ot."OTNo",
+          sp."SurgeryName",
+          ls."UserName" AS "LeadSurgeonName",
+          ad."UserName" AS "AssistantDoctorName",
+          an."UserName" AS "AnaesthetistName",
+          n."UserName" AS "NurseName",
+          b."BillNo",
+          u."UserName" AS "CreatedByName"
+        FROM "PatientOTAllocation" pta
+        LEFT JOIN "PatientRegistration" p ON pta."PatientId" = p."PatientId"
+        LEFT JOIN "OT" ot ON pta."OTId" = ot."OTId"
+        LEFT JOIN "SurgeryProcedure" sp ON pta."SurgeryId" = sp."SurgeryId"
+        LEFT JOIN "Users" ls ON pta."LeadSurgeonId" = ls."UserId"
+        LEFT JOIN "Users" ad ON pta."AssistantDoctorId" = ad."UserId"
+        LEFT JOIN "Users" an ON pta."AnaesthetistId" = an."UserId"
+        LEFT JOIN "Users" n ON pta."NurseId" = n."UserId"
+        LEFT JOIN "Bills" b ON pta."BillId" = b."BillId"
+        LEFT JOIN "Users" u ON pta."OTAllocationCreatedBy" = u."UserId"
+        WHERE pta."PatientOTAllocationId" = $1
+        `,
+        [patientOTAllocationId]
+      );
+
+      // Fetch slot details
+      const { rows: slotRows } = await db.query(
+        `
+        SELECT 
+          os."OTSlotId",
+          os."OTSlotNo",
+          os."SlotStartTime",
+          os."SlotEndTime",
+          os."Status" AS "OTSlotStatus"
+        FROM "PatientOTAllocationSlots" pas
+        INNER JOIN "OTSlot" os ON pas."OTSlotId" = os."OTSlotId"
+        WHERE pas."PatientOTAllocationId" = $1
+        ORDER BY os."SlotStartTime" ASC
+        `,
+        [patientOTAllocationId]
+      );
+
+      const resultRow = joinedRows[0];
+      if (resultRow) {
+        resultRow.OTSlotIds = slotRows.map(s => s.OTSlotId);
+        resultRow.OTSlots = slotRows.map(s => ({
+          OTSlotId: s.OTSlotId,
+          OTSlotNo: s.OTSlotNo,
+          SlotStartTime: s.SlotStartTime,
+          SlotEndTime: s.SlotEndTime,
+          OTSlotStatus: s.OTSlotStatus,
+        }));
+      }
+
+      client.release();
+
+      res.status(201).json({
+        success: true,
+        message: 'Patient OT allocation created successfully',
+        data: mapPatientOTAllocationRow(resultRow),
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      client.release();
+      throw error;
+    }
   } catch (error) {
     if (error.code === '23503') {
       return res.status(400).json({
@@ -559,7 +739,8 @@ exports.updatePatientOTAllocation = async (req, res) => {
       PatientAppointmentId,
       EmergencyBedSlotId,
       OTId,
-      OTSlotId,
+      OTSlotId, // Deprecated: single slot
+      OTSlotIds, // Array of slot IDs
       SurgeryId,
       LeadSurgeonId,
       AssistantDoctorId,
@@ -580,6 +761,18 @@ exports.updatePatientOTAllocation = async (req, res) => {
       OTAllocationCreatedBy,
       Status,
     } = req.body;
+
+    // Normalize OTSlotIds: support both OTSlotId (single) and OTSlotIds (array) for backward compatibility
+    let normalizedOTSlotIds = null;
+    if (OTSlotIds !== undefined) {
+      if (OTSlotIds === null) {
+        normalizedOTSlotIds = []; // Empty array means remove all slots
+      } else if (Array.isArray(OTSlotIds)) {
+        normalizedOTSlotIds = OTSlotIds;
+      }
+    } else if (OTSlotId !== undefined && OTSlotId !== null) {
+      normalizedOTSlotIds = [OTSlotId]; // Convert single to array
+    }
 
     // Validate foreign key existence if provided
     if (PatientId !== undefined && PatientId !== null) {
@@ -615,38 +808,36 @@ exports.updatePatientOTAllocation = async (req, res) => {
       }
     }
 
-    if (OTSlotId !== undefined && OTSlotId !== null) {
-      const otSlotIdInt = parseInt(OTSlotId, 10);
-      if (isNaN(otSlotIdInt)) {
-        return res.status(400).json({ success: false, message: 'OTSlotId must be a valid integer' });
-      }
-      // Validate OTSlot exists
-      const otSlotExists = await db.query(
-        'SELECT "OTSlotId", "OTId" FROM "OTSlot" WHERE "OTSlotId" = $1',
-        [otSlotIdInt]
-      );
-      if (otSlotExists.rows.length === 0) {
-        return res.status(400).json({ success: false, message: 'OTSlotId does not exist' });
-      }
-      // If OTId is also being updated, verify OTSlot belongs to the new OT
-      // Otherwise, get current OTId and verify
-      if (OTId !== undefined && OTId !== null) {
-        if (otSlotExists.rows[0].OTId !== parseInt(OTId, 10)) {
-          return res.status(400).json({
-            success: false,
-            message: 'OTSlotId does not belong to the specified OTId',
-          });
+    // Get current OTId for validation
+    const currentRecord = await db.query(
+      'SELECT "OTId" FROM "PatientOTAllocation" WHERE "PatientOTAllocationId" = $1',
+      [otAllocationId]
+    );
+    if (currentRecord.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Patient OT allocation not found' });
+    }
+    const currentOTId = OTId !== undefined && OTId !== null ? parseInt(OTId, 10) : currentRecord.rows[0].OTId;
+
+    // Validate OTSlotIds if provided
+    if (normalizedOTSlotIds !== null) {
+      for (const slotId of normalizedOTSlotIds) {
+        const slotIdInt = parseInt(slotId, 10);
+        if (isNaN(slotIdInt)) {
+          return res.status(400).json({ success: false, message: `Invalid OTSlotId: ${slotId}` });
         }
-      } else {
-        // Get current OTId from the record
-        const currentRecord = await db.query(
-          'SELECT "OTId" FROM "PatientOTAllocation" WHERE "PatientOTAllocationId" = $1',
-          [otAllocationId]
+        
+        // Verify slot exists and belongs to the correct OT
+        const slotExists = await db.query(
+          'SELECT "OTSlotId", "OTId" FROM "OTSlot" WHERE "OTSlotId" = $1',
+          [slotIdInt]
         );
-        if (currentRecord.rows.length > 0 && otSlotExists.rows[0].OTId !== currentRecord.rows[0].OTId) {
-          return res.status(400).json({
-            success: false,
-            message: 'OTSlotId does not belong to the current OTId',
+        if (slotExists.rows.length === 0) {
+          return res.status(400).json({ success: false, message: `OTSlotId ${slotIdInt} does not exist` });
+        }
+        if (slotExists.rows[0].OTId !== currentOTId) {
+          return res.status(400).json({ 
+            success: false, 
+            message: `OTSlotId ${slotIdInt} does not belong to OTId ${currentOTId}` 
           });
         }
       }
@@ -730,10 +921,8 @@ exports.updatePatientOTAllocation = async (req, res) => {
       updates.push(`"OTId" = $${paramIndex++}`);
       params.push(OTId !== null ? parseInt(OTId, 10) : null);
     }
-    if (OTSlotId !== undefined) {
-      updates.push(`"OTSlotId" = $${paramIndex++}`);
-      params.push(OTSlotId !== null ? parseInt(OTSlotId, 10) : null);
-    }
+    // OTSlotId is deprecated - handled via junction table
+    // Keep for backward compatibility but don't update it
     if (SurgeryId !== undefined) {
       updates.push(`"SurgeryId" = $${paramIndex++}`);
       params.push(SurgeryId !== null ? parseInt(SurgeryId, 10) : null);
@@ -811,58 +1000,121 @@ exports.updatePatientOTAllocation = async (req, res) => {
       params.push(Status);
     }
 
-    if (updates.length === 0) {
-      return res.status(400).json({ success: false, message: 'No fields to update' });
+    // Use transaction to ensure atomicity
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Update main table if there are updates
+      if (updates.length > 0) {
+        params.push(otAllocationId);
+        const updateQuery = `
+          UPDATE "PatientOTAllocation"
+          SET ${updates.join(', ')}
+          WHERE "PatientOTAllocationId" = $${paramIndex}
+          RETURNING *;
+        `;
+        const { rows } = await client.query(updateQuery, params);
+        if (rows.length === 0) {
+          await client.query('ROLLBACK');
+          client.release();
+          return res.status(404).json({ success: false, message: 'Patient OT allocation not found' });
+        }
+      }
+
+      // Update junction table if OTSlotIds are provided
+      if (normalizedOTSlotIds !== null) {
+        // Delete existing slots
+        await client.query(
+          'DELETE FROM "PatientOTAllocationSlots" WHERE "PatientOTAllocationId" = $1',
+          [otAllocationId]
+        );
+        
+        // Insert new slots
+        if (normalizedOTSlotIds.length > 0) {
+          const slotInsertQuery = `
+            INSERT INTO "PatientOTAllocationSlots" ("PatientOTAllocationId", "OTSlotId")
+            VALUES ($1, $2)
+            ON CONFLICT ("PatientOTAllocationId", "OTSlotId") DO NOTHING
+          `;
+          for (const slotId of normalizedOTSlotIds) {
+            await client.query(slotInsertQuery, [otAllocationId, parseInt(slotId, 10)]);
+          }
+        }
+      }
+
+      await client.query('COMMIT');
+
+      // Fetch the updated record with joined data and slots
+      const { rows: joinedRows } = await db.query(
+        `
+        SELECT 
+          pta.*,
+          p."PatientName", p."PatientNo",
+          ot."OTNo",
+          sp."SurgeryName",
+          ls."UserName" AS "LeadSurgeonName",
+          ad."UserName" AS "AssistantDoctorName",
+          an."UserName" AS "AnaesthetistName",
+          n."UserName" AS "NurseName",
+          b."BillNo",
+          u."UserName" AS "CreatedByName"
+        FROM "PatientOTAllocation" pta
+        LEFT JOIN "PatientRegistration" p ON pta."PatientId" = p."PatientId"
+        LEFT JOIN "OT" ot ON pta."OTId" = ot."OTId"
+        LEFT JOIN "SurgeryProcedure" sp ON pta."SurgeryId" = sp."SurgeryId"
+        LEFT JOIN "Users" ls ON pta."LeadSurgeonId" = ls."UserId"
+        LEFT JOIN "Users" ad ON pta."AssistantDoctorId" = ad."UserId"
+        LEFT JOIN "Users" an ON pta."AnaesthetistId" = an."UserId"
+        LEFT JOIN "Users" n ON pta."NurseId" = n."UserId"
+        LEFT JOIN "Bills" b ON pta."BillId" = b."BillId"
+        LEFT JOIN "Users" u ON pta."OTAllocationCreatedBy" = u."UserId"
+        WHERE pta."PatientOTAllocationId" = $1
+        `,
+        [otAllocationId]
+      );
+
+      // Fetch slot details
+      const { rows: slotRows } = await db.query(
+        `
+        SELECT 
+          os."OTSlotId",
+          os."OTSlotNo",
+          os."SlotStartTime",
+          os."SlotEndTime",
+          os."Status" AS "OTSlotStatus"
+        FROM "PatientOTAllocationSlots" pas
+        INNER JOIN "OTSlot" os ON pas."OTSlotId" = os."OTSlotId"
+        WHERE pas."PatientOTAllocationId" = $1
+        ORDER BY os."SlotStartTime" ASC
+        `,
+        [otAllocationId]
+      );
+
+      const resultRow = joinedRows[0];
+      if (resultRow) {
+        resultRow.OTSlotIds = slotRows.map(s => s.OTSlotId);
+        resultRow.OTSlots = slotRows.map(s => ({
+          OTSlotId: s.OTSlotId,
+          OTSlotNo: s.OTSlotNo,
+          SlotStartTime: s.SlotStartTime,
+          SlotEndTime: s.SlotEndTime,
+          OTSlotStatus: s.OTSlotStatus,
+        }));
+      }
+
+      client.release();
+
+      res.status(200).json({
+        success: true,
+        message: 'Patient OT allocation updated successfully',
+        data: mapPatientOTAllocationRow(resultRow),
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      client.release();
+      throw error;
     }
-
-    params.push(otAllocationId);
-    const updateQuery = `
-      UPDATE "PatientOTAllocation"
-      SET ${updates.join(', ')}
-      WHERE "PatientOTAllocationId" = $${paramIndex}
-      RETURNING *;
-    `;
-
-    const { rows } = await db.query(updateQuery, params);
-
-    if (rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Patient OT allocation not found' });
-    }
-
-    // Fetch the updated record with joined data
-    const { rows: joinedRows } = await db.query(
-      `
-      SELECT 
-        pta.*,
-        p."PatientName", p."PatientNo",
-        ot."OTNo",
-        sp."SurgeryName",
-        ls."UserName" AS "LeadSurgeonName",
-        ad."UserName" AS "AssistantDoctorName",
-        an."UserName" AS "AnaesthetistName",
-        n."UserName" AS "NurseName",
-        b."BillNo",
-        u."UserName" AS "CreatedByName"
-      FROM "PatientOTAllocation" pta
-      LEFT JOIN "PatientRegistration" p ON pta."PatientId" = p."PatientId"
-      LEFT JOIN "OT" ot ON pta."OTId" = ot."OTId"
-      LEFT JOIN "SurgeryProcedure" sp ON pta."SurgeryId" = sp."SurgeryId"
-      LEFT JOIN "Users" ls ON pta."LeadSurgeonId" = ls."UserId"
-      LEFT JOIN "Users" ad ON pta."AssistantDoctorId" = ad."UserId"
-      LEFT JOIN "Users" an ON pta."AnaesthetistId" = an."UserId"
-      LEFT JOIN "Users" n ON pta."NurseId" = n."UserId"
-      LEFT JOIN "Bills" b ON pta."BillId" = b."BillId"
-      LEFT JOIN "Users" u ON pta."OTAllocationCreatedBy" = u."UserId"
-      WHERE pta."PatientOTAllocationId" = $1
-      `,
-      [otAllocationId]
-    );
-
-    res.status(200).json({
-      success: true,
-      message: 'Patient OT allocation updated successfully',
-      data: mapPatientOTAllocationRow(joinedRows[0]),
-    });
   } catch (error) {
     if (error.code === '23503') {
       return res.status(400).json({
@@ -1000,20 +1252,49 @@ exports.deletePatientOTAllocation = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid PatientOTAllocationId. Must be an integer.' });
     }
 
-    const { rows } = await db.query(
-      'DELETE FROM "PatientOTAllocation" WHERE "PatientOTAllocationId" = $1 RETURNING *;',
-      [otAllocationId]
-    );
+    // Use transaction to ensure atomicity
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    if (rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Patient OT allocation not found' });
+      // First, verify the allocation exists
+      const { rows: allocationRows } = await client.query(
+        'SELECT * FROM "PatientOTAllocation" WHERE "PatientOTAllocationId" = $1',
+        [otAllocationId]
+      );
+
+      if (allocationRows.length === 0) {
+        await client.query('ROLLBACK');
+        client.release();
+        return res.status(404).json({ success: false, message: 'Patient OT allocation not found' });
+      }
+
+      // Explicitly delete related slots from junction table
+      // (This is redundant if CASCADE is working, but ensures deletion even if constraint doesn't exist)
+      await client.query(
+        'DELETE FROM "PatientOTAllocationSlots" WHERE "PatientOTAllocationId" = $1',
+        [otAllocationId]
+      );
+
+      // Delete the main allocation record
+      const { rows } = await client.query(
+        'DELETE FROM "PatientOTAllocation" WHERE "PatientOTAllocationId" = $1 RETURNING *;',
+        [otAllocationId]
+      );
+
+      await client.query('COMMIT');
+      client.release();
+
+      res.status(200).json({
+        success: true,
+        message: 'Patient OT allocation and associated slots deleted successfully',
+        data: mapPatientOTAllocationRow(rows[0]),
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      client.release();
+      throw error;
     }
-
-    res.status(200).json({
-      success: true,
-      message: 'Patient OT allocation deleted successfully',
-      data: mapPatientOTAllocationRow(rows[0]),
-    });
   } catch (error) {
     res.status(500).json({
       success: false,

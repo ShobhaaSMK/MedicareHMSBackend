@@ -391,11 +391,69 @@ CREATE TABLE IF NOT EXISTS "PatientLabTest" (
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("LabTestId") REFERENCES "LabTest"("LabTestId") ON DELETE RESTRICT,
     FOREIGN KEY ("AppointmentId") REFERENCES "PatientAppointment"("PatientAppointmentId") ON DELETE SET NULL,
-    FOREIGN KEY ("RoomAdmissionId") REFERENCES "RoomAdmission"("RoomAdmissionId") ON DELETE SET NULL,
     FOREIGN KEY ("EmergencyBedSlotId") REFERENCES "EmergencyBedSlot"("EmergencyBedSlotId") ON DELETE SET NULL,
     FOREIGN KEY ("BillId") REFERENCES "Bills"("BillId") ON DELETE SET NULL,
     FOREIGN KEY ("OrderedByDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
+
+-- Add missing columns to PatientLabTest if table exists but columns don't
+DO $$
+BEGIN
+    -- Only proceed if PatientLabTest table exists
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientLabTest'
+    ) THEN
+        -- Add RoomAdmissionId column if it doesn't exist
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = 'PatientLabTest' 
+            AND column_name = 'RoomAdmissionId'
+        ) THEN
+            ALTER TABLE "PatientLabTest" ADD COLUMN "RoomAdmissionId" INTEGER;
+            
+            -- Add foreign key constraint if RoomAdmission table exists
+            IF EXISTS (
+                SELECT 1 FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'RoomAdmission'
+            ) AND NOT EXISTS (
+                SELECT 1 FROM pg_constraint 
+                WHERE conname = 'PatientLabTest_RoomAdmissionId_fkey'
+            ) THEN
+                ALTER TABLE "PatientLabTest" 
+                ADD CONSTRAINT "PatientLabTest_RoomAdmissionId_fkey" 
+                FOREIGN KEY ("RoomAdmissionId") REFERENCES "RoomAdmission"("RoomAdmissionId") ON DELETE SET NULL;
+            END IF;
+        END IF;
+        
+        -- Add OrderedByDoctorId column if it doesn't exist
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = 'PatientLabTest' 
+            AND column_name = 'OrderedByDoctorId'
+        ) THEN
+            ALTER TABLE "PatientLabTest" ADD COLUMN "OrderedByDoctorId" INTEGER;
+            
+            -- Add foreign key constraint if Users table exists
+            IF EXISTS (
+                SELECT 1 FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'Users'
+            ) AND NOT EXISTS (
+                SELECT 1 FROM pg_constraint 
+                WHERE conname = 'PatientLabTest_OrderedByDoctorId_fkey'
+            ) THEN
+                ALTER TABLE "PatientLabTest" 
+                ADD CONSTRAINT "PatientLabTest_OrderedByDoctorId_fkey" 
+                FOREIGN KEY ("OrderedByDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL;
+            END IF;
+        END IF;
+    END IF;
+END $$;
 
 -- SurgeryProcedure table (created before PatientOTAllocation which references it)
 CREATE TABLE IF NOT EXISTS "SurgeryProcedure" (
@@ -444,7 +502,6 @@ CREATE TABLE IF NOT EXISTS "PatientOTAllocation" (
     "OTAllocationCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
-    FOREIGN KEY ("RoomAdmissionId") REFERENCES "RoomAdmission"("RoomAdmissionId") ON DELETE SET NULL,
     FOREIGN KEY ("PatientAppointmentId") REFERENCES "PatientAppointment"("PatientAppointmentId") ON DELETE SET NULL,
     FOREIGN KEY ("EmergencyBedSlotId") REFERENCES "EmergencyBedSlot"("EmergencyBedSlotId") ON DELETE SET NULL,
     FOREIGN KEY ("OTId") REFERENCES "OT"("OTId") ON DELETE RESTRICT,
@@ -452,10 +509,54 @@ CREATE TABLE IF NOT EXISTS "PatientOTAllocation" (
     FOREIGN KEY ("LeadSurgeonId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
     FOREIGN KEY ("AssistantDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL,
     FOREIGN KEY ("AnaesthetistId") REFERENCES "Users"("UserId") ON DELETE SET NULL,
-    FOREIGN KEY ("NurseId") REFERENCES "Users"("UserId") ON DELETE SET NULL,
     FOREIGN KEY ("BillId") REFERENCES "Bills"("BillId") ON DELETE SET NULL,
     FOREIGN KEY ("OTAllocationCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
+
+-- Add NurseId foreign key to PatientOTAllocation if column exists
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientOTAllocation'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientOTAllocation' 
+        AND column_name = 'NurseId'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Users'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'PatientOTAllocation_NurseId_fkey'
+    ) THEN
+        ALTER TABLE "PatientOTAllocation" 
+        ADD CONSTRAINT "PatientOTAllocation_NurseId_fkey" 
+        FOREIGN KEY ("NurseId") REFERENCES "Users"("UserId") ON DELETE SET NULL;
+    END IF;
+END $$;
+
+-- PatientOTAllocationSlots junction table (for multiple slots per allocation)
+CREATE TABLE IF NOT EXISTS "PatientOTAllocationSlots" (
+    "PatientOTAllocationSlotId" SERIAL PRIMARY KEY,
+    "PatientOTAllocationId" INTEGER NOT NULL,
+    "OTSlotId" INTEGER NOT NULL,
+    "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY ("PatientOTAllocationId") REFERENCES "PatientOTAllocation"("PatientOTAllocationId") ON DELETE CASCADE,
+    FOREIGN KEY ("OTSlotId") REFERENCES "OTSlot"("OTSlotId") ON DELETE RESTRICT,
+    UNIQUE ("PatientOTAllocationId", "OTSlotId")
+);
+
+-- Create index on PatientOTAllocationId for faster lookups
+CREATE INDEX IF NOT EXISTS idx_patientotallocationslots_allocationid 
+    ON "PatientOTAllocationSlots"("PatientOTAllocationId");
+
+-- Create index on OTSlotId for faster availability checks
+CREATE INDEX IF NOT EXISTS idx_patientotallocationslots_slotid 
+    ON "PatientOTAllocationSlots"("OTSlotId");
 
 -- Add OTAdmissionId foreign key constraint to RoomAdmission (after PatientOTAllocation is created)
 DO $$
@@ -527,13 +628,49 @@ CREATE TABLE IF NOT EXISTS "EmergencyAdmissionVitals" (
     "VitalsCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
     FOREIGN KEY ("EmergencyAdmissionId") REFERENCES "EmergencyAdmission"("EmergencyAdmissionId") ON DELETE RESTRICT,
-    FOREIGN KEY ("NurseId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
     FOREIGN KEY ("VitalsCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
+-- Add NurseId foreign key to EmergencyAdmissionVitals if column exists
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'EmergencyAdmissionVitals'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'EmergencyAdmissionVitals' 
+        AND column_name = 'NurseId'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Users'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'EmergencyAdmissionVitals_NurseId_fkey'
+    ) THEN
+        ALTER TABLE "EmergencyAdmissionVitals" 
+        ADD CONSTRAINT "EmergencyAdmissionVitals_NurseId_fkey" 
+        FOREIGN KEY ("NurseId") REFERENCES "Users"("UserId") ON DELETE RESTRICT;
+    END IF;
+END $$;
+
 -- Create indexes for EmergencyAdmissionVitals
 CREATE INDEX IF NOT EXISTS idx_emergencyadmissionvitals_emergencyadmissionid ON "EmergencyAdmissionVitals"("EmergencyAdmissionId");
-CREATE INDEX IF NOT EXISTS idx_emergencyadmissionvitals_nurseid ON "EmergencyAdmissionVitals"("NurseId");
+-- Create NurseId index only if column exists
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'EmergencyAdmissionVitals' 
+        AND column_name = 'NurseId'
+    ) THEN
+        CREATE INDEX IF NOT EXISTS idx_emergencyadmissionvitals_nurseid ON "EmergencyAdmissionVitals"("NurseId");
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_emergencyadmissionvitals_recordeddatetime ON "EmergencyAdmissionVitals"("RecordedDateTime");
 CREATE INDEX IF NOT EXISTS idx_emergencyadmissionvitals_vitalsstatus ON "EmergencyAdmissionVitals"("VitalsStatus");
 CREATE INDEX IF NOT EXISTS idx_emergencyadmissionvitals_status ON "EmergencyAdmissionVitals"("Status");
@@ -551,11 +688,35 @@ CREATE TABLE IF NOT EXISTS "PatientAdmitNurseVisits" (
     "Status" VARCHAR(50) DEFAULT 'Active',
     "RoomVisitsCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     "RoomVisitsCreatedBy" INTEGER,
-    FOREIGN KEY ("RoomAdmissionId") REFERENCES "RoomAdmission"("RoomAdmissionId") ON DELETE SET NULL,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("RoomVisitsCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
+-- Add RoomAdmissionId foreign key to PatientAdmitNurseVisits if column exists
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientAdmitNurseVisits'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientAdmitNurseVisits' 
+        AND column_name = 'RoomAdmissionId'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'RoomAdmission'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'PatientAdmitNurseVisits_RoomAdmissionId_fkey'
+    ) THEN
+        ALTER TABLE "PatientAdmitNurseVisits" 
+        ADD CONSTRAINT "PatientAdmitNurseVisits_RoomAdmissionId_fkey" 
+        FOREIGN KEY ("RoomAdmissionId") REFERENCES "RoomAdmission"("RoomAdmissionId") ON DELETE SET NULL;
+    END IF;
+END $$;
 
 -- ICUDoctorVisits table
 CREATE TABLE IF NOT EXISTS "ICUDoctorVisits" (
@@ -598,9 +759,34 @@ CREATE TABLE IF NOT EXISTS "ICUVisitVitals" (
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
     FOREIGN KEY ("ICUAdmissionId") REFERENCES "PatientICUAdmission"("PatientICUAdmissionId") ON DELETE RESTRICT,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
-    FOREIGN KEY ("NurseId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
     FOREIGN KEY ("VitalsCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
+
+-- Add NurseId foreign key to ICUVisitVitals if column exists
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'ICUVisitVitals'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'ICUVisitVitals' 
+        AND column_name = 'NurseId'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Users'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'ICUVisitVitals_NurseId_fkey'
+    ) THEN
+        ALTER TABLE "ICUVisitVitals" 
+        ADD CONSTRAINT "ICUVisitVitals_NurseId_fkey" 
+        FOREIGN KEY ("NurseId") REFERENCES "Users"("UserId") ON DELETE RESTRICT;
+    END IF;
+END $$;
 
 -- PatientAdmitDoctorVisits table
 CREATE TABLE IF NOT EXISTS "PatientAdmitDoctorVisits" (
@@ -614,11 +800,36 @@ CREATE TABLE IF NOT EXISTS "PatientAdmitDoctorVisits" (
     "Status" VARCHAR(50) DEFAULT 'Active',
     "VisitCreatedBy" INTEGER,
     "VisitCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY ("RoomAdmissionId") REFERENCES "RoomAdmission"("RoomAdmissionId") ON DELETE SET NULL,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
     FOREIGN KEY ("VisitCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
+
+-- Add RoomAdmissionId foreign key to PatientAdmitDoctorVisits if column exists
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientAdmitDoctorVisits'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientAdmitDoctorVisits' 
+        AND column_name = 'RoomAdmissionId'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'RoomAdmission'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'PatientAdmitDoctorVisits_RoomAdmissionId_fkey'
+    ) THEN
+        ALTER TABLE "PatientAdmitDoctorVisits" 
+        ADD CONSTRAINT "PatientAdmitDoctorVisits_RoomAdmissionId_fkey" 
+        FOREIGN KEY ("RoomAdmissionId") REFERENCES "RoomAdmission"("RoomAdmissionId") ON DELETE SET NULL;
+    END IF;
+END $$;
 
 -- PatientAdmitVisitVitals table
 CREATE TABLE IF NOT EXISTS "PatientAdmitVisitVitals" (
@@ -641,11 +852,59 @@ CREATE TABLE IF NOT EXISTS "PatientAdmitVisitVitals" (
     "VitalsCreatedBy" INTEGER,
     "VitalsCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
-    FOREIGN KEY ("RoomAdmissionId") REFERENCES "RoomAdmission"("RoomAdmissionId") ON DELETE SET NULL,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
-    FOREIGN KEY ("NurseId") REFERENCES "Users"("UserId") ON DELETE SET NULL,
     FOREIGN KEY ("VitalsCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
+
+-- Add RoomAdmissionId and NurseId foreign keys to PatientAdmitVisitVitals if columns exist
+DO $$
+BEGIN
+    -- RoomAdmissionId foreign key
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientAdmitVisitVitals'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientAdmitVisitVitals' 
+        AND column_name = 'RoomAdmissionId'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'RoomAdmission'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'PatientAdmitVisitVitals_RoomAdmissionId_fkey'
+    ) THEN
+        ALTER TABLE "PatientAdmitVisitVitals" 
+        ADD CONSTRAINT "PatientAdmitVisitVitals_RoomAdmissionId_fkey" 
+        FOREIGN KEY ("RoomAdmissionId") REFERENCES "RoomAdmission"("RoomAdmissionId") ON DELETE SET NULL;
+    END IF;
+    
+    -- NurseId foreign key
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientAdmitVisitVitals'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientAdmitVisitVitals' 
+        AND column_name = 'NurseId'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Users'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'PatientAdmitVisitVitals_NurseId_fkey'
+    ) THEN
+        ALTER TABLE "PatientAdmitVisitVitals" 
+        ADD CONSTRAINT "PatientAdmitVisitVitals_NurseId_fkey" 
+        FOREIGN KEY ("NurseId") REFERENCES "Users"("UserId") ON DELETE SET NULL;
+    END IF;
+END $$;
 
 -- Create indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_users_roleid ON "Users"("RoleId");
@@ -663,8 +922,29 @@ CREATE INDEX IF NOT EXISTS idx_patientlabtest_labtestid ON "PatientLabTest"("Lab
 CREATE INDEX IF NOT EXISTS idx_patientlabtest_patienttype ON "PatientLabTest"("PatientType");
 CREATE INDEX IF NOT EXISTS idx_patientlabtest_status ON "PatientLabTest"("Status");
 CREATE INDEX IF NOT EXISTS idx_patientlabtest_teststatus ON "PatientLabTest"("TestStatus");
-CREATE INDEX IF NOT EXISTS idx_patientlabtest_roomadmissionid ON "PatientLabTest"("RoomAdmissionId");
-CREATE INDEX IF NOT EXISTS idx_patientlabtest_orderedbydoctorid ON "PatientLabTest"("OrderedByDoctorId");
+-- Create indexes for PatientLabTest optional columns only if they exist
+DO $$
+BEGIN
+    -- RoomAdmissionId index
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientLabTest' 
+        AND column_name = 'RoomAdmissionId'
+    ) THEN
+        CREATE INDEX IF NOT EXISTS idx_patientlabtest_roomadmissionid ON "PatientLabTest"("RoomAdmissionId");
+    END IF;
+    
+    -- OrderedByDoctorId index
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientLabTest' 
+        AND column_name = 'OrderedByDoctorId'
+    ) THEN
+        CREATE INDEX IF NOT EXISTS idx_patientlabtest_orderedbydoctorid ON "PatientLabTest"("OrderedByDoctorId");
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_emergencyadmission_doctorid ON "EmergencyAdmission"("DoctorId");
 CREATE INDEX IF NOT EXISTS idx_emergencyadmission_patientid ON "EmergencyAdmission"("PatientId");
 CREATE INDEX IF NOT EXISTS idx_emergencyadmission_emergencybedslotid ON "EmergencyAdmission"("EmergencyBedSlotId");
@@ -690,7 +970,18 @@ CREATE INDEX IF NOT EXISTS idx_icudoctorvisits_visiteddatetime ON "ICUDoctorVisi
 CREATE INDEX IF NOT EXISTS idx_icudoctorvisits_status ON "ICUDoctorVisits"("Status");
 CREATE INDEX IF NOT EXISTS idx_icuvisitvitals_icuadmissionid ON "ICUVisitVitals"("ICUAdmissionId");
 CREATE INDEX IF NOT EXISTS idx_icuvisitvitals_patientid ON "ICUVisitVitals"("PatientId");
-CREATE INDEX IF NOT EXISTS idx_icuvisitvitals_nurseid ON "ICUVisitVitals"("NurseId");
+-- Create NurseId index only if column exists
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'ICUVisitVitals' 
+        AND column_name = 'NurseId'
+    ) THEN
+        CREATE INDEX IF NOT EXISTS idx_icuvisitvitals_nurseid ON "ICUVisitVitals"("NurseId");
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_icuvisitvitals_dailyorhourlyvitals ON "ICUVisitVitals"("DailyOrHourlyVitals");
 CREATE INDEX IF NOT EXISTS idx_icuvisitvitals_patientcondition ON "ICUVisitVitals"("PatientCondition");
 CREATE INDEX IF NOT EXISTS idx_icuvisitvitals_recordeddatetime ON "ICUVisitVitals"("RecordedDateTime");
@@ -708,9 +999,30 @@ CREATE INDEX IF NOT EXISTS idx_patientadmitdoctorvisits_patientid ON "PatientAdm
 CREATE INDEX IF NOT EXISTS idx_patientadmitdoctorvisits_doctorid ON "PatientAdmitDoctorVisits"("DoctorId");
 CREATE INDEX IF NOT EXISTS idx_patientadmitdoctorvisits_visiteddatetime ON "PatientAdmitDoctorVisits"("DoctorVisitedDateTime");
 CREATE INDEX IF NOT EXISTS idx_patientadmitdoctorvisits_status ON "PatientAdmitDoctorVisits"("Status");
-CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_roomadmissionid ON "PatientAdmitVisitVitals"("RoomAdmissionId");
+-- Create indexes for PatientAdmitVisitVitals optional columns only if they exist
+DO $$
+BEGIN
+    -- RoomAdmissionId index
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientAdmitVisitVitals' 
+        AND column_name = 'RoomAdmissionId'
+    ) THEN
+        CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_roomadmissionid ON "PatientAdmitVisitVitals"("RoomAdmissionId");
+    END IF;
+    
+    -- NurseId index
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientAdmitVisitVitals' 
+        AND column_name = 'NurseId'
+    ) THEN
+        CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_nurseid ON "PatientAdmitVisitVitals"("NurseId");
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_patientid ON "PatientAdmitVisitVitals"("PatientId");
-CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_nurseid ON "PatientAdmitVisitVitals"("NurseId");
 CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_patientstatus ON "PatientAdmitVisitVitals"("PatientStatus");
 CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_dailyorhourlyvitals ON "PatientAdmitVisitVitals"("DailyOrHourlyVitals");
 CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_recordeddatetime ON "PatientAdmitVisitVitals"("RecordedDateTime");

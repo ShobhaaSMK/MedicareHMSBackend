@@ -62,6 +62,14 @@ Response: {
     PatientAppointmentId: Number | null,
     EmergencyBedSlotId: Number | null,
     OTId: Number,
+    OTSlotIds: Array<Number> | null, // Array of slot IDs
+    OTSlots: Array<{ // Array of slot objects with details
+      OTSlotId: Number,
+      OTSlotNo: Number,
+      SlotStartTime: String,
+      SlotEndTime: String,
+      OTSlotStatus: String
+    }> | null,
     SurgeryId: Number | null,
     LeadSurgeonId: Number,
     AssistantDoctorId: Number | null,
@@ -107,7 +115,15 @@ Response: {
     PatientAppointmentId: Number | null,
     EmergencyBedSlotId: Number | null,
     OTId: Number,
-    OTSlotId: Number | null,
+    //OTSlotId: Number | null, // Deprecated: use OTSlotIds array
+    OTSlotIds: Array<Number> | null, // Array of slot IDs
+    OTSlots: Array<{ // Array of slot objects with details
+      OTSlotId: Number,
+      OTSlotNo: Number,
+      SlotStartTime: String,
+      SlotEndTime: String,
+      OTSlotStatus: String
+    }> | null,
     SurgeryId: Number | null,
     LeadSurgeonId: Number,
     AssistantDoctorId: Number | null,
@@ -161,6 +177,7 @@ Request: {
   PatientAppointmentId: Number | null,
   EmergencyBedSlotId: Number | null,
   OTId: Number, (required)
+  OTSlotIds: Array<Number> | null, // Array of slot IDs (optional)
   SurgeryId: Number | null,
   LeadSurgeonId: Number, (required)
   AssistantDoctorId: Number | null,
@@ -232,7 +249,8 @@ Request: {
   PatientAppointmentId: Number | null,
   EmergencyBedSlotId: Number | null,
   OTId: Number,
-  OTSlotId: Number | null,
+  //OTSlotId: Number | null, // Deprecated: use OTSlotIds array
+  OTSlotIds: Array<Number> | null, // Array of slot IDs
   SurgeryId: Number | null,
   LeadSurgeonId: Number,
   AssistantDoctorId: Number | null,

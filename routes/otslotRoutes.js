@@ -18,8 +18,15 @@ Response: {
     CreatedAt: Date,
     OTNo: String | null,
     OTName: String | null,
-    OTType: String | null
+    OTType: String | null,
+    IsAvailable: Boolean,
+    OccupiedByPatientId: String (UUID) | null, // Patient ID if slot is occupied
+    OccupiedByPatientNo: String | null // Patient number if slot is occupied
   }]
+}
+Note: IsAvailable indicates whether the slot is available based on PatientOTAllocation table.
+      A slot is considered unavailable if there's an active allocation with OperationStatus not in ('Completed', 'Cancelled').
+      When a slot is occupied (IsAvailable = false), OccupiedByPatientId and OccupiedByPatientNo will contain the patient information.
 } */
 router.get('/by-ot/:otId', otslotController.getOTSlotsByOTId);
 
@@ -38,8 +45,15 @@ Response: {
     CreatedAt: Date,
     OTNo: String | null,
     OTName: String | null,
-    OTType: String | null
+    OTType: String | null,
+    IsAvailable: Boolean (only present when otId query param is provided),
+    OccupiedByPatientId: String (UUID) | null, // Patient ID if slot is occupied (only present when otId query param is provided)
+    OccupiedByPatientNo: String | null // Patient number if slot is occupied (only present when otId query param is provided)
   }]
+}
+Note: When otId is provided, IsAvailable indicates whether the slot is available based on PatientOTAllocation table.
+      A slot is considered unavailable if there's an active allocation with OperationStatus not in ('Completed', 'Cancelled').
+      When a slot is occupied (IsAvailable = false), OccupiedByPatientId and OccupiedByPatientNo will contain the patient information.
 } */
 router.get('/', otslotController.getAllOTSlots);
 
