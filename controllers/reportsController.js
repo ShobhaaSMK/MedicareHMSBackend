@@ -949,3 +949,839 @@ exports.getICUOccupancyTrend = async (req, res) => {
   }
 };
 
+/**
+ * Get Doctor-wise Patient Statistics report
+ * Returns data with: Doctor, Specialty (DepartmentName), OPD Patients, IPD Patients, Total
+ * Query parameters:
+ * - status: Filter by status (Active, Inactive) - defaults to 'Active'
+ * - date: Filter for a specific date (YYYY-MM-DD) - optional, for daily report
+ * - weekDate: Filter for a specific week (YYYY-MM-DD) - optional, for weekly report (uses the week containing this date)
+ * - startDate: Filter by date range start (YYYY-MM-DD) - optional
+ * - endDate: Filter by date range end (YYYY-MM-DD) - optional
+ * Note: Priority: If 'date' is provided, it will be used for daily report. If 'weekDate' is provided, it will be used for weekly report. Otherwise, use startDate/endDate range.
+ */
+exports.getDoctorWisePatientStatistics = async (req, res) => {
+  try {
+    const { status = 'Active', date, weekDate, startDate, endDate } = req.query;
+
+    // Validate status
+    const allowedStatus = ['Active', 'Inactive'];
+    if (!allowedStatus.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Must be "Active" or "Inactive".',
+      });
+    }
+
+    // Validate date format if provided
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    
+    let queryStartDate = null;
+    let queryEndDate = null;
+    let reportType = 'custom'; // 'daily', 'weekly', or 'custom'
+    
+    // Determine report type and date range
+    if (date) {
+      // Daily report
+      if (!dateRegex.test(date)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date format. Please use YYYY-MM-DD format (e.g., 2025-12-01)',
+        });
+      }
+      queryStartDate = date;
+      queryEndDate = date;
+      reportType = 'daily';
+    } else if (weekDate) {
+      // Weekly report
+      if (!dateRegex.test(weekDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid weekDate format. Please use YYYY-MM-DD format (e.g., 2025-12-01)',
+        });
+      }
+      const weekStart = getWeekStartDate(weekDate);
+      const weekEnd = getWeekEndDate(weekStart);
+      queryStartDate = weekStart.toISOString().split('T')[0];
+      queryEndDate = weekEnd.toISOString().split('T')[0];
+      reportType = 'weekly';
+    } else {
+      // Custom date range
+      if (startDate && !dateRegex.test(startDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid startDate format. Please use YYYY-MM-DD format (e.g., 2025-12-01)',
+        });
+      }
+      if (endDate && !dateRegex.test(endDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid endDate format. Please use YYYY-MM-DD format (e.g., 2025-12-31)',
+        });
+      }
+      queryStartDate = startDate;
+      queryEndDate = endDate;
+    }
+
+    // Build IPD query (from RoomAdmission)
+    let ipdQuery = `
+      SELECT 
+        ra."AdmittingDoctorId" AS "DoctorId",
+        u."UserName" AS "DoctorName",
+        u."EmailId" AS "DoctorEmail",
+        u."PhoneNo" AS "DoctorPhone",
+        u."DoctorQualification",
+        COALESCE(dd."DepartmentName", 'Unassigned') AS "Specialty",
+        dd."DoctorDepartmentId",
+        COUNT(DISTINCT ra."PatientId") AS "IPDPatientCount"
+      FROM "RoomAdmission" ra
+      INNER JOIN "Users" u ON ra."AdmittingDoctorId" = u."UserId"
+      LEFT JOIN "DoctorDepartment" dd ON u."DoctorDepartmentId" = dd."DoctorDepartmentId"
+      WHERE ra."Status" = $1
+    `;
+    const ipdParams = [status];
+    let paramIndex = 2;
+
+    if (queryStartDate) {
+      ipdQuery += ` AND DATE(ra."RoomAllocationDate") >= $${paramIndex}::date`;
+      ipdParams.push(queryStartDate);
+      paramIndex++;
+    }
+    if (queryEndDate) {
+      ipdQuery += ` AND DATE(ra."RoomAllocationDate") <= $${paramIndex}::date`;
+      ipdParams.push(queryEndDate);
+      paramIndex++;
+    }
+
+    ipdQuery += `
+      GROUP BY ra."AdmittingDoctorId", u."UserName", u."EmailId", u."PhoneNo", u."DoctorQualification", dd."DepartmentName", dd."DoctorDepartmentId"
+    `;
+console.log("ipdQueryipdQueryipdQueryipdQuery\n",ipdQuery);
+    // Build OPD query (from PatientAppointment)
+    let opdQuery = `
+      SELECT 
+        pa."DoctorId",
+        u."UserName" AS "DoctorName",
+        u."EmailId" AS "DoctorEmail",
+        u."PhoneNo" AS "DoctorPhone",
+        u."DoctorQualification",
+        COALESCE(dd."DepartmentName", 'Unassigned') AS "Specialty",
+        dd."DoctorDepartmentId",
+        COUNT(DISTINCT pa."PatientId") AS "OPDPatientCount"
+      FROM "PatientAppointment" pa
+      INNER JOIN "Users" u ON pa."DoctorId" = u."UserId"
+      LEFT JOIN "DoctorDepartment" dd ON u."DoctorDepartmentId" = dd."DoctorDepartmentId"
+      WHERE pa."Status" = $1
+    `;
+    const opdParams = [status];
+    paramIndex = 2;
+
+    if (queryStartDate) {
+      opdQuery += ` AND pa."AppointmentDate" >= $${paramIndex}::date`;
+      opdParams.push(queryStartDate);
+      paramIndex++;
+    }
+    if (queryEndDate) {
+      opdQuery += ` AND pa."AppointmentDate" <= $${paramIndex}::date`;
+      opdParams.push(queryEndDate);
+      paramIndex++;
+    }
+
+    opdQuery += `
+      GROUP BY pa."DoctorId", u."UserName", u."EmailId", u."PhoneNo", u."DoctorQualification", dd."DepartmentName", dd."DoctorDepartmentId"
+    `;
+
+    // Execute both queries
+    const [ipdResults, opdResults] = await Promise.all([
+      db.query(ipdQuery, ipdParams),
+      db.query(opdQuery, opdParams)
+    ]);
+
+    // Create maps for quick lookup by doctorId
+    const doctorMap = new Map();
+
+    // Process IPD results
+    ipdResults.rows.forEach(row => {
+      const doctorId = row.DoctorId || row.doctorid;
+      if (!doctorMap.has(doctorId)) {
+        doctorMap.set(doctorId, {
+          doctorId: doctorId,
+          doctorName: row.DoctorName || row.doctorname || 'Unknown',
+          doctorEmail: row.DoctorEmail || row.doctoremail || null,
+          doctorPhone: row.DoctorPhone || row.doctorphone || null,
+          doctorQualification: row.DoctorQualification || row.doctorqualification || null,
+          specialty: row.Specialty || row.specialty || 'Unassigned',
+          departmentId: row.DoctorDepartmentId || row.doctordepartmentid || null,
+          opdPatientCount: 0,
+          ipdPatientCount: 0,
+          totalPatientCount: 0
+        });
+      }
+      const doctor = doctorMap.get(doctorId);
+      doctor.ipdPatientCount = parseInt(row.IPDPatientCount || row.ipdpatientcount || 0, 10);
+      doctor.totalPatientCount = doctor.ipdPatientCount + doctor.opdPatientCount;
+    });
+
+    // Process OPD results
+    opdResults.rows.forEach(row => {
+      const doctorId = row.DoctorId || row.doctorid;
+      if (!doctorMap.has(doctorId)) {
+        doctorMap.set(doctorId, {
+          doctorId: doctorId,
+          doctorName: row.DoctorName || row.doctorname || 'Unknown',
+          doctorEmail: row.DoctorEmail || row.doctoremail || null,
+          doctorPhone: row.DoctorPhone || row.doctorphone || null,
+          doctorQualification: row.DoctorQualification || row.doctorqualification || null,
+          specialty: row.Specialty || row.specialty || 'Unassigned',
+          departmentId: row.DoctorDepartmentId || row.doctordepartmentid || null,
+          opdPatientCount: 0,
+          ipdPatientCount: 0,
+          totalPatientCount: 0
+        });
+      }
+      const doctor = doctorMap.get(doctorId);
+      doctor.opdPatientCount = parseInt(row.OPDPatientCount || row.opdpatientcount || 0, 10);
+      doctor.totalPatientCount = doctor.ipdPatientCount + doctor.opdPatientCount;
+    });
+
+    // Convert map to array and sort by total patient count (descending), then by doctor name
+    const doctorData = Array.from(doctorMap.values()).sort((a, b) => {
+      if (b.totalPatientCount !== a.totalPatientCount) {
+        return b.totalPatientCount - a.totalPatientCount;
+      }
+      return a.doctorName.localeCompare(b.doctorName);
+    });
+
+    // Calculate totals
+    const totalOPD = doctorData.reduce((sum, d) => sum + d.opdPatientCount, 0);
+    const totalIPD = doctorData.reduce((sum, d) => sum + d.ipdPatientCount, 0);
+    const totalPatients = totalOPD + totalIPD;
+
+    // Format data for table/chart
+    const tableData = doctorData.map(d => ({
+      doctor: d.doctorName,
+      specialty: d.specialty,
+      opdPatients: d.opdPatientCount,
+      ipdPatients: d.ipdPatientCount,
+      total: d.totalPatientCount
+    }));
+
+    // Format data for chart (bar chart)
+    const chartData = {
+      labels: doctorData.map(d => d.doctorName),
+      datasets: [
+        {
+          label: 'OPD Patients',
+          data: doctorData.map(d => d.opdPatientCount),
+          backgroundColor: 'rgba(54, 162, 235, 0.6)',
+          borderColor: 'rgba(54, 162, 235, 1)',
+          borderWidth: 1
+        },
+        {
+          label: 'IPD Patients',
+          data: doctorData.map(d => d.ipdPatientCount),
+          backgroundColor: 'rgba(255, 99, 132, 0.6)',
+          borderColor: 'rgba(255, 99, 132, 1)',
+          borderWidth: 1
+        }
+      ]
+    };
+
+    // Prepare response filters
+    const filters = {
+      status: status,
+      reportType: reportType,
+      date: date || null,
+      weekDate: weekDate || null,
+      startDate: queryStartDate || null,
+      endDate: queryEndDate || null
+    };
+
+    if (reportType === 'weekly' && weekDate) {
+      filters.weekStartDate = queryStartDate;
+      filters.weekEndDate = queryEndDate;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Doctor-wise Patient Statistics retrieved successfully',
+      filters: filters,
+      summary: {
+        totalDoctors: doctorData.length,
+        totalOPDPatients: totalOPD,
+        totalIPDPatients: totalIPD,
+        totalPatients: totalPatients
+      },
+      data: doctorData,
+      tableData: tableData,
+      chartData: chartData
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching doctor-wise patient statistics',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get OPD Statistics - Total OPD Patients, Average Wait Time, Peak Hours
+ * Query parameters:
+ * - status: Filter by status (Active, Inactive) - defaults to 'Active'
+ * - date: Filter for a specific date (YYYY-MM-DD) - optional, for daily report
+ * - startDate: Filter by date range start (YYYY-MM-DD) - optional
+ * - endDate: Filter by date range end (YYYY-MM-DD) - optional
+ * Note: If 'date' is provided, it will be used for daily report. Otherwise, use startDate/endDate range.
+ */
+exports.getOPDStatistics = async (req, res) => {
+  try {
+    const { status = 'Active', date, startDate, endDate } = req.query;
+
+    // Validate status
+    const allowedStatus = ['Active', 'Inactive'];
+    if (!allowedStatus.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Must be "Active" or "Inactive".',
+      });
+    }
+
+    // Validate date format if provided
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    
+    let queryStartDate = null;
+    let queryEndDate = null;
+    let reportType = 'custom'; // 'daily' or 'custom'
+    
+    // Determine date range
+    if (date) {
+      // Daily report
+      if (!dateRegex.test(date)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date format. Please use YYYY-MM-DD format (e.g., 2025-12-01)',
+        });
+      }
+      queryStartDate = date;
+      queryEndDate = date;
+      reportType = 'daily';
+    } else {
+      // Custom date range
+      if (startDate && !dateRegex.test(startDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid startDate format. Please use YYYY-MM-DD format (e.g., 2025-12-01)',
+        });
+      }
+      if (endDate && !dateRegex.test(endDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid endDate format. Please use YYYY-MM-DD format (e.g., 2025-12-31)',
+        });
+      }
+      queryStartDate = startDate;
+      queryEndDate = endDate;
+    }
+
+    // Build query to get OPD statistics
+    let query = `
+      SELECT 
+        COUNT(DISTINCT pa."PatientId") AS "TotalOPDPatients",
+        COUNT(pa."PatientAppointmentId") AS "TotalAppointments",
+        -- Calculate average wait time in minutes
+        -- Wait time = difference between appointment creation time and scheduled appointment time
+        -- Using EXTRACT(EPOCH FROM ...) to get difference in seconds, then convert to minutes
+        AVG(
+          EXTRACT(EPOCH FROM (
+            (pa."AppointmentDate" + pa."AppointmentTime")::timestamp - pa."CreatedDate"
+          )) / 60
+        ) AS "AvgWaitTimeMinutes",
+        -- Get hour distribution for peak hours
+        EXTRACT(HOUR FROM pa."AppointmentTime") AS "Hour",
+        COUNT(*) AS "AppointmentCount"
+      FROM "PatientAppointment" pa
+      WHERE pa."Status" = $1
+    `;
+    const params = [status];
+    let paramIndex = 2;
+
+    if (queryStartDate) {
+      query += ` AND pa."AppointmentDate" >= $${paramIndex}::date`;
+      params.push(queryStartDate);
+      paramIndex++;
+    }
+    if (queryEndDate) {
+      query += ` AND pa."AppointmentDate" <= $${paramIndex}::date`;
+      params.push(queryEndDate);
+      paramIndex++;
+    }
+
+    query += `
+      GROUP BY EXTRACT(HOUR FROM pa."AppointmentTime")
+      ORDER BY "AppointmentCount" DESC, "Hour" ASC
+    `;
+
+    const { rows } = await db.query(query, params);
+
+    // Calculate total OPD patients and average wait time from aggregated data
+    // We need to recalculate these from the grouped data
+    let totalOPDPatientsQuery = `
+      SELECT 
+        COUNT(DISTINCT pa."PatientId") AS "TotalOPDPatients",
+        COUNT(pa."PatientAppointmentId") AS "TotalAppointments",
+        AVG(
+          EXTRACT(EPOCH FROM (
+            (pa."AppointmentDate" + pa."AppointmentTime")::timestamp - pa."CreatedDate"
+          )) / 60
+        ) AS "AvgWaitTimeMinutes"
+      FROM "PatientAppointment" pa
+      WHERE pa."Status" = $1
+    `;
+    const totalParams = [status];
+    let totalParamIndex = 2;
+
+    if (queryStartDate) {
+      totalOPDPatientsQuery += ` AND pa."AppointmentDate" >= $${totalParamIndex}::date`;
+      totalParams.push(queryStartDate);
+      totalParamIndex++;
+    }
+    if (queryEndDate) {
+      totalOPDPatientsQuery += ` AND pa."AppointmentDate" <= $${totalParamIndex}::date`;
+      totalParams.push(queryEndDate);
+      totalParamIndex++;
+    }
+
+    const totalStatsResult = await db.query(totalOPDPatientsQuery, totalParams);
+    const totalStats = totalStatsResult.rows[0];
+
+    // Process hour distribution for peak hours
+    const hourDistribution = rows.map(row => ({
+      hour: parseInt(row.Hour || row.hour || 0, 10),
+      appointmentCount: parseInt(row.AppointmentCount || row.appointmentcount || 0, 10),
+      hourLabel: `${String(parseInt(row.Hour || row.hour || 0, 10)).padStart(2, '0')}:00 - ${String(parseInt(row.Hour || row.hour || 0, 10) + 1).padStart(2, '0')}:00`
+    }));
+
+    // Find peak hours (top 3 hours with most appointments)
+    const peakHours = hourDistribution
+      .sort((a, b) => b.appointmentCount - a.appointmentCount)
+      .slice(0, 3)
+      .map(h => ({
+        hour: h.hour,
+        hourLabel: h.hourLabel,
+        appointmentCount: h.appointmentCount
+      }));
+
+    // Calculate statistics
+    const totalOPDPatients = parseInt(totalStats.TotalOPDPatients || totalStats.totalopdpatients || 0, 10);
+    const totalAppointments = parseInt(totalStats.TotalAppointments || totalStats.totalappointments || 0, 10);
+    const avgWaitTimeMinutes = totalStats.AvgWaitTimeMinutes 
+      ? parseFloat(totalStats.AvgWaitTimeMinutes) 
+      : null;
+    
+    // Format average wait time
+    let avgWaitTimeFormatted = null;
+    if (avgWaitTimeMinutes !== null && !isNaN(avgWaitTimeMinutes)) {
+      const hours = Math.floor(Math.abs(avgWaitTimeMinutes) / 60);
+      const minutes = Math.floor(Math.abs(avgWaitTimeMinutes) % 60);
+      const sign = avgWaitTimeMinutes < 0 ? '-' : '';
+      if (hours > 0) {
+        avgWaitTimeFormatted = `${sign}${hours}h ${minutes}m`;
+      } else {
+        avgWaitTimeFormatted = `${sign}${minutes}m`;
+      }
+    }
+
+    // Prepare response filters
+    const filters = {
+      status: status,
+      reportType: reportType,
+      date: date || null,
+      startDate: queryStartDate || null,
+      endDate: queryEndDate || null
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'OPD Statistics retrieved successfully',
+      filters: filters,
+      statistics: {
+        totalOPDPatients: totalOPDPatients,
+        totalAppointments: totalAppointments,
+        avgWaitTimeMinutes: avgWaitTimeMinutes ? Math.round(avgWaitTimeMinutes * 100) / 100 : null,
+        avgWaitTimeFormatted: avgWaitTimeFormatted,
+        peakHours: peakHours
+      },
+      hourDistribution: hourDistribution.sort((a, b) => a.hour - b.hour), // Sort by hour for chronological order
+      chartData: {
+        labels: hourDistribution.sort((a, b) => a.hour - b.hour).map(h => h.hourLabel),
+        data: hourDistribution.sort((a, b) => a.hour - b.hour).map(h => h.appointmentCount),
+        datasets: [{
+          label: 'Appointments per Hour',
+          data: hourDistribution.sort((a, b) => a.hour - b.hour).map(h => h.appointmentCount),
+          backgroundColor: 'rgba(54, 162, 235, 0.6)',
+          borderColor: 'rgba(54, 162, 235, 1)',
+          borderWidth: 1
+        }]
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching OPD statistics',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get IPD Statistics - Total Admissions, Regular Ward, Special Rooms, Average Stay Duration
+ * Query parameters:
+ * - status: Filter by status (Active, Inactive) - defaults to 'Active'
+ * - date: Filter for a specific date (YYYY-MM-DD) - optional, for daily report
+ * - startDate: Filter by RoomAllocationDate (YYYY-MM-DD) - optional
+ * - endDate: Filter by RoomAllocationDate (YYYY-MM-DD) - optional
+ * Note: If 'date' is provided, it will be used for daily report. Otherwise, use startDate/endDate range.
+ */
+exports.getIPDStatistics = async (req, res) => {
+  try {
+    const { status = 'Active', date, startDate, endDate } = req.query;
+
+    // Validate status
+    const allowedStatus = ['Active', 'Inactive'];
+    if (!allowedStatus.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Must be "Active" or "Inactive".',
+      });
+    }
+
+    // Validate date format if provided
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    
+    let queryStartDate = null;
+    let queryEndDate = null;
+    let reportType = 'custom'; // 'daily' or 'custom'
+    
+    // Determine date range
+    if (date) {
+      // Daily report
+      if (!dateRegex.test(date)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date format. Please use YYYY-MM-DD format (e.g., 2025-12-01)',
+        });
+      }
+      queryStartDate = date;
+      queryEndDate = date;
+      reportType = 'daily';
+    } else {
+      // Custom date range
+      if (startDate && !dateRegex.test(startDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid startDate format. Please use YYYY-MM-DD format (e.g., 2025-12-01)',
+        });
+      }
+      if (endDate && !dateRegex.test(endDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid endDate format. Please use YYYY-MM-DD format (e.g., 2025-12-31)',
+        });
+      }
+      queryStartDate = startDate;
+      queryEndDate = endDate;
+    }
+
+    // Build query to get IPD statistics
+    let query = `
+      SELECT 
+        COUNT(DISTINCT ra."RoomAdmissionId") AS "TotalAdmissions",
+        COUNT(DISTINCT CASE WHEN rb."RoomType" = 'Regular' THEN ra."RoomAdmissionId" END) AS "RegularWardAdmissions",
+        COUNT(DISTINCT CASE WHEN rb."RoomType" IN ('Special', 'Special Shared') THEN ra."RoomAdmissionId" END) AS "SpecialRoomsAdmissions",
+        -- Calculate average stay duration in days
+        -- For completed admissions: use RoomVacantDate - RoomAllocationDate
+        -- For active admissions: use CURRENT_TIMESTAMP - RoomAllocationDate
+        AVG(
+          EXTRACT(EPOCH FROM (
+            COALESCE(ra."RoomVacantDate", CURRENT_TIMESTAMP) - ra."RoomAllocationDate"
+          )) / 86400.0
+        ) AS "AvgStayDurationDays"
+      FROM "RoomAdmission" ra
+      INNER JOIN "RoomBeds" rb ON ra."RoomBedsId" = rb."RoomBedsId"
+      WHERE ra."Status" = $1
+    `;
+    const params = [status];
+    let paramIndex = 2;
+
+    if (queryStartDate) {
+      query += ` AND DATE(ra."RoomAllocationDate") >= $${paramIndex}::date`;
+      params.push(queryStartDate);
+      paramIndex++;
+    }
+    if (queryEndDate) {
+      query += ` AND DATE(ra."RoomAllocationDate") <= $${paramIndex}::date`;
+      params.push(queryEndDate);
+      paramIndex++;
+    }
+
+    const { rows } = await db.query(query, params);
+    const stats = rows[0];
+
+    // Process results
+    const totalAdmissions = parseInt(stats.TotalAdmissions || stats.totaladmissions || 0, 10);
+    const regularWardAdmissions = parseInt(stats.RegularWardAdmissions || stats.regularwardadmissions || 0, 10);
+    const specialRoomsAdmissions = parseInt(stats.SpecialRoomsAdmissions || stats.specialroomsadmissions || 0, 10);
+    const avgStayDurationDays = stats.AvgStayDurationDays 
+      ? parseFloat(stats.AvgStayDurationDays) 
+      : null;
+
+    // Format average stay duration
+    let avgStayDurationFormatted = null;
+    if (avgStayDurationDays !== null && !isNaN(avgStayDurationDays)) {
+      const days = Math.floor(avgStayDurationDays);
+      const hours = Math.floor((avgStayDurationDays - days) * 24);
+      const minutes = Math.floor(((avgStayDurationDays - days) * 24 - hours) * 60);
+      
+      if (days > 0) {
+        avgStayDurationFormatted = `${days} day${days !== 1 ? 's' : ''} ${hours}h ${minutes}m`;
+      } else if (hours > 0) {
+        avgStayDurationFormatted = `${hours}h ${minutes}m`;
+      } else {
+        avgStayDurationFormatted = `${minutes}m`;
+      }
+    }
+
+    // Calculate percentages
+    const regularWardPercentage = totalAdmissions > 0 
+      ? ((regularWardAdmissions / totalAdmissions) * 100).toFixed(2) 
+      : '0.00';
+    const specialRoomsPercentage = totalAdmissions > 0 
+      ? ((specialRoomsAdmissions / totalAdmissions) * 100).toFixed(2) 
+      : '0.00';
+
+    // Prepare response filters
+    const filters = {
+      status: status,
+      reportType: reportType,
+      date: date || null,
+      startDate: queryStartDate || null,
+      endDate: queryEndDate || null
+    };
+
+    // Format data for chart
+    const chartData = {
+      labels: ['Regular Ward', 'Special Rooms'],
+      data: [regularWardAdmissions, specialRoomsAdmissions],
+      percentages: [regularWardPercentage, specialRoomsPercentage],
+      datasets: [{
+        label: 'Admissions by Room Type',
+        data: [regularWardAdmissions, specialRoomsAdmissions],
+        backgroundColor: [
+          'rgba(54, 162, 235, 0.6)',
+          'rgba(255, 99, 132, 0.6)'
+        ],
+        borderColor: [
+          'rgba(54, 162, 235, 1)',
+          'rgba(255, 99, 132, 1)'
+        ],
+        borderWidth: 1
+      }]
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'IPD Statistics retrieved successfully',
+      filters: filters,
+      statistics: {
+        totalAdmissions: totalAdmissions,
+        regularWard: {
+          count: regularWardAdmissions,
+          percentage: parseFloat(regularWardPercentage)
+        },
+        specialRooms: {
+          count: specialRoomsAdmissions,
+          percentage: parseFloat(specialRoomsPercentage)
+        },
+        avgStayDurationDays: avgStayDurationDays ? Math.round(avgStayDurationDays * 100) / 100 : null,
+        avgStayDurationFormatted: avgStayDurationFormatted
+      },
+      chartData: chartData
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching IPD statistics',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get IPD Summary - Discharged Today, Critical Patients, Bed Occupancy
+ * Query parameters:
+ * - status: Filter by status (Active, Inactive) - defaults to 'Active'
+ * - date: Filter for a specific date (YYYY-MM-DD) - optional, defaults to today for discharged count
+ * Note: Discharged Today uses the provided date or today's date. Critical Patients and Bed Occupancy are current status.
+ */
+exports.getIPDSummary = async (req, res) => {
+  try {
+    const { status = 'Active', date } = req.query;
+
+    // Validate status
+    const allowedStatus = ['Active', 'Inactive'];
+    if (!allowedStatus.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Must be "Active" or "Inactive".',
+      });
+    }
+
+    // Validate date format if provided
+    let checkDate = new Date().toISOString().split('T')[0]; // Default to today
+    if (date) {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(date)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date format. Please use YYYY-MM-DD format (e.g., 2025-12-01)',
+        });
+      }
+      checkDate = date;
+    }
+
+    // Query 1: Count Discharged Today
+    const dischargedTodayQuery = `
+      SELECT COUNT(DISTINCT ra."RoomAdmissionId") AS "DischargedToday"
+      FROM "RoomAdmission" ra
+      WHERE ra."Status" = $1
+        AND ra."AdmissionStatus" = 'Discharged'
+        AND DATE(ra."RoomVacantDate") = $2::date
+    `;
+
+    // Query 2: Count Critical Patients (patients with latest VitalsStatus = 'Critical')
+    const criticalPatientsQuery = `
+      WITH LatestVitals AS (
+        SELECT DISTINCT ON (pavv."RoomAdmissionId", pavv."PatientId")
+          pavv."RoomAdmissionId",
+          pavv."PatientId",
+          pavv."VitalsStatus",
+          pavv."RecordedDateTime"
+        FROM "PatientAdmitVisitVitals" pavv
+        INNER JOIN "RoomAdmission" ra ON pavv."RoomAdmissionId" = ra."RoomAdmissionId"
+        WHERE pavv."Status" = 'Active'
+          AND ra."Status" = $1
+          AND ra."AdmissionStatus" != 'Discharged'
+        ORDER BY pavv."RoomAdmissionId", pavv."PatientId", pavv."RecordedDateTime" DESC
+      )
+      SELECT COUNT(DISTINCT lv."PatientId") AS "CriticalPatients"
+      FROM LatestVitals lv
+      WHERE lv."VitalsStatus" = 'Critical'
+    `;
+
+    // Query 3: Bed Occupancy (Total beds vs Occupied beds)
+    const bedOccupancyQuery = `
+      SELECT 
+        COUNT(DISTINCT rb."RoomBedsId") AS "TotalBeds",
+        COUNT(DISTINCT CASE 
+          WHEN ra."Status" = $1 
+            AND ra."AdmissionStatus" != 'Discharged'
+            AND ra."RoomVacantDate" IS NULL
+          THEN ra."RoomBedsId" 
+        END) AS "OccupiedBeds"
+      FROM "RoomBeds" rb
+      LEFT JOIN "RoomAdmission" ra ON rb."RoomBedsId" = ra."RoomBedsId"
+      WHERE rb."Status" = 'Active'
+    `;
+
+    // Execute all queries in parallel
+    const [dischargedResult, criticalResult, occupancyResult] = await Promise.all([
+      db.query(dischargedTodayQuery, [status, checkDate]),
+      db.query(criticalPatientsQuery, [status]),
+      db.query(bedOccupancyQuery, [status])
+    ]);
+
+    // Process results
+    const dischargedToday = parseInt(
+      dischargedResult.rows[0].DischargedToday || 
+      dischargedResult.rows[0].dischargedtoday || 0, 
+      10
+    );
+
+    const criticalPatients = parseInt(
+      criticalResult.rows[0].CriticalPatients || 
+      criticalResult.rows[0].criticalpatients || 0, 
+      10
+    );
+
+    const totalBeds = parseInt(
+      occupancyResult.rows[0].TotalBeds || 
+      occupancyResult.rows[0].totalbeds || 0, 
+      10
+    );
+
+    const occupiedBeds = parseInt(
+      occupancyResult.rows[0].OccupiedBeds || 
+      occupancyResult.rows[0].occupiedbeds || 0, 
+      10
+    );
+
+    const availableBeds = totalBeds - occupiedBeds;
+    const bedOccupancyPercentage = totalBeds > 0 
+      ? ((occupiedBeds / totalBeds) * 100).toFixed(2) 
+      : '0.00';
+
+    // Prepare response
+    const filters = {
+      status: status,
+      date: checkDate
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'IPD Summary retrieved successfully',
+      filters: filters,
+      summary: {
+        dischargedToday: {
+          count: dischargedToday,
+          date: checkDate
+        },
+        criticalPatients: {
+          count: criticalPatients
+        },
+        bedOccupancy: {
+          totalBeds: totalBeds,
+          occupiedBeds: occupiedBeds,
+          availableBeds: availableBeds,
+          occupancyPercentage: parseFloat(bedOccupancyPercentage)
+        }
+      },
+      chartData: {
+        bedOccupancy: {
+          labels: ['Occupied', 'Available'],
+          data: [occupiedBeds, availableBeds],
+          datasets: [{
+            label: 'Bed Occupancy',
+            data: [occupiedBeds, availableBeds],
+            backgroundColor: [
+              'rgba(255, 99, 132, 0.6)',
+              'rgba(75, 192, 192, 0.6)'
+            ],
+            borderColor: [
+              'rgba(255, 99, 132, 1)',
+              'rgba(75, 192, 192, 1)'
+            ],
+            borderWidth: 1
+          }]
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching IPD summary',
+      error: error.message,
+    });
+  }
+};
+
