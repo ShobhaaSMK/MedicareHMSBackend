@@ -1056,7 +1056,7 @@ exports.getDoctorWisePatientStatistics = async (req, res) => {
     ipdQuery += `
       GROUP BY ra."AdmittingDoctorId", u."UserName", u."EmailId", u."PhoneNo", u."DoctorQualification", dd."DepartmentName", dd."DoctorDepartmentId"
     `;
-console.log("ipdQueryipdQueryipdQueryipdQuery\n",ipdQuery);
+
     // Build OPD query (from PatientAppointment)
     let opdQuery = `
       SELECT 
@@ -1780,6 +1780,1192 @@ exports.getIPDSummary = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching IPD summary',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get OT Statistics - Total Surgeries, Completed, Emergency, Avg Duration
+ * Supports daily, weekly, and custom ranges (same precedence as Doctor-wise report):
+ *   1) date -> daily
+ *   2) weekDate -> weekly (Mon-Sun containing the date)
+ *   3) startDate/endDate -> custom range
+ * Query parameters:
+ * - status: Filter by status (Active, Inactive) - defaults to 'Active'
+ * - date: Daily view date (YYYY-MM-DD)
+ * - weekDate: A date within the target week (YYYY-MM-DD)
+ * - startDate: Range start (YYYY-MM-DD)
+ * - endDate: Range end (YYYY-MM-DD)
+ */
+exports.getOTStatistics = async (req, res) => {
+  try {
+    const { status = 'Active', date, weekDate, startDate, endDate } = req.query;
+
+    // Validate status
+    const allowedStatus = ['Active', 'Inactive'];
+    if (!allowedStatus.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Must be "Active" or "Inactive".',
+      });
+    }
+
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    let queryStartDate = null;
+    let queryEndDate = null;
+    let reportType = 'custom'; // 'daily' | 'weekly' | 'custom'
+
+    // Precedence: date -> weekDate -> start/end
+    if (date) {
+      if (!dateRegex.test(date)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date format. Please use YYYY-MM-DD format (e.g., 2025-12-01)',
+        });
+      }
+      queryStartDate = date;
+      queryEndDate = date;
+      reportType = 'daily';
+    } else if (weekDate) {
+      if (!dateRegex.test(weekDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid weekDate format. Please use YYYY-MM-DD format (e.g., 2025-12-01)',
+        });
+      }
+      const weekStart = getWeekStartDate(weekDate);
+      const weekEnd = getWeekEndDate(weekStart);
+      queryStartDate = weekStart.toISOString().split('T')[0];
+      queryEndDate = weekEnd.toISOString().split('T')[0];
+      reportType = 'weekly';
+    } else {
+      if (startDate && !dateRegex.test(startDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid startDate format. Please use YYYY-MM-DD format (e.g., 2025-12-01)',
+        });
+      }
+      if (endDate && !dateRegex.test(endDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid endDate format. Please use YYYY-MM-DD format (e.g., 2025-12-31)',
+        });
+      }
+      queryStartDate = startDate;
+      queryEndDate = endDate;
+    }
+
+    // Build OT query
+    let otQuery = `
+      SELECT 
+        "OTAllocationDate"::date AS ot_date,
+        COUNT(*) AS total_surgeries,
+        COUNT(*) FILTER (WHERE "OperationStatus" = 'Completed') AS completed_count,
+        COUNT(*) FILTER (WHERE "EmergencyBedSlotId" IS NOT NULL) AS emergency_count,
+        SUM(
+          CASE 
+            WHEN "OTActualStartTime" IS NOT NULL AND "OTActualEndTime" IS NOT NULL
+              THEN EXTRACT(EPOCH FROM ("OTActualEndTime" - "OTActualStartTime")) / 60
+            WHEN "Duration" IS NOT NULL THEN ("Duration")::numeric
+            ELSE 0
+          END
+        ) AS total_duration_minutes,
+        COUNT(
+          CASE 
+            WHEN ("OTActualStartTime" IS NOT NULL AND "OTActualEndTime" IS NOT NULL) OR "Duration" IS NOT NULL
+              THEN 1
+            ELSE NULL
+          END
+        ) AS duration_count
+      FROM "PatientOTAllocation"
+      WHERE "Status" = $1
+    `;
+    const params = [status];
+    let paramIndex = 2;
+
+    if (queryStartDate) {
+      otQuery += ` AND "OTAllocationDate"::date >= $${paramIndex}::date`;
+      params.push(queryStartDate);
+      paramIndex++;
+    }
+    if (queryEndDate) {
+      otQuery += ` AND "OTAllocationDate"::date <= $${paramIndex}::date`;
+      params.push(queryEndDate);
+      paramIndex++;
+    }
+
+    otQuery += `
+      GROUP BY "OTAllocationDate"::date
+      ORDER BY "OTAllocationDate"::date ASC
+    `;
+
+    const otResults = await db.query(otQuery, params);
+    // Map date -> stats
+    const otDateMap = new Map();
+    otResults.rows.forEach(row => {
+      const dateStr = row.ot_date.toISOString().split('T')[0];
+      otDateMap.set(dateStr, {
+        totalSurgeries: parseInt(row.total_surgeries || 0, 10),
+        completedCount: parseInt(row.completed_count || 0, 10),
+        emergencyCount: parseInt(row.emergency_count || 0, 10),
+        totalDurationMinutes: parseFloat(row.total_duration_minutes || 0),
+        durationCount: parseInt(row.duration_count || 0, 10)
+      });
+    });
+
+    // Prepare daily data
+    let dailyData = [];
+    if (queryStartDate && queryEndDate) {
+      const start = new Date(queryStartDate + 'T00:00:00');
+      const end = new Date(queryEndDate + 'T00:00:00');
+      const current = new Date(start);
+      while (current <= end) {
+        const dateStr = current.toISOString().split('T')[0];
+        const row = otDateMap.get(dateStr) || {
+          totalSurgeries: 0,
+          completedCount: 0,
+          emergencyCount: 0,
+          totalDurationMinutes: 0,
+          durationCount: 0
+        };
+        const avgDuration = row.durationCount > 0
+          ? parseFloat((row.totalDurationMinutes / row.durationCount).toFixed(2))
+          : null;
+        dailyData.push({
+          date: dateStr,
+          day: current.toLocaleDateString('en-US', { weekday: 'short' }),
+          totalSurgeries: row.totalSurgeries,
+          completedSurgeries: row.completedCount,
+          emergencySurgeries: row.emergencyCount,
+          averageDurationMinutes: avgDuration,
+          totalDurationMinutes: row.totalDurationMinutes,
+          durationCount: row.durationCount
+        });
+        current.setDate(current.getDate() + 1);
+      }
+    } else {
+      // No explicit range; use returned dates
+      dailyData = otResults.rows.map(row => {
+        const dateStr = row.ot_date.toISOString().split('T')[0];
+        const avgDuration = row.duration_count > 0
+          ? parseFloat((row.total_duration_minutes / row.duration_count).toFixed(2))
+          : null;
+        return {
+          date: dateStr,
+          day: new Date(dateStr).toLocaleDateString('en-US', { weekday: 'short' }),
+          totalSurgeries: parseInt(row.total_surgeries || 0, 10),
+          completedSurgeries: parseInt(row.completed_count || 0, 10),
+          emergencySurgeries: parseInt(row.emergency_count || 0, 10),
+          averageDurationMinutes: avgDuration,
+          totalDurationMinutes: parseFloat(row.total_duration_minutes || 0),
+          durationCount: parseInt(row.duration_count || 0, 10)
+        };
+      });
+    }
+
+    let trendData = [];
+    let chartData = {};
+
+    if (reportType === 'weekly') {
+      // Aggregate into weeks
+      const weeklyMap = new Map();
+      dailyData.forEach(d => {
+        const dt = new Date(d.date + 'T00:00:00');
+        const dow = dt.getDay();
+        const daysToMonday = dow === 0 ? 6 : (dow === 1 ? 0 : dow - 1);
+        const weekStart = new Date(dt);
+        weekStart.setDate(dt.getDate() - daysToMonday);
+        weekStart.setHours(0, 0, 0, 0);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
+        const key = `${weekStart.toISOString().split('T')[0]}_${weekEnd.toISOString().split('T')[0]}`;
+
+        if (!weeklyMap.has(key)) {
+          weeklyMap.set(key, {
+            weekStart: weekStart.toISOString().split('T')[0],
+            weekEnd: weekEnd.toISOString().split('T')[0],
+            weekLabel: `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+            totalSurgeries: 0,
+            completedSurgeries: 0,
+            emergencySurgeries: 0,
+            totalDurationMinutes: 0,
+            durationCount: 0
+          });
+        }
+
+        const wk = weeklyMap.get(key);
+        wk.totalSurgeries += d.totalSurgeries;
+        wk.completedSurgeries += d.completedSurgeries;
+        wk.emergencySurgeries += d.emergencySurgeries;
+        wk.totalDurationMinutes += d.totalDurationMinutes || 0;
+        wk.durationCount += d.durationCount || 0;
+      });
+
+      trendData = Array.from(weeklyMap.values())
+        .sort((a, b) => a.weekStart.localeCompare(b.weekStart))
+        .map(wk => ({
+          ...wk,
+          averageDurationMinutes: wk.durationCount > 0
+            ? parseFloat((wk.totalDurationMinutes / wk.durationCount).toFixed(2))
+            : null
+        }));
+
+      chartData = {
+        labels: trendData.map(w => w.weekLabel),
+        weekRanges: trendData.map(w => ({ start: w.weekStart, end: w.weekEnd })),
+        datasets: [
+          {
+            label: 'Total Surgeries',
+            data: trendData.map(w => w.totalSurgeries),
+            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 2,
+            tension: 0.4
+          },
+          {
+            label: 'Completed',
+            data: trendData.map(w => w.completedSurgeries),
+            backgroundColor: 'rgba(75, 192, 192, 0.6)',
+            borderColor: 'rgba(75, 192, 192, 1)',
+            borderWidth: 2,
+            tension: 0.4
+          },
+          {
+            label: 'Emergency',
+            data: trendData.map(w => w.emergencySurgeries),
+            backgroundColor: 'rgba(255, 99, 132, 0.6)',
+            borderColor: 'rgba(255, 99, 132, 1)',
+            borderWidth: 2,
+            tension: 0.4
+          },
+          {
+            label: 'Avg Duration (min)',
+            data: trendData.map(w => w.averageDurationMinutes ?? 0),
+            backgroundColor: 'rgba(255, 206, 86, 0.4)',
+            borderColor: 'rgba(255, 206, 86, 1)',
+            borderWidth: 2,
+            tension: 0.4,
+            yAxisID: 'y1'
+          }
+        ]
+      };
+    } else {
+      // Daily/custom view
+      trendData = dailyData;
+      chartData = {
+        labels: trendData.map(d => {
+          const dt = new Date(d.date);
+          return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }),
+        dates: trendData.map(d => d.date),
+        datasets: [
+          {
+            label: 'Total Surgeries',
+            data: trendData.map(d => d.totalSurgeries),
+            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 2,
+            tension: 0.4
+          },
+          {
+            label: 'Completed',
+            data: trendData.map(d => d.completedSurgeries),
+            backgroundColor: 'rgba(75, 192, 192, 0.6)',
+            borderColor: 'rgba(75, 192, 192, 1)',
+            borderWidth: 2,
+            tension: 0.4
+          },
+          {
+            label: 'Emergency',
+            data: trendData.map(d => d.emergencySurgeries),
+            backgroundColor: 'rgba(255, 99, 132, 0.6)',
+            borderColor: 'rgba(255, 99, 132, 1)',
+            borderWidth: 2,
+            tension: 0.4
+          },
+          {
+            label: 'Avg Duration (min)',
+            data: trendData.map(d => d.averageDurationMinutes ?? 0),
+            backgroundColor: 'rgba(255, 206, 86, 0.4)',
+            borderColor: 'rgba(255, 206, 86, 1)',
+            borderWidth: 2,
+            tension: 0.4,
+            yAxisID: 'y1'
+          }
+        ]
+      };
+    }
+
+    // Totals and averages
+    const totalSurgeries = trendData.reduce((sum, d) => sum + (d.totalSurgeries || 0), 0);
+    const totalCompleted = trendData.reduce((sum, d) => sum + (d.completedSurgeries || 0), 0);
+    const totalEmergency = trendData.reduce((sum, d) => sum + (d.emergencySurgeries || 0), 0);
+    const totalDurationSum = trendData.reduce((sum, d) => sum + (d.totalDurationMinutes || 0), 0);
+    const totalDurationCount = trendData.reduce((sum, d) => sum + (d.durationCount || 0), 0);
+    const averageDurationMinutes = totalDurationCount > 0
+      ? parseFloat((totalDurationSum / totalDurationCount).toFixed(2))
+      : null;
+
+    // Filters
+    const filters = {
+      status: status,
+      reportType: reportType,
+      date: date || null,
+      weekDate: weekDate || null,
+      startDate: queryStartDate || null,
+      endDate: queryEndDate || null
+    };
+
+    if (reportType === 'weekly' && queryStartDate && queryEndDate) {
+      filters.weekStartDate = queryStartDate;
+      filters.weekEndDate = queryEndDate;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'OT Statistics retrieved successfully',
+      filters: filters,
+      summary: {
+        totalSurgeries: totalSurgeries,
+        totalCompleted: totalCompleted,
+        totalEmergency: totalEmergency,
+        averageDurationMinutes: averageDurationMinutes,
+        periodCount: trendData.length
+      },
+      data: trendData,
+      chartData: chartData
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching OT statistics',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get ICU Statistics - Total Patients, Critical, On Ventilator, Avg Stay
+ * Supports daily, weekly, and custom ranges (same precedence as Doctor-wise report):
+ *   1) date -> daily
+ *   2) weekDate -> weekly (Mon-Sun containing the date)
+ *   3) startDate/endDate -> custom range
+ * Query parameters:
+ * - status: Filter by status (Active, Inactive) - defaults to 'Active'
+ * - date: Daily view date (YYYY-MM-DD)
+ * - weekDate: A date within the target week (YYYY-MM-DD)
+ * - startDate: Range start (YYYY-MM-DD)
+ * - endDate: Range end (YYYY-MM-DD)
+ */
+exports.getICUStatistics = async (req, res) => {
+  try {
+    const { status = 'Active', date, weekDate, startDate, endDate } = req.query;
+
+    // Validate status
+    const allowedStatus = ['Active', 'Inactive'];
+    if (!allowedStatus.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Must be "Active" or "Inactive".',
+      });
+    }
+
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    let queryStartDate = null;
+    let queryEndDate = null;
+    let reportType = 'custom'; // 'daily' | 'weekly' | 'custom'
+
+    // Precedence: date -> weekDate -> start/end
+    if (date) {
+      if (!dateRegex.test(date)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date format. Please use YYYY-MM-DD format (e.g., 2025-12-01)',
+        });
+      }
+      queryStartDate = date;
+      queryEndDate = date;
+      reportType = 'daily';
+    } else if (weekDate) {
+      if (!dateRegex.test(weekDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid weekDate format. Please use YYYY-MM-DD format (e.g., 2025-12-01)',
+        });
+      }
+      const weekStart = getWeekStartDate(weekDate);
+      const weekEnd = getWeekEndDate(weekStart);
+      queryStartDate = weekStart.toISOString().split('T')[0];
+      queryEndDate = weekEnd.toISOString().split('T')[0];
+      reportType = 'weekly';
+    } else {
+      if (startDate && !dateRegex.test(startDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid startDate format. Please use YYYY-MM-DD format (e.g., 2025-12-01)',
+        });
+      }
+      if (endDate && !dateRegex.test(endDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid endDate format. Please use YYYY-MM-DD format (e.g., 2025-12-31)',
+        });
+      }
+      queryStartDate = startDate;
+      queryEndDate = endDate;
+    }
+
+    // Generate a date series and aggregate ICU stats per day
+    const icuQuery = `
+      WITH date_series AS (
+        SELECT generate_series($1::date, $2::date, '1 day'::interval)::date AS date
+      )
+      SELECT
+        ds.date,
+        COUNT(DISTINCT pica."PatientId") FILTER (
+          WHERE pica."ICUAllocationFromDate" IS NOT NULL
+            AND ds.date >= pica."ICUAllocationFromDate"::date
+            AND (
+              pica."ICUAllocationToDate" IS NULL
+              OR ds.date <= pica."ICUAllocationToDate"::date
+            )
+            AND pica."ICUAdmissionStatus" = 'Occupied'
+            AND pica."Status" = $3
+        ) AS total_patients,
+        COUNT(DISTINCT pica."PatientId") FILTER (
+          WHERE pica."ICUAllocationFromDate" IS NOT NULL
+            AND ds.date >= pica."ICUAllocationFromDate"::date
+            AND (
+              pica."ICUAllocationToDate" IS NULL
+              OR ds.date <= pica."ICUAllocationToDate"::date
+            )
+            AND pica."ICUAdmissionStatus" = 'Occupied'
+            AND pica."Status" = $3
+            AND pica."ICUPatientStatus" = 'Critical'
+        ) AS critical_patients,
+        COUNT(DISTINCT pica."PatientId") FILTER (
+          WHERE pica."ICUAllocationFromDate" IS NOT NULL
+            AND ds.date >= pica."ICUAllocationFromDate"::date
+            AND (
+              pica."ICUAllocationToDate" IS NULL
+              OR ds.date <= pica."ICUAllocationToDate"::date
+            )
+            AND pica."ICUAdmissionStatus" = 'Occupied'
+            AND pica."Status" = $3
+            AND pica."OnVentilator" = 'Yes'
+        ) AS ventilator_patients,
+        SUM(
+          CASE 
+            WHEN pica."ICUAllocationFromDate" IS NOT NULL THEN
+              EXTRACT(EPOCH FROM (COALESCE(pica."ICUAllocationToDate", CURRENT_TIMESTAMP) - pica."ICUAllocationFromDate")) / 86400.0
+            ELSE 0
+          END
+        ) FILTER (
+          WHERE pica."ICUAllocationFromDate" IS NOT NULL
+            AND ds.date >= pica."ICUAllocationFromDate"::date
+            AND (
+              pica."ICUAllocationToDate" IS NULL
+              OR ds.date <= pica."ICUAllocationToDate"::date
+            )
+            AND pica."ICUAdmissionStatus" = 'Occupied'
+            AND pica."Status" = $3
+        ) AS total_stay_days,
+        COUNT(*) FILTER (
+          WHERE pica."ICUAllocationFromDate" IS NOT NULL
+            AND ds.date >= pica."ICUAllocationFromDate"::date
+            AND (
+              pica."ICUAllocationToDate" IS NULL
+              OR ds.date <= pica."ICUAllocationToDate"::date
+            )
+            AND pica."ICUAdmissionStatus" = 'Occupied'
+            AND pica."Status" = $3
+        ) AS stay_count
+      FROM date_series ds
+      LEFT JOIN "PatientICUAdmission" pica ON (
+        pica."ICUAllocationFromDate" IS NOT NULL
+        AND ds.date >= pica."ICUAllocationFromDate"::date
+        AND (
+          pica."ICUAllocationToDate" IS NULL
+          OR ds.date <= pica."ICUAllocationToDate"::date
+        )
+      )
+      GROUP BY ds.date
+      ORDER BY ds.date ASC
+    `;
+
+    // Need a valid range; ensure both start and end are present
+    if (!queryStartDate || !queryEndDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'A valid date range is required. Provide date, weekDate, or startDate/endDate.',
+      });
+    }
+
+    const icuResults = await db.query(icuQuery, [queryStartDate, queryEndDate, status]);
+
+    // Daily data
+    const dailyData = icuResults.rows.map(row => {
+      const dateStr = row.date.toISOString().split('T')[0];
+      const stayCount = parseInt(row.stay_count || 0, 10);
+      const totalStay = parseFloat(row.total_stay_days || 0);
+      const avgStay = stayCount > 0 ? parseFloat((totalStay / stayCount).toFixed(2)) : null;
+      return {
+        date: dateStr,
+        day: new Date(dateStr).toLocaleDateString('en-US', { weekday: 'short' }),
+        totalICUPatients: parseInt(row.total_patients || 0, 10),
+        criticalPatients: parseInt(row.critical_patients || 0, 10),
+        onVentilator: parseInt(row.ventilator_patients || 0, 10),
+        averageStayDays: avgStay,
+        totalStayDays: totalStay,
+        stayCount: stayCount
+      };
+    });
+
+    let trendData = [];
+    let chartData = {};
+
+    if (reportType === 'weekly') {
+      // Aggregate into weeks
+      const weeklyMap = new Map();
+      dailyData.forEach(d => {
+        const dt = new Date(d.date + 'T00:00:00');
+        const dow = dt.getDay();
+        const daysToMonday = dow === 0 ? 6 : (dow === 1 ? 0 : dow - 1);
+        const weekStart = new Date(dt);
+        weekStart.setDate(dt.getDate() - daysToMonday);
+        weekStart.setHours(0, 0, 0, 0);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
+        const key = `${weekStart.toISOString().split('T')[0]}_${weekEnd.toISOString().split('T')[0]}`;
+
+        if (!weeklyMap.has(key)) {
+          weeklyMap.set(key, {
+            weekStart: weekStart.toISOString().split('T')[0],
+            weekEnd: weekEnd.toISOString().split('T')[0],
+            weekLabel: `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+            totalICUPatients: 0,
+            criticalPatients: 0,
+            onVentilator: 0,
+            totalStayDays: 0,
+            stayCount: 0
+          });
+        }
+
+        const wk = weeklyMap.get(key);
+        wk.totalICUPatients += d.totalICUPatients;
+        wk.criticalPatients += d.criticalPatients;
+        wk.onVentilator += d.onVentilator;
+        wk.totalStayDays += d.totalStayDays;
+        wk.stayCount += d.stayCount;
+      });
+
+      trendData = Array.from(weeklyMap.values())
+        .sort((a, b) => a.weekStart.localeCompare(b.weekStart))
+        .map(wk => ({
+          ...wk,
+          averageStayDays: wk.stayCount > 0 ? parseFloat((wk.totalStayDays / wk.stayCount).toFixed(2)) : null
+        }));
+
+      chartData = {
+        labels: trendData.map(w => w.weekLabel),
+        weekRanges: trendData.map(w => ({ start: w.weekStart, end: w.weekEnd })),
+        datasets: [
+          {
+            label: 'Total ICU Patients',
+            data: trendData.map(w => w.totalICUPatients),
+            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 2,
+            tension: 0.4
+          },
+          {
+            label: 'Critical Patients',
+            data: trendData.map(w => w.criticalPatients),
+            backgroundColor: 'rgba(255, 99, 132, 0.6)',
+            borderColor: 'rgba(255, 99, 132, 1)',
+            borderWidth: 2,
+            tension: 0.4
+          },
+          {
+            label: 'On Ventilator',
+            data: trendData.map(w => w.onVentilator),
+            backgroundColor: 'rgba(255, 206, 86, 0.6)',
+            borderColor: 'rgba(255, 206, 86, 1)',
+            borderWidth: 2,
+            tension: 0.4
+          },
+          {
+            label: 'Avg Stay (days)',
+            data: trendData.map(w => w.averageStayDays ?? 0),
+            backgroundColor: 'rgba(75, 192, 192, 0.4)',
+            borderColor: 'rgba(75, 192, 192, 1)',
+            borderWidth: 2,
+            tension: 0.4,
+            yAxisID: 'y1'
+          }
+        ]
+      };
+    } else {
+      // Daily/custom view
+      trendData = dailyData;
+      chartData = {
+        labels: trendData.map(d => {
+          const dt = new Date(d.date);
+          return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }),
+        dates: trendData.map(d => d.date),
+        datasets: [
+          {
+            label: 'Total ICU Patients',
+            data: trendData.map(d => d.totalICUPatients),
+            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 2,
+            tension: 0.4
+          },
+          {
+            label: 'Critical Patients',
+            data: trendData.map(d => d.criticalPatients),
+            backgroundColor: 'rgba(255, 99, 132, 0.6)',
+            borderColor: 'rgba(255, 99, 132, 1)',
+            borderWidth: 2,
+            tension: 0.4
+          },
+          {
+            label: 'On Ventilator',
+            data: trendData.map(d => d.onVentilator),
+            backgroundColor: 'rgba(255, 206, 86, 0.6)',
+            borderColor: 'rgba(255, 206, 86, 1)',
+            borderWidth: 2,
+            tension: 0.4
+          },
+          {
+            label: 'Avg Stay (days)',
+            data: trendData.map(d => d.averageStayDays ?? 0),
+            backgroundColor: 'rgba(75, 192, 192, 0.4)',
+            borderColor: 'rgba(75, 192, 192, 1)',
+            borderWidth: 2,
+            tension: 0.4,
+            yAxisID: 'y1'
+          }
+        ]
+      };
+    }
+
+    // Summaries
+    const totalPatients = trendData.reduce((sum, d) => sum + (d.totalICUPatients || 0), 0);
+    const totalCritical = trendData.reduce((sum, d) => sum + (d.criticalPatients || 0), 0);
+    const totalVentilator = trendData.reduce((sum, d) => sum + (d.onVentilator || 0), 0);
+    const overallStaySum = trendData.reduce((sum, d) => sum + (d.totalStayDays || 0), 0);
+    const overallStayCount = trendData.reduce((sum, d) => sum + (d.stayCount || 0), 0);
+    const overallAvgStay = overallStayCount > 0 ? parseFloat((overallStaySum / overallStayCount).toFixed(2)) : null;
+
+    // Filters
+    const filters = {
+      status: status,
+      reportType: reportType,
+      date: date || null,
+      weekDate: weekDate || null,
+      startDate: queryStartDate || null,
+      endDate: queryEndDate || null
+    };
+    if (reportType === 'weekly' && queryStartDate && queryEndDate) {
+      filters.weekStartDate = queryStartDate;
+      filters.weekEndDate = queryEndDate;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'ICU Statistics retrieved successfully',
+      filters: filters,
+      summary: {
+        totalICUPatients: totalPatients,
+        totalCriticalPatients: totalCritical,
+        totalOnVentilator: totalVentilator,
+        averageStayDays: overallAvgStay,
+        periodCount: trendData.length
+      },
+      data: trendData,
+      chartData: chartData
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching ICU statistics',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get Total OPD Patients Report - Today's figures and Peak Hours
+ * Returns data with: Total OPD Patients Today, Peak Hours distribution
+ * Query parameters:
+ * - status: Filter by status (Active, Inactive) - defaults to 'Active'
+ * - date: Filter for a specific date (YYYY-MM-DD) - optional, defaults to today
+ * Note: If 'date' is provided, it will be used. Otherwise, defaults to today's date.
+ */
+exports.getTotalOPDPatientsReport = async (req, res) => {
+  try {
+    const { status = 'Active', date } = req.query;
+
+    // Validate status
+    const allowedStatus = ['Active', 'Inactive'];
+    if (!allowedStatus.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Must be "Active" or "Inactive".',
+      });
+    }
+
+    // Validate date format if provided, otherwise default to today
+    let checkDate = new Date().toISOString().split('T')[0]; // Default to today
+    if (date) {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(date)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date format. Please use YYYY-MM-DD format (e.g., 2025-12-01)',
+        });
+      }
+      checkDate = date;
+    }
+
+    // Query 1: Get total OPD patients for today
+    const totalOPDPatientsQuery = `
+      SELECT 
+        COUNT(DISTINCT pa."PatientId") AS "TotalOPDPatients",
+        COUNT(pa."PatientAppointmentId") AS "TotalAppointments"
+      FROM "PatientAppointment" pa
+      WHERE pa."Status" = $1
+        AND pa."AppointmentDate" = $2::date
+    `;
+
+    // Query 2: Get hourly distribution for peak hours analysis
+    const peakHoursQuery = `
+      SELECT 
+        EXTRACT(HOUR FROM pa."AppointmentTime") AS "Hour",
+        COUNT(DISTINCT pa."PatientId") AS "PatientCount",
+        COUNT(pa."PatientAppointmentId") AS "AppointmentCount"
+      FROM "PatientAppointment" pa
+      WHERE pa."Status" = $1
+        AND pa."AppointmentDate" = $2::date
+      GROUP BY EXTRACT(HOUR FROM pa."AppointmentTime")
+      ORDER BY "AppointmentCount" DESC, "Hour" ASC
+    `;
+
+    // Execute both queries in parallel
+    const [totalResult, peakHoursResult] = await Promise.all([
+      db.query(totalOPDPatientsQuery, [status, checkDate]),
+      db.query(peakHoursQuery, [status, checkDate])
+    ]);
+
+    // Process total OPD patients result
+    const totalOPDPatients = parseInt(
+      totalResult.rows[0].TotalOPDPatients || 
+      totalResult.rows[0].totalopdpatients || 0, 
+      10
+    );
+
+    const totalAppointments = parseInt(
+      totalResult.rows[0].TotalAppointments || 
+      totalResult.rows[0].totalappointments || 0, 
+      10
+    );
+
+    // Process peak hours result
+    const hourDistribution = peakHoursResult.rows.map(row => ({
+      hour: parseInt(row.Hour || row.hour || 0, 10),
+      patientCount: parseInt(row.PatientCount || row.patientcount || 0, 10),
+      appointmentCount: parseInt(row.AppointmentCount || row.appointmentcount || 0, 10),
+      hourLabel: `${String(parseInt(row.Hour || row.hour || 0, 10)).padStart(2, '0')}:00 - ${String(parseInt(row.Hour || row.hour || 0, 10) + 1).padStart(2, '0')}:00`
+    }));
+
+    // Find peak hours (top 3 hours with most appointments)
+    const peakHours = hourDistribution
+      .sort((a, b) => b.appointmentCount - a.appointmentCount)
+      .slice(0, 3)
+      .map(h => ({
+        hour: h.hour,
+        hourLabel: h.hourLabel,
+        patientCount: h.patientCount,
+        appointmentCount: h.appointmentCount
+      }));
+
+    // Generate complete hour distribution (0-23) for chart, filling missing hours with 0
+    const completeHourDistribution = [];
+    for (let hour = 0; hour < 24; hour++) {
+      const existingHour = hourDistribution.find(h => h.hour === hour);
+      completeHourDistribution.push({
+        hour: hour,
+        hourLabel: `${String(hour).padStart(2, '0')}:00 - ${String(hour + 1).padStart(2, '0')}:00`,
+        patientCount: existingHour ? existingHour.patientCount : 0,
+        appointmentCount: existingHour ? existingHour.appointmentCount : 0
+      });
+    }
+
+    // Prepare response filters
+    const filters = {
+      status: status,
+      date: checkDate
+    };
+
+    // Format data for chart
+    const chartData = {
+      labels: completeHourDistribution.map(h => h.hourLabel),
+      data: completeHourDistribution.map(h => h.appointmentCount),
+      datasets: [{
+        label: 'Appointments per Hour',
+        data: completeHourDistribution.map(h => h.appointmentCount),
+        backgroundColor: 'rgba(54, 162, 235, 0.6)',
+        borderColor: 'rgba(54, 162, 235, 1)',
+        borderWidth: 1
+      }]
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'Total OPD Patients Report retrieved successfully',
+      filters: filters,
+      today: {
+        date: checkDate,
+        totalOPDPatients: totalOPDPatients,
+        totalAppointments: totalAppointments
+      },
+      peakHours: peakHours,
+      hourDistribution: completeHourDistribution,
+      chartData: chartData
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching Total OPD Patients Report',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get OPD Patient Flow Trend - Daily and Weekly
+ * Returns data formatted for chart: OPD Patients and Admissions by day/week
+ * Query parameters:
+ * - status: Filter by status (Active, Inactive) - defaults to 'Active'
+ * - viewType: 'daily' or 'weekly' - defaults to 'daily'
+ * - startDate: Filter by date range start (YYYY-MM-DD) - required for daily view
+ * - endDate: Filter by date range end (YYYY-MM-DD) - required for daily view
+ * - weekDate: Filter for a specific week (YYYY-MM-DD) - optional, for weekly view (uses the week containing this date)
+ * - weeksCount: Number of weeks to show (defaults to 4) - for weekly view
+ * Note: For daily view, use startDate/endDate. For weekly view, use weekDate and optionally weeksCount.
+ */
+exports.getOPDPatientFlowTrend = async (req, res) => {
+  try {
+    const { status = 'Active', viewType = 'daily', startDate, endDate, weekDate, weeksCount = 4 } = req.query;
+
+    // Validate status
+    const allowedStatus = ['Active', 'Inactive'];
+    if (!allowedStatus.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Must be "Active" or "Inactive".',
+      });
+    }
+
+    // Validate viewType
+    const allowedViewTypes = ['daily', 'weekly'];
+    if (!allowedViewTypes.includes(viewType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid viewType. Must be "daily" or "weekly".',
+      });
+    }
+
+    // Validate date format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
+    let queryStartDate = null;
+    let queryEndDate = null;
+    let periodLabel = '';
+
+    if (viewType === 'daily') {
+      // Daily view - require startDate and endDate
+      if (!startDate || !endDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'For daily view, both startDate and endDate are required (YYYY-MM-DD format).',
+        });
+      }
+
+      if (!dateRegex.test(startDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid startDate format. Please use YYYY-MM-DD format (e.g., 2025-12-01)',
+        });
+      }
+
+      if (!dateRegex.test(endDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid endDate format. Please use YYYY-MM-DD format (e.g., 2025-12-31)',
+        });
+      }
+
+      queryStartDate = startDate;
+      queryEndDate = endDate;
+      periodLabel = `Daily View: ${startDate} to ${endDate}`;
+    } else {
+      // Weekly view
+      let referenceDate;
+      if (weekDate) {
+        if (!dateRegex.test(weekDate)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid weekDate format. Please use YYYY-MM-DD format (e.g., 2025-12-01)',
+          });
+        }
+        referenceDate = new Date(weekDate + 'T00:00:00');
+      } else {
+        // Default to current week
+        referenceDate = new Date();
+      }
+
+      // Calculate the most recent week's Monday
+      const dayOfWeek = referenceDate.getDay();
+      const daysToMonday = dayOfWeek === 0 ? 6 : (dayOfWeek === 1 ? 0 : dayOfWeek - 1);
+      const mostRecentMonday = new Date(referenceDate);
+      mostRecentMonday.setDate(referenceDate.getDate() - daysToMonday);
+      mostRecentMonday.setHours(0, 0, 0, 0);
+
+      // Calculate start date (weeksCount weeks back from most recent Monday)
+      const weeksBack = parseInt(weeksCount, 10) || 4;
+      if (weeksBack < 1 || weeksBack > 52) {
+        return res.status(400).json({
+          success: false,
+          message: 'weeksCount must be between 1 and 52.',
+        });
+      }
+
+      const startMonday = new Date(mostRecentMonday);
+      startMonday.setDate(mostRecentMonday.getDate() - ((weeksBack - 1) * 7));
+      queryStartDate = startMonday.toISOString().split('T')[0];
+
+      // Calculate end date (Sunday of the most recent week)
+      const endSunday = new Date(mostRecentMonday);
+      endSunday.setDate(mostRecentMonday.getDate() + 6);
+      endSunday.setHours(23, 59, 59, 999);
+      queryEndDate = endSunday.toISOString().split('T')[0];
+
+      periodLabel = `Weekly View: ${weeksBack} week(s) ending ${queryEndDate}`;
+    }
+
+    // Query to get daily OPD patient counts and appointments
+    const opdQuery = `
+      SELECT 
+        "AppointmentDate"::date AS appointment_date,
+        COUNT(DISTINCT "PatientId") AS patient_count,
+        COUNT("PatientAppointmentId") AS appointment_count
+      FROM "PatientAppointment"
+      WHERE "AppointmentDate"::date >= $1::date
+        AND "AppointmentDate"::date <= $2::date
+        AND "Status" = $3
+      GROUP BY "AppointmentDate"::date
+      ORDER BY "AppointmentDate"::date ASC
+    `;
+
+    // Execute query
+    const opdResults = await db.query(opdQuery, [queryStartDate, queryEndDate, status]);
+
+    // Create map of date to counts
+    const opdDateCountMap = new Map();
+    opdResults.rows.forEach(row => {
+      const dateStr = row.appointment_date.toISOString().split('T')[0];
+      opdDateCountMap.set(dateStr, {
+        patientCount: parseInt(row.patient_count, 10) || 0,
+        appointmentCount: parseInt(row.appointment_count, 10) || 0
+      });
+    });
+
+    let trendData = [];
+    let chartData = {};
+
+    if (viewType === 'daily') {
+      // Generate data for all dates in the range
+      const start = new Date(queryStartDate + 'T00:00:00');
+      const end = new Date(queryEndDate + 'T00:00:00');
+      const currentDate = new Date(start);
+
+      while (currentDate <= end) {
+        const dateStr = currentDate.toISOString().split('T')[0];
+        const dateInfo = opdDateCountMap.get(dateStr) || {
+          patientCount: 0,
+          appointmentCount: 0
+        };
+
+        trendData.push({
+          date: dateStr,
+          day: currentDate.toLocaleDateString('en-US', { weekday: 'short' }),
+          opdPatientCount: dateInfo.patientCount,
+          opdAppointmentCount: dateInfo.appointmentCount
+        });
+
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      // Format data for daily chart
+      chartData = {
+        labels: trendData.map(day => {
+          const date = new Date(day.date);
+          return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }),
+        dates: trendData.map(day => day.date),
+        datasets: [
+          {
+            label: 'OPD Patients',
+            data: trendData.map(day => day.opdPatientCount),
+            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 2,
+            tension: 0.4
+          },
+          {
+            label: 'OPD Appointments',
+            data: trendData.map(day => day.opdAppointmentCount),
+            backgroundColor: 'rgba(75, 192, 192, 0.6)',
+            borderColor: 'rgba(75, 192, 192, 1)',
+            borderWidth: 2,
+            tension: 0.4
+          }
+        ]
+      };
+    } else {
+      // Weekly view - group by week
+      const start = new Date(queryStartDate + 'T00:00:00');
+      const end = new Date(queryEndDate + 'T00:00:00');
+      const currentDate = new Date(start);
+
+      // Group data by week
+      const weeklyMap = new Map();
+
+      while (currentDate <= end) {
+        const dateStr = currentDate.toISOString().split('T')[0];
+        const dateInfo = opdDateCountMap.get(dateStr) || {
+          patientCount: 0,
+          appointmentCount: 0
+        };
+
+        // Get week start (Monday) for this date
+        const dayOfWeek = currentDate.getDay();
+        const daysToMonday = dayOfWeek === 0 ? 6 : (dayOfWeek === 1 ? 0 : dayOfWeek - 1);
+        const weekStart = new Date(currentDate);
+        weekStart.setDate(currentDate.getDate() - daysToMonday);
+        weekStart.setHours(0, 0, 0, 0);
+        const weekStartStr = weekStart.toISOString().split('T')[0];
+
+        // Get week end (Sunday)
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
+        const weekEndStr = weekEnd.toISOString().split('T')[0];
+
+        const weekKey = `${weekStartStr}_${weekEndStr}`;
+
+        if (!weeklyMap.has(weekKey)) {
+          weeklyMap.set(weekKey, {
+            weekStart: weekStartStr,
+            weekEnd: weekEndStr,
+            weekLabel: `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+            opdPatientCount: 0,
+            opdAppointmentCount: 0
+          });
+        }
+
+        const weekData = weeklyMap.get(weekKey);
+        weekData.opdPatientCount += dateInfo.patientCount;
+        weekData.opdAppointmentCount += dateInfo.appointmentCount;
+
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      // Convert map to array and sort by week start date
+      trendData = Array.from(weeklyMap.values()).sort((a, b) => 
+        a.weekStart.localeCompare(b.weekStart)
+      );
+
+      // Format data for weekly chart
+      chartData = {
+        labels: trendData.map(week => week.weekLabel),
+        weekRanges: trendData.map(week => ({
+          start: week.weekStart,
+          end: week.weekEnd
+        })),
+        datasets: [
+          {
+            label: 'OPD Patients',
+            data: trendData.map(week => week.opdPatientCount),
+            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 2,
+            tension: 0.4
+          },
+          {
+            label: 'OPD Appointments',
+            data: trendData.map(week => week.opdAppointmentCount),
+            backgroundColor: 'rgba(75, 192, 192, 0.6)',
+            borderColor: 'rgba(75, 192, 192, 1)',
+            borderWidth: 2,
+            tension: 0.4
+          }
+        ]
+      };
+    }
+
+    // Calculate totals
+    const totalOPDPatients = trendData.reduce((sum, item) => 
+      sum + (item.opdPatientCount || 0), 0
+    );
+    const totalOPDAppointments = trendData.reduce((sum, item) => 
+      sum + (item.opdAppointmentCount || 0), 0
+    );
+
+    // Calculate averages
+    const avgOPDPatients = trendData.length > 0 
+      ? (totalOPDPatients / trendData.length).toFixed(2) 
+      : '0.00';
+    const avgOPDAppointments = trendData.length > 0 
+      ? (totalOPDAppointments / trendData.length).toFixed(2) 
+      : '0.00';
+
+    // Prepare response filters
+    const filters = {
+      status: status,
+      viewType: viewType,
+      startDate: queryStartDate,
+      endDate: queryEndDate
+    };
+
+    if (viewType === 'weekly') {
+      filters.weekDate = weekDate || null;
+      filters.weeksCount = parseInt(weeksCount, 10) || 4;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'OPD Patient Flow Trend retrieved successfully',
+      filters: filters,
+      period: periodLabel,
+      summary: {
+        totalOPDPatients: totalOPDPatients,
+        totalOPDAppointments: totalOPDAppointments,
+        averageOPDPatients: parseFloat(avgOPDPatients),
+        averageOPDAppointments: parseFloat(avgOPDAppointments),
+        periodCount: trendData.length
+      },
+      data: trendData,
+      chartData: chartData
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching OPD Patient Flow Trend',
       error: error.message,
     });
   }

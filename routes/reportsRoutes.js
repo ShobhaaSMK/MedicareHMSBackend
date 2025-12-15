@@ -417,5 +417,232 @@ Response: {
 } */
 router.get('/ipd-summary', reportsController.getIPDSummary);
 
+/* GET /api/reports/total-opd-patients-report
+Query Parameters:
+  - status: String, // "Active" | "Inactive", defaults to "Active"
+  - date: String (YYYY-MM-DD) | null, // Optional, defaults to today
+Note: If 'date' is provided, it will be used. Otherwise, defaults to today's date.
+Response: {
+  success: Boolean,
+  message: String,
+  filters: {
+    status: String,
+    date: String (YYYY-MM-DD)
+  },
+  today: {
+    date: String (YYYY-MM-DD),
+    totalOPDPatients: Number,
+    totalAppointments: Number
+  },
+  peakHours: Array<{
+    hour: Number, // 0-23
+    hourLabel: String, // "09:00 - 10:00"
+    patientCount: Number,
+    appointmentCount: Number
+  }>,
+  hourDistribution: Array<{
+    hour: Number,
+    hourLabel: String,
+    patientCount: Number,
+    appointmentCount: Number
+  }>,
+  chartData: {
+    labels: Array<String>,
+    data: Array<Number>,
+    datasets: Array<{
+      label: String,
+      data: Array<Number>,
+      backgroundColor: String,
+      borderColor: String,
+      borderWidth: Number
+    }>
+  }
+} */
+router.get('/total-opd-patients-report', reportsController.getTotalOPDPatientsReport);
+
+/* GET /api/reports/opd-patient-flow-trend
+Query Parameters:
+  - status: String, // "Active" | "Inactive", defaults to "Active"
+  - viewType: String, // "daily" | "weekly", defaults to "daily"
+  - startDate: String (YYYY-MM-DD), // Required for daily view
+  - endDate: String (YYYY-MM-DD), // Required for daily view
+  - weekDate: String (YYYY-MM-DD) | null, // Optional, for weekly view (uses the week containing this date)
+  - weeksCount: Number, // Optional, defaults to 4, number of weeks to show for weekly view (1-52)
+Note: For daily view, use startDate/endDate. For weekly view, use weekDate and optionally weeksCount.
+Response: {
+  success: Boolean,
+  message: String,
+  filters: {
+    status: String,
+    viewType: String, // "daily" | "weekly"
+    startDate: String (YYYY-MM-DD),
+    endDate: String (YYYY-MM-DD),
+    weekDate?: String (YYYY-MM-DD) | null, // Present if viewType is "weekly"
+    weeksCount?: Number // Present if viewType is "weekly"
+  },
+  period: String, // Description of the period
+  summary: {
+    totalOPDPatients: Number,
+    totalOPDAppointments: Number,
+    averageOPDPatients: Number,
+    averageOPDAppointments: Number,
+    periodCount: Number // Number of days/weeks in the data
+  },
+  data: Array<{
+    // For daily view:
+    date: String (YYYY-MM-DD),
+    day: String, // "Mon", "Tue", etc.
+    opdPatientCount: Number,
+    opdAppointmentCount: Number
+    // For weekly view:
+    // weekStart: String (YYYY-MM-DD),
+    // weekEnd: String (YYYY-MM-DD),
+    // weekLabel: String, // "Dec 1 - Dec 7"
+    // opdPatientCount: Number,
+    // opdAppointmentCount: Number
+  }>,
+  chartData: {
+    labels: Array<String>,
+    dates?: Array<String>, // Present for daily view
+    weekRanges?: Array<{ // Present for weekly view
+      start: String (YYYY-MM-DD),
+      end: String (YYYY-MM-DD)
+    }>,
+    datasets: Array<{
+      label: String,
+      data: Array<Number>,
+      backgroundColor: String,
+      borderColor: String,
+      borderWidth: Number,
+      tension: Number
+    }>
+  }
+} */
+router.get('/opd-patient-flow-trend', reportsController.getOPDPatientFlowTrend);
+
+/* GET /api/reports/ot-statistics
+Query Parameters:
+  - status: String, // "Active" | "Inactive", defaults to "Active"
+  - date: String (YYYY-MM-DD) | null, // Optional, for daily report
+  - weekDate: String (YYYY-MM-DD) | null, // Optional, for weekly report (week containing this date)
+  - startDate: String (YYYY-MM-DD) | null, // Optional, custom start date
+  - endDate: String (YYYY-MM-DD) | null // Optional, custom end date
+Note: Precedence matches Doctor-wise report: date -> weekDate -> startDate/endDate.
+Response: {
+  success: Boolean,
+  message: String,
+  filters: {
+    status: String,
+    reportType: String, // "daily" | "weekly" | "custom"
+    date: String | null,
+    weekDate: String | null,
+    startDate: String | null,
+    endDate: String | null,
+    weekStartDate?: String,
+    weekEndDate?: String
+  },
+  summary: {
+    totalSurgeries: Number,
+    totalCompleted: Number,
+    totalEmergency: Number,
+    averageDurationMinutes: Number | null,
+    periodCount: Number
+  },
+  data: Array<{
+    // Daily/custom:
+    date: String (YYYY-MM-DD),
+    day: String,
+    totalSurgeries: Number,
+    completedSurgeries: Number,
+    emergencySurgeries: Number,
+    averageDurationMinutes: Number | null
+    // Weekly (if reportType = "weekly"):
+    // weekStart: String (YYYY-MM-DD),
+    // weekEnd: String (YYYY-MM-DD),
+    // weekLabel: String,
+    // totalSurgeries: Number,
+    // completedSurgeries: Number,
+    // emergencySurgeries: Number,
+    // averageDurationMinutes: Number | null
+  }>,
+  chartData: {
+    labels: Array<String>,
+    dates?: Array<String>, // Daily/custom
+    weekRanges?: Array<{ start: String, end: String }>, // Weekly
+    datasets: Array<{
+      label: String,
+      data: Array<Number>,
+      backgroundColor: String,
+      borderColor: String,
+      borderWidth: Number,
+      tension: Number,
+      yAxisID?: String
+    }>
+  }
+} */
+router.get('/ot-statistics', reportsController.getOTStatistics);
+
+/* GET /api/reports/icu-statistics
+Query Parameters:
+  - status: String, // "Active" | "Inactive", defaults to "Active"
+  - date: String (YYYY-MM-DD) | null, // Optional, for daily report
+  - weekDate: String (YYYY-MM-DD) | null, // Optional, for weekly report (week containing this date)
+  - startDate: String (YYYY-MM-DD) | null, // Optional, custom start date
+  - endDate: String (YYYY-MM-DD) | null // Optional, custom end date
+Note: Precedence matches Doctor-wise report: date -> weekDate -> startDate/endDate.
+Response: {
+  success: Boolean,
+  message: String,
+  filters: {
+    status: String,
+    reportType: String, // "daily" | "weekly" | "custom"
+    date: String | null,
+    weekDate: String | null,
+    startDate: String | null,
+    endDate: String | null,
+    weekStartDate?: String,
+    weekEndDate?: String
+  },
+  summary: {
+    totalICUPatients: Number,
+    totalCriticalPatients: Number,
+    totalOnVentilator: Number,
+    averageStayDays: Number | null,
+    periodCount: Number
+  },
+  data: Array<{
+    // Daily/custom:
+    date: String (YYYY-MM-DD),
+    day: String,
+    totalICUPatients: Number,
+    criticalPatients: Number,
+    onVentilator: Number,
+    averageStayDays: Number | null
+    // Weekly (if reportType = "weekly"):
+    // weekStart: String (YYYY-MM-DD),
+    // weekEnd: String (YYYY-MM-DD),
+    // weekLabel: String,
+    // totalICUPatients: Number,
+    // criticalPatients: Number,
+    // onVentilator: Number,
+    // averageStayDays: Number | null
+  }>,
+  chartData: {
+    labels: Array<String>,
+    dates?: Array<String>, // Daily/custom
+    weekRanges?: Array<{ start: String, end: String }>, // Weekly
+    datasets: Array<{
+      label: String,
+      data: Array<Number>,
+      backgroundColor: String,
+      borderColor: String,
+      borderWidth: Number,
+      tension: Number,
+      yAxisID?: String
+    }>
+  }
+} */
+router.get('/icu-statistics', reportsController.getICUStatistics);
+
 module.exports = router;
 
