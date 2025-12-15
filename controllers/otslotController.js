@@ -14,6 +14,11 @@ const mapOTSlotRow = (row) => ({
   OTNo: row.OTNo || row.otno || null,
   OTName: row.OTName || row.otname || null,
   OTType: row.OTType || row.ottype || null,
+  // Availability field (only when checking PatientOTAllocation)
+  IsAvailable: row.IsAvailable !== undefined ? row.IsAvailable : undefined,
+  // Patient information (only when slot is occupied)
+  OccupiedByPatientId: row.OccupiedByPatientId || row.occupiedbypatientid || null,
+  OccupiedByPatientNo: row.OccupiedByPatientNo || row.occupiedbypatientno || null,
 });
 
 /**
@@ -42,17 +47,47 @@ const generateOTSlotNo = async (otId) => {
 exports.getAllOTSlots = async (req, res) => {
   try {
     const { status, otId } = req.query;
-    let query = `
-      SELECT 
-        os.*,
-        ot."OTNo",
-        ot."OTName",
-        ot."OTType"
-      FROM "OTSlot" os
-      LEFT JOIN "OT" ot ON os."OTId" = ot."OTId"
-    `;
+    
+    // If otId is provided, include availability check from PatientOTAllocation
+    const includeAvailability = otId !== undefined;
+    
+    let query;
     const params = [];
     const conditions = [];
+
+    if (includeAvailability) {
+      // Efficient query using LEFT JOINs to check all PatientOTAllocation records
+      query = `
+        SELECT DISTINCT ON (os."OTSlotId")
+          os.*,
+          ot."OTNo",
+          ot."OTName",
+          ot."OTType",
+          CASE 
+            WHEN pta."PatientOTAllocationId" IS NOT NULL THEN false
+            ELSE true
+          END AS "IsAvailable",
+          p."PatientId" AS "OccupiedByPatientId",
+          p."PatientNo" AS "OccupiedByPatientNo"
+        FROM "OTSlot" os
+        LEFT JOIN "OT" ot ON os."OTId" = ot."OTId"
+        LEFT JOIN "PatientOTAllocationSlots" pas ON os."OTSlotId" = pas."OTSlotId"
+        LEFT JOIN "PatientOTAllocation" pta ON pas."PatientOTAllocationId" = pta."PatientOTAllocationId"
+          AND pta."Status" = 'Active'
+          AND pta."OperationStatus" NOT IN ('Completed', 'Cancelled')
+        LEFT JOIN "PatientRegistration" p ON pta."PatientId" = p."PatientId"
+      `;
+    } else {
+      query = `
+        SELECT 
+          os.*,
+          ot."OTNo",
+          ot."OTName",
+          ot."OTType"
+        FROM "OTSlot" os
+        LEFT JOIN "OT" ot ON os."OTId" = ot."OTId"
+      `;
+    }
 
     if (status) {
       if (!allowedStatus.includes(status)) {
@@ -75,13 +110,41 @@ exports.getAllOTSlots = async (req, res) => {
     if (conditions.length > 0) {
       query += ' WHERE ' + conditions.join(' AND ');
     }
-    query += ' ORDER BY os."OTId" ASC, os."SlotStartTime" ASC';
+    query += ' ORDER BY os."OTSlotId" ASC, os."SlotStartTime" ASC';
 
     const { rows } = await db.query(query, params);
+    
+    // Process rows to get the first occupied patient if multiple allocations exist
+    const processedRows = includeAvailability ? rows.reduce((acc, row) => {
+      const slotId = row.OTSlotId || row.otslotid;
+      if (!acc[slotId]) {
+        acc[slotId] = {
+          ...row,
+          IsAvailable: row.IsAvailable !== false, // If any allocation exists, it's false
+          OccupiedByPatientId: row.OccupiedByPatientId || null,
+          OccupiedByPatientNo: row.OccupiedByPatientNo || null,
+        };
+      } else {
+        // If slot is already marked as unavailable, keep it that way
+        if (!acc[slotId].IsAvailable) {
+          return acc;
+        }
+        // Update if we found an occupied allocation
+        if (row.OccupiedByPatientId) {
+          acc[slotId].IsAvailable = false;
+          acc[slotId].OccupiedByPatientId = row.OccupiedByPatientId;
+          acc[slotId].OccupiedByPatientNo = row.OccupiedByPatientNo;
+        }
+      }
+      return acc;
+    }, {}) : rows;
+
+    const finalRows = includeAvailability ? Object.values(processedRows) : processedRows;
+    
     res.status(200).json({
       success: true,
-      count: rows.length,
-      data: rows.map(mapOTSlotRow),
+      count: finalRows.length,
+      data: finalRows.map(mapOTSlotRow),
     });
   } catch (error) {
     res.status(500).json({
@@ -148,25 +211,64 @@ exports.getOTSlotsByOTId = async (req, res) => {
       return res.status(404).json({ success: false, message: 'OT not found' });
     }
 
+    // Efficient query using LEFT JOINs to check all PatientOTAllocation records
     const { rows } = await db.query(
       `
-      SELECT 
+      SELECT DISTINCT ON (os."OTSlotId")
         os.*,
         ot."OTNo",
         ot."OTName",
-        ot."OTType"
+        ot."OTType",
+        CASE 
+          WHEN pta."PatientOTAllocationId" IS NOT NULL THEN false
+          ELSE true
+        END AS "IsAvailable",
+        p."PatientId" AS "OccupiedByPatientId",
+        p."PatientNo" AS "OccupiedByPatientNo"
       FROM "OTSlot" os
       LEFT JOIN "OT" ot ON os."OTId" = ot."OTId"
+      LEFT JOIN "PatientOTAllocationSlots" pas ON os."OTSlotId" = pas."OTSlotId"
+      LEFT JOIN "PatientOTAllocation" pta ON pas."PatientOTAllocationId" = pta."PatientOTAllocationId"
+        AND pta."Status" = 'Active'
+        AND pta."OperationStatus" NOT IN ('Completed', 'Cancelled')
+      LEFT JOIN "PatientRegistration" p ON pta."PatientId" = p."PatientId"
       WHERE os."OTId" = $1
-      ORDER BY os."SlotStartTime" ASC
+      ORDER BY os."OTSlotId" ASC, os."SlotStartTime" ASC, pta."PatientOTAllocationId" ASC
       `,
       [otIdInt]
     );
+    
+    // Process rows to get the first occupied patient if multiple allocations exist
+    const processedRows = rows.reduce((acc, row) => {
+      const slotId = row.OTSlotId || row.otslotid;
+      if (!acc[slotId]) {
+        acc[slotId] = {
+          ...row,
+          IsAvailable: row.IsAvailable !== false,
+          OccupiedByPatientId: row.OccupiedByPatientId || null,
+          OccupiedByPatientNo: row.OccupiedByPatientNo || null,
+        };
+      } else {
+        // If slot is already marked as unavailable, keep it that way
+        if (!acc[slotId].IsAvailable) {
+          return acc;
+        }
+        // Update if we found an occupied allocation
+        if (row.OccupiedByPatientId) {
+          acc[slotId].IsAvailable = false;
+          acc[slotId].OccupiedByPatientId = row.OccupiedByPatientId;
+          acc[slotId].OccupiedByPatientNo = row.OccupiedByPatientNo;
+        }
+      }
+      return acc;
+    }, {});
+    
+    const finalRows = Object.values(processedRows);
 
     res.status(200).json({
       success: true,
-      count: rows.length,
-      data: rows.map(mapOTSlotRow),
+      count: finalRows.length,
+      data: finalRows.map(mapOTSlotRow),
     });
   } catch (error) {
     res.status(500).json({

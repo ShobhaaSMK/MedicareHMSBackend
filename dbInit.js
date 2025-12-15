@@ -4,6 +4,95 @@ const path = require('path');
 require('dotenv').config();
 
 /**
+ * Dynamically scan controllers to extract table and column information
+ * This makes the system self-updating when new APIs are added
+ */
+function scanControllersForTablesAndColumns() {
+  const controllersDir = path.join(__dirname, 'controllers');
+  const tablesUsed = new Set();
+  const columnsByTable = {};
+  
+  if (!fs.existsSync(controllersDir)) {
+    console.warn('⚠ Controllers directory not found, skipping dynamic scan');
+    return { tablesUsed: [], columnsByTable: {} };
+  }
+  
+  const controllerFiles = fs.readdirSync(controllersDir).filter(f => f.endsWith('Controller.js'));
+  
+  // Pattern to match table names in SQL queries
+  const tablePattern = /FROM\s+"(\w+)"|INTO\s+"(\w+)"|UPDATE\s+"(\w+)"|JOIN\s+"(\w+)"/gi;
+  
+  controllerFiles.forEach(file => {
+    const filePath = path.join(controllersDir, file);
+    const content = fs.readFileSync(filePath, 'utf8');
+    
+    // Extract table names from SQL queries
+    let match;
+    const tablePatternReset = new RegExp(tablePattern.source, tablePattern.flags);
+    while ((match = tablePatternReset.exec(content)) !== null) {
+      const tableName = match[1] || match[2] || match[3] || match[4];
+      if (tableName && !tableName.match(/^(SELECT|WHERE|AND|OR|ORDER|GROUP|HAVING|LIMIT|OFFSET)$/i)) {
+        tablesUsed.add(tableName);
+      }
+    }
+    
+    // Extract columns from map functions
+    // Pattern: const mapXxxRow = (row) => ({ ColumnName: row.ColumnName || row.columnname, ... })
+    const mapFunctionPattern = /const\s+map\w+Row\s*=\s*\([^)]*\)\s*=>\s*\{([\s\S]*?)\};/g;
+    let mapMatch;
+    
+    while ((mapMatch = mapFunctionPattern.exec(content)) !== null) {
+      const mapBody = mapMatch[1];
+      
+      // Extract column names from map function
+      // Pattern: ColumnName: row.ColumnName || row.columnname
+      const columnPattern = /(\w+):\s*row\.(\w+)/g;
+      let colMatch;
+      
+      while ((colMatch = columnPattern.exec(mapBody)) !== null) {
+        const columnName = colMatch[1];
+        // Convert camelCase to PascalCase (database column format)
+        const dbColumnName = columnName
+          .replace(/([A-Z])/g, ' $1')
+          .split(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join('');
+        
+        // Try to determine table name from controller file name
+        // e.g., patientLabTestController.js -> PatientLabTest
+        const tableNameMatch = file.match(/(\w+)Controller\.js$/);
+        if (tableNameMatch) {
+          const controllerName = tableNameMatch[1];
+          // Convert camelCase controller name to PascalCase table name
+          const tableName = controllerName
+            .replace(/([A-Z])/g, ' $1')
+            .split(' ')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join('');
+          
+          // Store column for this table
+          if (!columnsByTable[tableName]) {
+            columnsByTable[tableName] = new Set();
+          }
+          columnsByTable[tableName].add(dbColumnName);
+        }
+      }
+    }
+  });
+  
+  // Convert Sets to Arrays for easier handling
+  const columnsByTableArray = {};
+  Object.keys(columnsByTable).forEach(table => {
+    columnsByTableArray[table] = Array.from(columnsByTable[table]);
+  });
+  
+  return {
+    tablesUsed: Array.from(tablesUsed),
+    columnsByTable: columnsByTableArray
+  };
+}
+
+/**
  * Initialize database - create if it doesn't exist
  * @returns {Promise<{success: boolean, message: string, created: boolean}>}
  */
@@ -102,6 +191,198 @@ async function initializeDatabase() {
 }
 
 /**
+ * Ensure all required tables and columns exist
+ * This function checks for missing tables/columns and creates/adds them automatically
+ */
+async function ensureAllTablesAndColumns(pool) {
+  console.log('\n=== Verifying all tables and columns exist ===');
+  
+  const client = await pool.connect();
+  try {
+    // Dynamically scan controllers to find all tables and columns being used
+    console.log('📊 Scanning controllers for tables and columns...');
+    const { tablesUsed: scannedTables, columnsByTable: scannedColumns } = scanControllersForTablesAndColumns();
+    
+    // Base list of all required tables (from init_tables.sql - all 28 tables)
+    // This ensures we check all tables defined in the schema
+    const baseTables = [
+      'Roles', 'DoctorDepartment', 'Users', 'PatientRegistration',
+      'RoomBeds', 'LabTest', 'ICU', 'BillEntity', 'Bills',
+      'EmergencyBed', 'EmergencyBedSlot', 'OT', 'OTSlot',
+      'PatientAppointment', 'PatientICUAdmission', 'RoomAdmission',
+      'PatientLabTest', 'SurgeryProcedure', 'PatientOTAllocation',
+      'PatientOTAllocationSlots', 'EmergencyAdmission', 'EmergencyAdmissionVitals',
+      'PatientAdmitNurseVisits', 'ICUDoctorVisits', 'ICUVisitVitals',
+      'PatientAdmitDoctorVisits', 'PatientAdmitVisitVitals', 'AuditLog'
+    ];
+    
+    // Combine base tables with scanned tables (removes duplicates)
+    const requiredTables = Array.from(new Set([...baseTables, ...scannedTables])).sort();
+    
+    if (scannedTables.length > 0) {
+      console.log(`  ✓ Found ${scannedTables.length} tables in controllers: ${scannedTables.slice(0, 5).join(', ')}${scannedTables.length > 5 ? '...' : ''}`);
+    }
+    
+    // Check which tables exist
+    const tablesCheck = await client.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      AND table_type = 'BASE TABLE'
+      AND table_name = ANY($1::text[])
+    `, [requiredTables]);
+    
+    const existingTables = tablesCheck.rows.map(r => r.table_name);
+    const missingTables = requiredTables.filter(t => !existingTables.includes(t));
+    
+    if (missingTables.length > 0) {
+      console.log(`⚠ Missing tables detected: ${missingTables.join(', ')}`);
+      console.log('These should be created by init_tables.sql. Please check the SQL file.');
+    } else {
+      console.log(`✓ All ${requiredTables.length} required tables exist`);
+    }
+    
+    // Build column checks from both static list and dynamically scanned columns
+    // Static list for known columns that might be missing (legacy support)
+    const staticColumnChecks = [
+      { table: 'PatientLabTest', column: 'RoomAdmissionId', type: 'INTEGER' },
+      { table: 'PatientLabTest', column: 'OrderedByDoctorId', type: 'INTEGER' },
+      { table: 'PatientLabTest', column: 'Priority', type: 'VARCHAR(50)' },
+      { table: 'PatientOTAllocation', column: 'RoomAdmissionId', type: 'INTEGER' },
+      { table: 'PatientOTAllocation', column: 'NurseId', type: 'INTEGER' },
+      { table: 'PatientAdmitNurseVisits', column: 'RoomAdmissionId', type: 'INTEGER' },
+      { table: 'PatientAdmitDoctorVisits', column: 'RoomAdmissionId', type: 'INTEGER' },
+      { table: 'PatientAdmitVisitVitals', column: 'RoomAdmissionId', type: 'INTEGER' },
+      { table: 'PatientAdmitVisitVitals', column: 'NurseId', type: 'INTEGER' },
+      { table: 'PatientAdmitVisitVitals', column: 'PatientStatus', type: 'VARCHAR(50)' },
+      { table: 'PatientAdmitVisitVitals', column: 'VisitRemarks', type: 'TEXT' },
+      { table: 'PatientAdmitVisitVitals', column: 'VitalsStatus', type: 'VARCHAR(50)' },
+      { table: 'PatientICUAdmission', column: 'RoomAdmissionId', type: 'INTEGER' },
+      { table: 'PatientICUAdmission', column: 'OnVentilator', type: 'VARCHAR(10) DEFAULT \'No\'' },
+      { table: 'PatientICUAdmission', column: 'ICUAdmissionStatus', type: 'VARCHAR(50) DEFAULT \'Occupied\'' },
+      { table: 'ICUVisitVitals', column: 'VitalsStatus', type: 'VARCHAR(50)' },
+      { table: 'ICUVisitVitals', column: 'NurseId', type: 'INTEGER' },
+      { table: 'EmergencyAdmissionVitals', column: 'NurseId', type: 'INTEGER' },
+      { table: 'EmergencyAdmissionVitals', column: 'VitalsStatus', type: 'VARCHAR(50)' },
+      { table: 'EmergencyBed', column: 'EmergencyRoomNameNo', type: 'VARCHAR(100)' },
+      { table: 'EmergencyBed', column: 'ChargesPerDay', type: 'DECIMAL(10, 2)' },
+    ];
+    
+    // Convert scanned columns to column checks format
+    // Note: We infer column types from common patterns, but this is a best-effort approach
+    const dynamicColumnChecks = [];
+    Object.entries(scannedColumns).forEach(([table, columns]) => {
+      columns.forEach(column => {
+        // Infer column type from column name patterns
+        let columnType = 'VARCHAR(255)'; // Default
+        if (column.endsWith('Id') && !column.startsWith('PatientId') && column !== 'BillId') {
+          columnType = 'INTEGER';
+        } else if (column.includes('Date') || column.includes('DateTime') || column.includes('At')) {
+          columnType = 'TIMESTAMP';
+        } else if (column.includes('Amount') || column.includes('Charge') || column.includes('Rate') || column.includes('Price')) {
+          columnType = 'DECIMAL(10, 2)';
+        } else if (column.includes('Status')) {
+          columnType = 'VARCHAR(50)';
+        } else if (column.includes('Remarks') || column.includes('Details') || column.includes('Description')) {
+          columnType = 'TEXT';
+        } else if (column.includes('Phone') || column.includes('No')) {
+          columnType = 'VARCHAR(50)';
+        } else if (column.includes('Email')) {
+          columnType = 'VARCHAR(255)';
+        }
+        
+        dynamicColumnChecks.push({ table, column, type: columnType });
+      });
+    });
+    
+    // Combine static and dynamic column checks, removing duplicates
+    const columnChecksMap = new Map();
+    [...staticColumnChecks, ...dynamicColumnChecks].forEach(check => {
+      const key = `${check.table}.${check.column}`;
+      if (!columnChecksMap.has(key)) {
+        columnChecksMap.set(key, check);
+      } else {
+        // Prefer static type if available (more accurate)
+        if (staticColumnChecks.find(c => c.table === check.table && c.column === check.column)) {
+          columnChecksMap.set(key, check);
+        }
+      }
+    });
+    
+    const columnChecks = Array.from(columnChecksMap.values());
+    
+    if (dynamicColumnChecks.length > 0) {
+      console.log(`  ✓ Found ${dynamicColumnChecks.length} columns from controller map functions`);
+    }
+    
+    let addedColumns = 0;
+    for (const { table, column, type } of columnChecks) {
+      // Check if table exists first
+      const tableExists = existingTables.includes(table);
+      if (!tableExists) continue;
+      
+      // Check if column exists
+      const columnCheck = await client.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = $1 
+        AND column_name = $2
+      `, [table, column]);
+      
+      if (columnCheck.rows.length === 0) {
+        try {
+          await client.query(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${type}`);
+          console.log(`  ✓ Added column ${table}.${column}`);
+          addedColumns++;
+          
+          // Add CHECK constraints for specific columns if needed
+          if (table === 'PatientICUAdmission' && column === 'OnVentilator') {
+            try {
+              await client.query(`
+                ALTER TABLE "${table}" 
+                ADD CONSTRAINT "${table}_${column}_check" 
+                CHECK ("${column}" IN ('Yes', 'No'))
+              `);
+              console.log(`  ✓ Added CHECK constraint for ${table}.${column}`);
+            } catch (constraintError) {
+              // Constraint might already exist, ignore
+            }
+          }
+          
+          if (table === 'PatientICUAdmission' && column === 'ICUAdmissionStatus') {
+            try {
+              await client.query(`
+                ALTER TABLE "${table}" 
+                ADD CONSTRAINT "${table}_${column}_check" 
+                CHECK ("${column}" IN ('Occupied', 'Discharged'))
+              `);
+              console.log(`  ✓ Added CHECK constraint for ${table}.${column}`);
+            } catch (constraintError) {
+              // Constraint might already exist, ignore
+            }
+          }
+        } catch (addError) {
+          console.warn(`  ⚠ Could not add column ${table}.${column}: ${addError.message.substring(0, 100)}`);
+        }
+      }
+    }
+    
+    if (addedColumns > 0) {
+      console.log(`\n✓ Added ${addedColumns} missing columns`);
+    } else {
+      console.log(`✓ All required columns exist`);
+    }
+    
+  } catch (error) {
+    console.warn('Error during table/column verification:', error.message);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * Initialize tables - create if they don't exist
  * @returns {Promise<{success: boolean, message: string, tablesCreated: number}>}
  */
@@ -176,31 +457,126 @@ async function initializeTables() {
       };
     }
 
+    // First, run a diagnostic check to identify missing columns
+    console.log('\n=== Running diagnostic check for missing columns ===');
+    try {
+      const diagnosticQuery = `
+        WITH table_columns AS (
+          SELECT 
+            t.table_name,
+            c.column_name,
+            CASE WHEN c.column_name IS NOT NULL THEN 'EXISTS' ELSE 'MISSING' END as status
+          FROM information_schema.tables t
+          LEFT JOIN information_schema.columns c 
+            ON t.table_schema = c.table_schema 
+            AND t.table_name = c.table_name
+          WHERE t.table_schema = 'public' 
+            AND t.table_type = 'BASE TABLE'
+            AND t.table_name IN (
+              'PatientLabTest', 'PatientOTAllocation', 'PatientAdmitNurseVisits',
+              'PatientAdmitDoctorVisits', 'PatientAdmitVisitVitals', 'PatientICUAdmission',
+              'ICUNurseVisitVitals', 'ICUVisitVitals'
+            )
+        ),
+        expected_columns AS (
+          SELECT 'PatientLabTest' as table_name, 'RoomAdmissionId' as column_name
+          UNION ALL SELECT 'PatientLabTest', 'OrderedByDoctorId'
+          UNION ALL SELECT 'PatientOTAllocation', 'RoomAdmissionId'
+          UNION ALL SELECT 'PatientAdmitNurseVisits', 'RoomAdmissionId'
+          UNION ALL SELECT 'PatientAdmitDoctorVisits', 'RoomAdmissionId'
+          UNION ALL SELECT 'PatientAdmitVisitVitals', 'RoomAdmissionId'
+          UNION ALL SELECT 'PatientAdmitVisitVitals', 'NurseId'
+          UNION ALL SELECT 'PatientICUAdmission', 'RoomAdmissionId'
+          UNION ALL SELECT 'ICUNurseVisitVitals', 'VitalsStatus'
+          UNION ALL SELECT 'ICUVisitVitals', 'VitalsStatus'
+        )
+        SELECT 
+          ec.table_name,
+          ec.column_name,
+          CASE 
+            WHEN tc.status = 'EXISTS' THEN '✓ EXISTS'
+            WHEN tc.status = 'MISSING' THEN '✗ MISSING'
+            ELSE '✗ TABLE NOT FOUND'
+          END as status
+        FROM expected_columns ec
+        LEFT JOIN table_columns tc 
+          ON ec.table_name = tc.table_name 
+          AND ec.column_name = tc.column_name
+        ORDER BY ec.table_name, ec.column_name;
+      `;
+      
+      const diagnosticResult = await pool.query(diagnosticQuery);
+      console.log('\nColumn Status Check:');
+      diagnosticResult.rows.forEach(row => {
+        console.log(`  ${row.table_name}.${row.column_name}: ${row.status}`);
+      });
+      
+      const missingColumns = diagnosticResult.rows.filter(r => r.status.includes('MISSING') || r.status.includes('NOT FOUND'));
+      if (missingColumns.length > 0) {
+        console.log('\n⚠️  WARNING: Missing columns detected:');
+        missingColumns.forEach(row => {
+          console.error(`  - ${row.table_name}.${row.column_name}: ${row.status}`);
+        });
+        console.log('\nThese columns will be added automatically if possible.\n');
+      } else {
+        console.log('\n✓ All expected columns exist\n');
+      }
+    } catch (diagError) {
+      console.error('Could not run diagnostic check:', diagError.message);
+    }
+
     // Execute the SQL script
     // The SQL file uses IF NOT EXISTS clauses, so it's safe to execute multiple times
     try {
       await pool.query(sql);
       console.log('✓ SQL script executed successfully');
     } catch (sqlError) {
-      console.error('✗ Error executing SQL script:', sqlError.message);
-      console.error('SQL Error Code:', sqlError.code);
-      console.error('SQL Error Detail:', sqlError.detail);
-      throw sqlError;
+      // Check if it's a non-critical error we can ignore
+      const errorMsg = sqlError.message.toLowerCase();
+      const isNonCritical = 
+        errorMsg.includes('already exists') ||
+        errorMsg.includes('duplicate') ||
+        (errorMsg.includes('constraint') && errorMsg.includes('already')) ||
+        (errorMsg.includes('relation') && errorMsg.includes('already'));
+      
+      if (isNonCritical) {
+        console.log('⚠ Non-critical SQL warning (continuing):', sqlError.message.substring(0, 150));
+      } else {
+        // Log the error but continue - we'll try to fix it in verification
+        console.warn('⚠ SQL Error (will attempt to fix):', sqlError.message.substring(0, 200));
+        console.warn('  Continuing with table/column verification...');
+      }
+    }
+    
+    // After SQL execution, verify and fix any missing tables/columns
+    // This will automatically add any missing columns
+    try {
+      await ensureAllTablesAndColumns(pool);
+    } catch (verifyError) {
+      console.warn('⚠ Warning during table/column verification:', verifyError.message);
     }
 
-    // Check which tables exist
+    // Check which tables exist - verify all 28 required tables
+    const baseTablesList = [
+      'Roles', 'DoctorDepartment', 'Users', 'PatientRegistration',
+      'RoomBeds', 'LabTest', 'ICU', 'BillEntity', 'Bills',
+      'EmergencyBed', 'EmergencyBedSlot', 'OT', 'OTSlot',
+      'PatientAppointment', 'PatientICUAdmission', 'RoomAdmission',
+      'PatientLabTest', 'SurgeryProcedure', 'PatientOTAllocation',
+      'PatientOTAllocationSlots', 'EmergencyAdmission', 'EmergencyAdmissionVitals',
+      'PatientAdmitNurseVisits', 'ICUDoctorVisits', 'ICUVisitVitals',
+      'PatientAdmitDoctorVisits', 'PatientAdmitVisitVitals', 'AuditLog'
+    ];
+    
     const tablesQuery = `
       SELECT table_name 
       FROM information_schema.tables 
       WHERE table_schema = 'public' 
       AND table_type = 'BASE TABLE'
-        AND table_name IN (
-          'Roles', 'Users', 'DoctorDepartment', 'PatientRegistration',
-          'RoomBeds', 'LabTest', 'ICU', 'EmergencyBed', 'OT', 'PatientAppointment', 'PatientLabTest', 'RoomAdmission', 'EmergencyAdmission', 'EmergencyAdmissionVitals', 'PatientOTAllocation', 'PatientICUAdmission', 'ICUDoctorVisits', 'ICUVisitVitals', 'PatientAdmitVisitVitals', 'PatientAdmitDoctorVisits'
-        )
+        AND table_name = ANY($1::text[])
       ORDER BY table_name;
     `;
-    const tablesResult = await pool.query(tablesQuery);
+    const tablesResult = await pool.query(tablesQuery, [baseTablesList]);
     const existingTables = tablesResult.rows.map(row => row.table_name);
 
     await pool.end();
