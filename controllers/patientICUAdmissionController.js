@@ -11,29 +11,84 @@ const allowedYesNo = ['Yes', 'No'];
  * @param {number} icuId - The ICU ID to check
  * @returns {Promise<{isOccupied: boolean, admission: object|null}>} - Object containing isOccupied flag and admission details if found
  */
-const checkIfICUBedIsOccupiedInternal = async (icuId) => {
+const checkIfICUBedIsOccupiedInternal = async (icuId, icuAllocationFromDate) => {
   try {
     const icuIdInt = parseInt(icuId, 10);
     if (isNaN(icuIdInt)) {
       throw new Error('ICUId must be a valid integer');
     }
 
-    const query = `
-      SELECT 
-        pica.*,
-        p."PatientName", p."PatientNo",
-        icu."ICUBedNo" AS "ICUNo"
-      FROM "PatientICUAdmission" pica
-      LEFT JOIN "PatientRegistration" p ON pica."PatientId" = p."PatientId"
-      LEFT JOIN "ICU" icu ON pica."ICUId" = icu."ICUId"
-      WHERE pica."ICUId" = $1
-      AND pica."ICUAdmissionStatus" = 'Occupied'
-      AND pica."Status" = 'Active'
-      ORDER BY pica."ICUAllocationFromDate" DESC
-      LIMIT 1
-    `;
+    // Validate and format icuAllocationFromDate if provided
+    let checkDateStr = null;
+    if (icuAllocationFromDate) {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (typeof icuAllocationFromDate === 'string' && dateRegex.test(icuAllocationFromDate)) {
+        const checkDateValue = new Date(icuAllocationFromDate + 'T00:00:00');
+        if (isNaN(checkDateValue.getTime())) {
+          throw new Error('icuAllocationFromDate must be a valid date');
+        }
+        checkDateStr = checkDateValue.toISOString().split('T')[0];
+      } else if (icuAllocationFromDate instanceof Date) {
+        checkDateStr = icuAllocationFromDate.toISOString().split('T')[0];
+      } else {
+        throw new Error('icuAllocationFromDate must be in YYYY-MM-DD format or a Date object');
+      }
+    }
 
-    const { rows } = await db.query(query, [icuIdInt]);
+    // Build query based on whether date is provided
+    let query;
+    let queryParams;
+
+    if (checkDateStr) {
+      // Check if the passed date falls within the range of existing admissions
+      query = `
+        SELECT 
+          pica.*,
+          p."PatientName", p."PatientNo",
+          icu."ICUBedNo" AS "ICUNo"
+        FROM "PatientICUAdmission" pica
+        LEFT JOIN "PatientRegistration" p ON pica."PatientId" = p."PatientId"
+        LEFT JOIN "ICU" icu ON pica."ICUId" = icu."ICUId"
+        WHERE pica."ICUId" = $1
+          AND pica."ICUAdmissionStatus" = 'Occupied'
+          AND pica."Status" = 'Active'
+          AND pica."ICUAllocationFromDate" IS NOT NULL
+          AND (
+            (
+              pica."ICUAllocationToDate" IS NOT NULL
+              AND $2::date >= pica."ICUAllocationFromDate"::date
+              AND $2::date <= pica."ICUAllocationToDate"::date
+            )
+            OR
+            (
+              pica."ICUAllocationToDate" IS NULL
+              AND $2::date >= pica."ICUAllocationFromDate"::date
+            )
+          )
+        ORDER BY pica."ICUAllocationFromDate" DESC
+        LIMIT 1
+      `;
+      queryParams = [icuIdInt, checkDateStr];
+    } else {
+      // If no date provided, check for any occupied admission (backward compatibility)
+      query = `
+        SELECT 
+          pica.*,
+          p."PatientName", p."PatientNo",
+          icu."ICUBedNo" AS "ICUNo"
+        FROM "PatientICUAdmission" pica
+        LEFT JOIN "PatientRegistration" p ON pica."PatientId" = p."PatientId"
+        LEFT JOIN "ICU" icu ON pica."ICUId" = icu."ICUId"
+        WHERE pica."ICUId" = $1
+          AND pica."ICUAdmissionStatus" = 'Occupied'
+          AND pica."Status" = 'Active'
+        ORDER BY pica."ICUAllocationFromDate" DESC
+        LIMIT 1
+      `;
+      queryParams = [icuIdInt];
+    }
+
+    const { rows } = await db.query(query, queryParams);
 
     if (rows.length > 0) {
       return {
@@ -1874,12 +1929,14 @@ exports.getICUAdmissionsforICUMgmtByPatientICUAdmissionId = async (req, res) => 
 
 /**
  * Check if an ICU bed is already occupied
- * Query parameter: ?icuId=INTEGER (required)
+ * Query parameters: 
+ *   - icuId=INTEGER (required)
+ *   - icuAllocationFromDate=YYYY-MM-DD (optional) - checks if bed is occupied on this specific date
  * Returns: Object with isOccupied flag and admission details if found
  */
 exports.checkIfICUBedIsOccupied = async (req, res) => {
   try {
-    const { icuId } = req.query;
+    const { icuId, icuAllocationFromDate, ICUAllocationFromDate } = req.query;
 
     if (!icuId) {
       return res.status(400).json({
@@ -1896,6 +1953,25 @@ exports.checkIfICUBedIsOccupied = async (req, res) => {
       });
     }
 
+    // Validate icuAllocationFromDate if provided
+    const allocationDate = icuAllocationFromDate || ICUAllocationFromDate;
+    if (allocationDate) {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(allocationDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'icuAllocationFromDate must be in YYYY-MM-DD format',
+        });
+      }
+      const checkDateValue = new Date(allocationDate + 'T00:00:00');
+      if (isNaN(checkDateValue.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: 'icuAllocationFromDate must be a valid date',
+        });
+      }
+    }
+
     // Verify ICU exists
     const icuExists = await db.query('SELECT "ICUId" FROM "ICU" WHERE "ICUId" = $1', [icuIdInt]);
     if (icuExists.rows.length === 0) {
@@ -1905,7 +1981,7 @@ exports.checkIfICUBedIsOccupied = async (req, res) => {
       });
     }
 
-    const result = await checkIfICUBedIsOccupiedInternal(icuIdInt);
+    const result = await checkIfICUBedIsOccupiedInternal(icuIdInt, allocationDate);
 
     res.status(200).json({
       success: true,

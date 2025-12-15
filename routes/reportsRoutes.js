@@ -223,5 +223,199 @@ Response: {
 } */
 router.get('/icu-occupancy-trend', reportsController.getICUOccupancyTrend);
 
+/* GET /api/reports/doctor-wise-patient-statistics
+Query Parameters:
+  - status: String, // "Active" | "Inactive", defaults to "Active"
+  - date: String (YYYY-MM-DD) | null, // Optional, for daily report
+  - weekDate: String (YYYY-MM-DD) | null, // Optional, for weekly report (uses the week containing this date)
+  - startDate: String (YYYY-MM-DD) | null, // Optional, filter by date range start
+  - endDate: String (YYYY-MM-DD) | null // Optional, filter by date range end
+Note: Priority: If 'date' is provided, it will be used for daily report. If 'weekDate' is provided, it will be used for weekly report. Otherwise, use startDate/endDate range.
+Response: {
+  success: Boolean,
+  message: String,
+  filters: {
+    status: String,
+    reportType: String, // "daily" | "weekly" | "custom"
+    date: String | null,
+    weekDate: String | null,
+    startDate: String | null,
+    endDate: String | null,
+    weekStartDate?: String, // Present if reportType is "weekly"
+    weekEndDate?: String // Present if reportType is "weekly"
+  },
+  summary: {
+    totalDoctors: Number,
+    totalOPDPatients: Number,
+    totalIPDPatients: Number,
+    totalPatients: Number
+  },
+  data: Array<{
+    doctorId: Number,
+    doctorName: String,
+    doctorEmail: String | null,
+    doctorPhone: String | null,
+    doctorQualification: String | null,
+    specialty: String, // DepartmentName
+    departmentId: String (UUID) | null,
+    opdPatientCount: Number,
+    ipdPatientCount: Number,
+    totalPatientCount: Number
+  }>,
+  tableData: Array<{
+    doctor: String,
+    specialty: String,
+    opdPatients: Number,
+    ipdPatients: Number,
+    total: Number
+  }>,
+  chartData: {
+    labels: Array<String>,
+    datasets: Array<{
+      label: String,
+      data: Array<Number>,
+      backgroundColor: String,
+      borderColor: String,
+      borderWidth: Number
+    }>
+  }
+} */
+router.get('/doctor-wise-patient-statistics', reportsController.getDoctorWisePatientStatistics);
+
+/* GET /api/reports/opd-statistics
+Query Parameters:
+  - status: String, // "Active" | "Inactive", defaults to "Active"
+  - date: String (YYYY-MM-DD) | null, // Optional, for daily report
+  - startDate: String (YYYY-MM-DD) | null, // Optional, filter by date range start
+  - endDate: String (YYYY-MM-DD) | null // Optional, filter by date range end
+Note: If 'date' is provided, it will be used for daily report. Otherwise, use startDate/endDate range.
+Response: {
+  success: Boolean,
+  message: String,
+  filters: {
+    status: String,
+    reportType: String, // "daily" | "custom"
+    date: String | null,
+    startDate: String | null,
+    endDate: String | null
+  },
+  statistics: {
+    totalOPDPatients: Number,
+    totalAppointments: Number,
+    avgWaitTimeMinutes: Number | null,
+    avgWaitTimeFormatted: String | null, // e.g., "2h 30m" or "-15m"
+    peakHours: Array<{
+      hour: Number, // 0-23
+      hourLabel: String, // "09:00 - 10:00"
+      appointmentCount: Number
+    }>
+  },
+  hourDistribution: Array<{
+    hour: Number,
+    hourLabel: String,
+    appointmentCount: Number
+  }>,
+  chartData: {
+    labels: Array<String>,
+    data: Array<Number>,
+    datasets: Array<{
+      label: String,
+      data: Array<Number>,
+      backgroundColor: String,
+      borderColor: String,
+      borderWidth: Number
+    }>
+  }
+} */
+router.get('/opd-statistics', reportsController.getOPDStatistics);
+
+/* GET /api/reports/ipd-statistics
+Query Parameters:
+  - status: String, // "Active" | "Inactive", defaults to "Active"
+  - date: String (YYYY-MM-DD) | null, // Optional, for daily report
+  - startDate: String (YYYY-MM-DD) | null, // Optional, filter by RoomAllocationDate
+  - endDate: String (YYYY-MM-DD) | null // Optional, filter by RoomAllocationDate
+Note: If 'date' is provided, it will be used for daily report. Otherwise, use startDate/endDate range.
+Response: {
+  success: Boolean,
+  message: String,
+  filters: {
+    status: String,
+    reportType: String, // "daily" | "custom"
+    date: String | null,
+    startDate: String | null,
+    endDate: String | null
+  },
+  statistics: {
+    totalAdmissions: Number,
+    regularWard: {
+      count: Number,
+      percentage: Number
+    },
+    specialRooms: {
+      count: Number,
+      percentage: Number
+    },
+    avgStayDurationDays: Number | null,
+    avgStayDurationFormatted: String | null // e.g., "5 days 12h 30m"
+  },
+  chartData: {
+    labels: Array<String>,
+    data: Array<Number>,
+    percentages: Array<String>,
+    datasets: Array<{
+      label: String,
+      data: Array<Number>,
+      backgroundColor: Array<String>,
+      borderColor: Array<String>,
+      borderWidth: Number
+    }>
+  }
+} */
+router.get('/ipd-statistics', reportsController.getIPDStatistics);
+
+/* GET /api/reports/ipd-summary
+Query Parameters:
+  - status: String, // "Active" | "Inactive", defaults to "Active"
+  - date: String (YYYY-MM-DD) | null, // Optional, defaults to today for discharged count
+Note: Discharged Today uses the provided date or today's date. Critical Patients and Bed Occupancy are current status.
+Response: {
+  success: Boolean,
+  message: String,
+  filters: {
+    status: String,
+    date: String (YYYY-MM-DD)
+  },
+  summary: {
+    dischargedToday: {
+      count: Number,
+      date: String (YYYY-MM-DD)
+    },
+    criticalPatients: {
+      count: Number
+    },
+    bedOccupancy: {
+      totalBeds: Number,
+      occupiedBeds: Number,
+      availableBeds: Number,
+      occupancyPercentage: Number
+    }
+  },
+  chartData: {
+    bedOccupancy: {
+      labels: Array<String>,
+      data: Array<Number>,
+      datasets: Array<{
+        label: String,
+        data: Array<Number>,
+        backgroundColor: Array<String>,
+        borderColor: Array<String>,
+        borderWidth: Number
+      }>
+    }
+  }
+} */
+router.get('/ipd-summary', reportsController.getIPDSummary);
+
 module.exports = router;
 
