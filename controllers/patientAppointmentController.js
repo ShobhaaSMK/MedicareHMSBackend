@@ -167,6 +167,88 @@ exports.getAppointmentById = async (req, res) => {
   }
 };
 
+exports.getAppointmentsByPatientId = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const { status, appointmentStatus } = req.query;
+
+    // Validate patientId format (UUID)
+    if (!uuidRegex.test(patientId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid patientId. Must be a valid UUID.',
+      });
+    }
+
+    let query = `
+      SELECT 
+        pa.*,
+        p."PatientName", p."PatientNo",
+        d."UserName" AS "DoctorName",
+        rd."UserName" AS "ReferredDoctorName",
+        b."BillNo",
+        u."UserName" AS "CreatedByName",
+        CONCAT(pa."TokenNo", '_', TO_CHAR(pa."AppointmentDate", 'YYYY-MM-DD'), '_', pa."AppointmentTime") AS "TokenNo_AppointmentDate_AppointmentTime"
+      FROM "PatientAppointment" pa
+      LEFT JOIN "PatientRegistration" p ON pa."PatientId" = p."PatientId"
+      LEFT JOIN "Users" d ON pa."DoctorId" = d."UserId"
+      LEFT JOIN "Users" rd ON pa."ReferredDoctorId" = rd."UserId"
+      LEFT JOIN "Bills" b ON pa."BillId" = b."BillId"
+      LEFT JOIN "Users" u ON pa."CreatedBy" = u."UserId"
+      WHERE pa."PatientId" = $1::uuid
+    `;
+    
+    const params = [patientId];
+    const conditions = [];
+
+    if (status) {
+      if (!allowedStatus.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid status. Must be one of: ${allowedStatus.join(', ')}`,
+        });
+      }
+      conditions.push(`pa."Status" = $${params.length + 1}`);
+      params.push(status);
+    }
+
+    if (appointmentStatus) {
+      if (!allowedAppointmentStatus.includes(appointmentStatus)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid appointmentStatus. Must be one of: ${allowedAppointmentStatus.join(', ')}`,
+        });
+      }
+      conditions.push(`pa."AppointmentStatus" = $${params.length + 1}`);
+      params.push(appointmentStatus);
+    }
+
+    if (conditions.length > 0) {
+      query += ' AND ' + conditions.join(' AND ');
+    }
+
+    query += ' ORDER BY pa."AppointmentDate" DESC LIMIT 1';
+
+    const { rows } = await db.query(query, params);
+    
+    res.status(200).json({
+      success: true,
+      count: rows.length,
+      patientId: patientId,
+      data: rows.map(row => ({
+        ...mapAppointmentRow(row),
+        TokenNo_AppointmentDate_AppointmentTime: row.TokenNo_AppointmentDate_AppointmentTime || row.tokenno_appointmentdate_appointmenttime || null
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching patient appointments',
+      error: error.message,
+    });
+  }
+};
+
 const validateAppointmentPayload = (body, requireAll = true) => {
   const errors = [];
   

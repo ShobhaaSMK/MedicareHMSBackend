@@ -26,6 +26,15 @@ const mapEmergencyAdmissionRow = (row) => ({
   AdmissionCreatedBy: row.AdmissionCreatedBy || row.admissioncreatedby,
   AdmissionCreatedAt: row.AdmissionCreatedAt || row.admissioncreatedat,
   Status: row.Status || row.status,
+  // Joined fields
+  PatientName: row.PatientName || row.patientname || null,
+  PatientNo: row.PatientNo || row.patientno || null,
+  DoctorName: row.DoctorName || row.doctorname || null,
+  EBedSlotNo: row.EBedSlotNo || row.ebedslotno || null,
+  EmergencyBedNo: row.EmergencyBedNo || row.emergencybedno || null,
+  CreatedByName: row.CreatedByName || row.createdbyname || null,
+  EmergencyAdmissionId_EmergencyAdmissionDate: row.EmergencyAdmissionId_EmergencyAdmissionDate || row.emergencyadmissionid_emergencyadmissiondate || null,
+  EmergencyBedId_emergency_BedSlotId_AllocationFromDate: row.EmergencyBedId_emergency_BedSlotId_AllocationFromDate || row.emergencybedid_emergency_bedslotid_allocationfromdate || null,
 });
 
 exports.getAllEmergencyAdmissions = async (req, res) => {
@@ -189,6 +198,86 @@ exports.getEmergencyAdmissionByStatus = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching emergency admissions by status',
+      error: error.message,
+    });
+  }
+};
+
+exports.getEmergencyAdmissionsByPatientId = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const { status, emergencyStatus } = req.query;
+
+    // Validate patientId format (UUID)
+    if (!uuidRegex.test(patientId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid patientId. Must be a valid UUID.',
+      });
+    }
+
+    let query = `
+      SELECT 
+        ea.*,
+        p."PatientName", p."PatientNo",
+        d."UserName" AS "DoctorName",
+        ebs."EBedSlotNo",
+        e."EmergencyBedNo",
+        u."UserName" AS "CreatedByName",
+        CONCAT(ebs."EBedSlotNo", '_', ea."EmergencyAdmissionDate"::text) AS "EmergencyAdmissionId_EmergencyAdmissionDate",
+        CONCAT(COALESCE(e."EmergencyBedId"::text, ''), '_', COALESCE(ea."EmergencyBedSlotId"::text, ''), '_', COALESCE(ea."AllocationFromDate"::text, '')) AS "EmergencyBedId_emergency_BedSlotId_AllocationFromDate"
+      FROM "EmergencyAdmission" ea
+      LEFT JOIN "PatientRegistration" p ON ea."PatientId" = p."PatientId"
+      LEFT JOIN "Users" d ON ea."DoctorId" = d."UserId"
+      LEFT JOIN "EmergencyBedSlot" ebs ON ea."EmergencyBedSlotId" = ebs."EmergencyBedSlotId"
+      LEFT JOIN "EmergencyBed" e ON ebs."EmergencyBedId" = e."EmergencyBedId"
+      LEFT JOIN "Users" u ON ea."AdmissionCreatedBy" = u."UserId"
+      WHERE ea."PatientId" = $1::uuid
+    `;
+    
+    const params = [patientId];
+    const conditions = [];
+
+    if (status) {
+      if (!allowedStatus.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid status. Must be one of: ${allowedStatus.join(', ')}`,
+        });
+      }
+      conditions.push(`ea."Status" = $${params.length + 1}`);
+      params.push(status);
+    }
+
+    if (emergencyStatus) {
+      if (!allowedEmergencyStatus.includes(emergencyStatus)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid emergencyStatus. Must be one of: ${allowedEmergencyStatus.join(', ')}`,
+        });
+      }
+      conditions.push(`ea."EmergencyStatus" = $${params.length + 1}`);
+      params.push(emergencyStatus);
+    }
+
+    if (conditions.length > 0) {
+      query += ' AND ' + conditions.join(' AND ');
+    }
+
+    query += ' ORDER BY ea."EmergencyAdmissionDate" DESC LIMIT 1';
+
+    const { rows } = await db.query(query, params);
+    
+    res.status(200).json({
+      success: true,
+      count: rows.length,
+      patientId: patientId,
+      data: rows.map(mapEmergencyAdmissionRow),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching emergency admissions',
       error: error.message,
     });
   }

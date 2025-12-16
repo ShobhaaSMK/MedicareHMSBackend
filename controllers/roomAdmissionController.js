@@ -1,6 +1,6 @@
 const db = require('../db');
 
-const allowedAdmissionStatus = ['Active', 'Surgery Scheduled', 'Moved to ICU', 'Discharged'];
+const allowedAdmissionStatus = ['Active', 'Moved to ICU', 'Surgery Scheduled', 'Discharged'];
 const allowedYesNo = ['Yes', 'No'];
 const allowedStatus = ['Active', 'Inactive'];
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -36,6 +36,7 @@ const mapRoomAdmissionRow = (row) => ({
   BedNo: row.BedNo || row.bedno || null,
   RoomNo: row.RoomNo || row.roomno || null,
   AllocatedByName: row.AllocatedByName || row.allocatedbyname || null,
+  RoomAdmissionId_RoomAllocationDate: row.RoomAdmissionId_RoomAllocationDate || row.roomadmissionid_roomallocationdate || null,
 });
 
 exports.getAllRoomAdmissions = async (req, res) => {
@@ -153,6 +154,85 @@ exports.getRoomAdmissionById = async (req, res) => {
   }
 };
 
+exports.getRoomAdmissionsByPatientId = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const { status, admissionStatus } = req.query;
+
+    // Validate patientId format (UUID)
+    if (!uuidRegex.test(patientId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid patientId. Must be a valid UUID.',
+      });
+    }
+
+    let query = `
+      SELECT 
+        ra.*,
+        p."PatientName", p."PatientNo",
+        d."UserName" AS "AdmittingDoctorName",
+        pa."TokenNo" AS "AppointmentTokenNo",
+        rb."BedNo", rb."RoomNo",
+        u."UserName" AS "AllocatedByName",
+        CONCAT(ra."RoomAdmissionId", '_', ra."RoomAllocationDate"::text) AS "RoomAdmissionId_RoomAllocationDate"
+      FROM "RoomAdmission" ra
+      LEFT JOIN "PatientRegistration" p ON ra."PatientId" = p."PatientId"
+      LEFT JOIN "Users" d ON ra."AdmittingDoctorId" = d."UserId"
+      LEFT JOIN "PatientAppointment" pa ON ra."PatientAppointmentId" = pa."PatientAppointmentId"
+      LEFT JOIN "RoomBeds" rb ON ra."RoomBedsId" = rb."RoomBedsId"
+      LEFT JOIN "Users" u ON ra."AllocatedBy" = u."UserId"
+      WHERE ra."PatientId" = $1::uuid
+    `;
+    
+    const params = [patientId];
+    const conditions = [];
+
+    if (status) {
+      if (!allowedStatus.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid status. Must be one of: ${allowedStatus.join(', ')}`,
+        });
+      }
+      conditions.push(`ra."Status" = $${params.length + 1}`);
+      params.push(status);
+    }
+
+    if (admissionStatus) {
+      if (!allowedAdmissionStatus.includes(admissionStatus)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid admissionStatus. Must be one of: ${allowedAdmissionStatus.join(', ')}`,
+        });
+      }
+      conditions.push(`ra."AdmissionStatus" = $${params.length + 1}`);
+      params.push(admissionStatus);
+    }
+
+    if (conditions.length > 0) {
+      query += ' AND ' + conditions.join(' AND ');
+    }
+
+    query += ' ORDER BY ra."RoomAllocationDate" DESC LIMIT 1';
+
+    const { rows } = await db.query(query, params);
+    
+    res.status(200).json({
+      success: true,
+      count: rows.length,
+      patientId: patientId,
+      data: rows.map(mapRoomAdmissionRow),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching room admissions',
+      error: error.message,
+    });
+  }
+};
+
 const validateRoomAdmissionPayload = (body, requireAll = true) => {
   const errors = [];
 
@@ -217,7 +297,7 @@ const validateRoomAdmissionPayload = (body, requireAll = true) => {
   }
 
   if (body.AdmissionStatus && !allowedAdmissionStatus.includes(body.AdmissionStatus)) {
-    errors.push('AdmissionStatus must be "Active", "Surgery Scheduled", "Moved to ICU", or "Discharged"');
+    errors.push(`AdmissionStatus must be one of: ${allowedAdmissionStatus.join(', ')}`);
   }
 
   if (body.ShiftToAnotherRoom && !allowedYesNo.includes(body.ShiftToAnotherRoom)) {
@@ -789,7 +869,7 @@ exports.getRoomCapacityOverview = async (req, res) => {
  * Returns Bed No, Patient Name, Age/Gender, Room Type, Admission Date, Admitted By, Diagnosis, AdmissionStatus
  * Optional query parameters:
  * - status: Filter by status (Active, Inactive)
- * - admissionStatus: Filter by admission status (Active, Surgery Scheduled, Moved to ICU, Discharged)
+ * - admissionStatus: Filter by admission status (Active, Moved to ICU, Surgery Scheduled, Discharged)
  */
 exports.getRoomAdmissionsData = async (req, res) => {
   try {
@@ -808,11 +888,16 @@ exports.getRoomAdmissionsData = async (req, res) => {
         ra."CaseSheetDetails" AS "Diagnosis",
         ra."AdmissionStatus",
         ra."Status",
-        ra."ScheduleOT"
+        ra."ScheduleOT",
+        d."UserName" as "AdmittingDoctorName",
+        ra."PatientId" as "PatientId",
+        p."PatientNo" as "PatientNo",
+        ra."AdmittingDoctorId" as "AdmittingDoctorId"
       FROM "RoomAdmission" ra
       INNER JOIN "RoomBeds" rb ON ra."RoomBedsId" = rb."RoomBedsId"
       INNER JOIN "PatientRegistration" p ON ra."PatientId" = p."PatientId"
       LEFT JOIN "Users" u ON ra."AllocatedBy" = u."UserId"
+      LEFT JOIN "Users" d ON ra."AdmittingDoctorId" = d."UserId"
     `;
     
     const params = [];
@@ -910,11 +995,15 @@ exports.getRoomAdmissionsDataById = async (req, res) => {
         ra."CaseSheetDetails" AS "Diagnosis",
         ra."AdmissionStatus",
         ra."Status",
-        ra."ScheduleOT"
+        ra."ScheduleOT",
+        p."PatientNo",
+        d."UserName" as "AdmittingDoctorName",
+        ra."PatientId" as "PatientId"
       FROM "RoomAdmission" ra
-      INNER JOIN "RoomBeds" rb ON ra."RoomBedsId" = rb."RoomBedsId"
-      INNER JOIN "PatientRegistration" p ON ra."PatientId" = p."PatientId"
+      LEFT JOIN "PatientRegistration" p ON ra."PatientId" = p."PatientId"
+      LEFT JOIN "RoomBeds" rb ON ra."RoomBedsId" = rb."RoomBedsId"
       LEFT JOIN "Users" u ON ra."AllocatedBy" = u."UserId"
+      LEFT JOIN "Users" d ON ra."AdmittingDoctorId" = d."UserId"
       WHERE ra."RoomAdmissionId" = $1
     `;
     
@@ -927,7 +1016,6 @@ exports.getRoomAdmissionsDataById = async (req, res) => {
       });
     }
     
-    // Format data with separate Age and Gender fields
     const row = rows[0];
     const age = row.Age || row.age || null;
     const gender = row.Gender || row.gender || null;
@@ -944,7 +1032,10 @@ exports.getRoomAdmissionsDataById = async (req, res) => {
       diagnosis: row.Diagnosis || row.diagnosis || null,
       admissionStatus: row.AdmissionStatus || row.admissionstatus || null,
       status: row.Status || row.status || null,
-      scheduleOT: row.ScheduleOT || row.scheduleot || null
+      scheduleOT: row.ScheduleOT || row.scheduleot || null,
+      patientNo: row.PatientNo || row.patientno || null,
+      admittingDoctorName: row.AdmittingDoctorName || row.admittingdoctorname || null,
+      patientId: row.PatientId || row.patientid || null,
     };
     
     res.status(200).json({

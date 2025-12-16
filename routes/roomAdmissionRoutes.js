@@ -139,6 +139,50 @@ Response: {
 } */
 router.get('/data/:id', roomAdmissionController.getRoomAdmissionsDataById);
 
+/* GET /api/room-admissions/patient/:patientId
+Path Parameters:
+  - patientId: String (UUID) - required
+Query Parameters:
+  - status: String (optional), // "Active" | "Inactive"
+  - admissionStatus: String (optional), // "Active" | "Surgery Scheduled" | "Moved to ICU" | "Discharged"
+Response: {
+  success: Boolean,
+  count: Number,
+  patientId: String (UUID),
+  data: Array<{
+    RoomAdmissionId: Number,
+    PatientAppointmentId: Number | null,
+    EmergencyBedSlotId: Number | null,
+    AdmittingDoctorId: Number,
+    PatientId: String (UUID),
+    RoomBedsId: Number,
+    RoomAllocationDate: Date,
+    RoomVacantDate: Date | null,
+    AdmissionStatus: String, // "Active" | "Surgery Scheduled" | "Moved to ICU" | "Discharged"
+    CaseSheetDetails: String | null,
+    CaseSheet: String | null,
+    ShiftToAnotherRoom: String, // "Yes" | "No", defaults to "No"
+    ShiftedTo: String | null,
+    ShiftedToDetails: String | null,
+    ScheduleOT: String, // "Yes" | "No", defaults to "No"
+    OTAdmissionId: Number | null,
+    IsLinkedToICU: String, // "Yes" | "No", defaults to "No"
+    ICUAdmissionId: String (UUID) | null,
+    BillId: Number | null,
+    AllocatedBy: Number | null,
+    AllocatedAt: Date,
+    Status: String, // "Active" | "Inactive"
+    PatientName: String | null,
+    PatientNo: String | null,
+    AdmittingDoctorName: String | null,
+    AppointmentTokenNo: Number | null,
+    BedNo: String | null,
+    RoomNo: String | null,
+    AllocatedByName: String | null
+  }>
+} */
+router.get('/patient/:patientId', roomAdmissionController.getRoomAdmissionsByPatientId);
+
 /* GET /api/room-admissions/:id
 Path Parameters:
   - id: Number, (required)

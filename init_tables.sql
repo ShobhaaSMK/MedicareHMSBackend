@@ -297,7 +297,7 @@ CREATE TABLE IF NOT EXISTS "RoomAdmission" (
     "RoomBedsId" INTEGER NOT NULL,
     "RoomAllocationDate" TIMESTAMP NOT NULL,
     "RoomVacantDate" TIMESTAMP,
-    "AdmissionStatus" VARCHAR(50) DEFAULT 'Active' CHECK ("AdmissionStatus" IN ('Active', 'Surgery Scheduled', 'Moved to ICU', 'Discharged')),
+    "AdmissionStatus" VARCHAR(50) DEFAULT 'Active' CHECK ("AdmissionStatus" IN ('Active', 'Moved to ICU', 'Surgery Scheduled', 'Discharged')),
     "CaseSheetDetails" TEXT,
     "CaseSheet" TEXT,
     "ShiftToAnotherRoom" VARCHAR(10) DEFAULT 'No' CHECK ("ShiftToAnotherRoom" IN ('Yes', 'No')),
@@ -386,14 +386,15 @@ CREATE TABLE IF NOT EXISTS "PatientLabTest" (
     "TestStatus" VARCHAR(50) CHECK ("TestStatus" IN ('Pending', 'InProgress', 'Completed')),
     "TestDoneDateTime" TIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active',
-    "CreatedBy" UUID,
+    "CreatedBy" INTEGER,
     "CreatedDate" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("LabTestId") REFERENCES "LabTest"("LabTestId") ON DELETE RESTRICT,
     FOREIGN KEY ("AppointmentId") REFERENCES "PatientAppointment"("PatientAppointmentId") ON DELETE SET NULL,
     FOREIGN KEY ("EmergencyBedSlotId") REFERENCES "EmergencyBedSlot"("EmergencyBedSlotId") ON DELETE SET NULL,
     FOREIGN KEY ("BillId") REFERENCES "Bills"("BillId") ON DELETE SET NULL,
-    FOREIGN KEY ("OrderedByDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    FOREIGN KEY ("OrderedByDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL,
+    FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
 -- Add missing columns to PatientLabTest if table exists but columns don't
@@ -451,6 +452,25 @@ BEGIN
                 ADD CONSTRAINT "PatientLabTest_OrderedByDoctorId_fkey" 
                 FOREIGN KEY ("OrderedByDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL;
             END IF;
+        END IF;
+        
+        -- Ensure CreatedBy foreign key constraint exists (for existing tables)
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = 'PatientLabTest' 
+            AND column_name = 'CreatedBy'
+        ) AND EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = 'Users'
+        ) AND NOT EXISTS (
+            SELECT 1 FROM pg_constraint 
+            WHERE conname = 'PatientLabTest_CreatedBy_fkey'
+        ) THEN
+            ALTER TABLE "PatientLabTest" 
+            ADD CONSTRAINT "PatientLabTest_CreatedBy_fkey" 
+            FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL;
         END IF;
     END IF;
 END $$;
