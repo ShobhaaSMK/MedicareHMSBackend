@@ -2971,3 +2971,542 @@ exports.getOPDPatientFlowTrend = async (req, res) => {
   }
 };
 
+/**
+ * Get Laboratory Tests Daily Report
+ * Returns: Doctor-wise Lab Tests for Today and Daily Summary
+ * Query parameters:
+ * - status: Filter by status (Active, Inactive) - defaults to 'Active'
+ * - date: Filter for a specific date (YYYY-MM-DD) - optional, defaults to today
+ * Note: If 'date' is provided, it will be used. Otherwise, defaults to today's date.
+ */
+exports.getLabTestDailyReport = async (req, res) => {
+  try {
+    const { status = 'Active', date } = req.query;
+
+    // Validate status
+    const allowedStatus = ['Active', 'Inactive'];
+    if (!allowedStatus.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Must be "Active" or "Inactive".',
+      });
+    }
+
+    // Validate date format if provided, otherwise default to today
+    let checkDate = new Date().toISOString().split('T')[0]; // Default to today
+    if (date) {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(date)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date format. Please use YYYY-MM-DD format (e.g., 2025-12-01)',
+        });
+      }
+      checkDate = date;
+    }
+
+    // Query 1: Doctor-wise Lab Tests for the date
+    const doctorWiseQuery = `
+      SELECT 
+        COALESCE(plt."OrderedByDoctorId", 0) AS "DoctorId",
+        COALESCE(u."UserName", 'Unassigned') AS "DoctorName",
+        u."EmailId" AS "DoctorEmail",
+        u."PhoneNo" AS "DoctorPhone",
+        u."DoctorQualification",
+        COALESCE(dd."DepartmentName", 'Unassigned') AS "DepartmentName",
+        dd."DoctorDepartmentId",
+        COUNT(plt."PatientLabTestsId") AS "TotalLabTests",
+        COUNT(DISTINCT plt."PatientId") AS "TotalPatients",
+        COUNT(*) FILTER (WHERE plt."TestStatus" = 'Completed') AS "CompletedTests",
+        COUNT(*) FILTER (WHERE plt."TestStatus" = 'Pending') AS "PendingTests",
+        COUNT(*) FILTER (WHERE plt."TestStatus" = 'InProgress') AS "InProgressTests",
+        COUNT(*) FILTER (WHERE plt."Priority" = 'Urgent') AS "UrgentTests",
+        -- Calculate Average TAT (Turnaround Time) in minutes for completed tests
+        AVG(
+          CASE 
+            WHEN plt."TestStatus" = 'Completed' 
+              AND plt."TestDoneDateTime" IS NOT NULL 
+              AND plt."CreatedDate" IS NOT NULL
+            THEN EXTRACT(EPOCH FROM (plt."TestDoneDateTime" - plt."CreatedDate")) / 60
+            ELSE NULL
+          END
+        ) AS "AvgTATMinutes",
+        COUNT(*) FILTER (
+          WHERE plt."TestStatus" = 'Completed' 
+            AND plt."TestDoneDateTime" IS NOT NULL 
+            AND plt."CreatedDate" IS NOT NULL
+        ) AS "TATCount"
+      FROM "PatientLabTest" plt
+      LEFT JOIN "Users" u ON plt."OrderedByDoctorId" = u."UserId"
+      LEFT JOIN "DoctorDepartment" dd ON u."DoctorDepartmentId" = dd."DoctorDepartmentId"
+      WHERE plt."Status" = $1
+        AND DATE(plt."CreatedDate") = $2::date
+      GROUP BY plt."OrderedByDoctorId", u."UserId", u."UserName", u."EmailId", u."PhoneNo", u."DoctorQualification", dd."DepartmentName", dd."DoctorDepartmentId"
+      ORDER BY "TotalLabTests" DESC, "DoctorName" ASC
+    `;
+
+    // Query 2: Daily Summary
+    const dailySummaryQuery = `
+      SELECT 
+        COUNT(plt."PatientLabTestsId") AS "TotalLabTests",
+        COUNT(DISTINCT plt."PatientId") AS "TotalPatients",
+        COUNT(DISTINCT plt."OrderedByDoctorId") AS "TotalDoctors",
+        COUNT(*) FILTER (WHERE plt."TestStatus" = 'Completed') AS "CompletedTests",
+        COUNT(*) FILTER (WHERE plt."TestStatus" = 'Pending') AS "PendingTests",
+        COUNT(*) FILTER (WHERE plt."TestStatus" = 'InProgress') AS "InProgressTests",
+        COUNT(*) FILTER (WHERE plt."Priority" = 'Urgent') AS "UrgentTests",
+        COUNT(*) FILTER (WHERE plt."Priority" = 'Normal') AS "NormalTests",
+        COUNT(*) FILTER (WHERE plt."LabTestDone" = 'Yes') AS "TestsDone",
+        COUNT(*) FILTER (WHERE plt."LabTestDone" = 'No') AS "TestsNotDone",
+        -- Calculate Average TAT (Turnaround Time) in minutes for completed tests
+        AVG(
+          CASE 
+            WHEN plt."TestStatus" = 'Completed' 
+              AND plt."TestDoneDateTime" IS NOT NULL 
+              AND plt."CreatedDate" IS NOT NULL
+            THEN EXTRACT(EPOCH FROM (plt."TestDoneDateTime" - plt."CreatedDate")) / 60
+            ELSE NULL
+          END
+        ) AS "AvgTATMinutes",
+        COUNT(*) FILTER (
+          WHERE plt."TestStatus" = 'Completed' 
+            AND plt."TestDoneDateTime" IS NOT NULL 
+            AND plt."CreatedDate" IS NOT NULL
+        ) AS "TATCount"
+      FROM "PatientLabTest" plt
+      WHERE plt."Status" = $1
+        AND DATE(plt."CreatedDate") = $2::date
+    `;
+
+    // Execute both queries in parallel
+    const [doctorWiseResults, summaryResults] = await Promise.all([
+      db.query(doctorWiseQuery, [status, checkDate]),
+      db.query(dailySummaryQuery, [status, checkDate])
+    ]);
+
+    // Process doctor-wise results
+    const doctorWiseData = doctorWiseResults.rows.map(row => {
+      const avgTATMinutes = row.AvgTATMinutes || row.avgtatminutes;
+      const tatCount = parseInt(row.TATCount || row.tatcount || 0, 10);
+      
+      // Format TAT
+      let avgTATFormatted = null;
+      let avgTATMinutesValue = null;
+      
+      if (avgTATMinutes !== null && avgTATMinutes !== undefined && !isNaN(avgTATMinutes) && tatCount > 0) {
+        avgTATMinutesValue = parseFloat(avgTATMinutes);
+        const hours = Math.floor(avgTATMinutesValue / 60);
+        const minutes = Math.floor(avgTATMinutesValue % 60);
+        if (hours > 0) {
+          avgTATFormatted = `${hours}h ${minutes}m`;
+        } else {
+          avgTATFormatted = `${minutes}m`;
+        }
+      }
+
+      return {
+        doctorId: row.DoctorId || row.doctorid || null,
+        doctorName: row.DoctorName || row.doctorname || 'Unassigned',
+        doctorEmail: row.DoctorEmail || row.doctoremail || null,
+        doctorPhone: row.DoctorPhone || row.doctorphone || null,
+        doctorQualification: row.DoctorQualification || row.doctorqualification || null,
+        departmentName: row.DepartmentName || row.departmentname || 'Unassigned',
+        departmentId: row.DoctorDepartmentId || row.doctordepartmentid || null,
+        totalLabTests: parseInt(row.TotalLabTests || row.totallabtests || 0, 10),
+        totalPatients: parseInt(row.TotalPatients || row.totalpatients || 0, 10),
+        completedTests: parseInt(row.CompletedTests || row.completedtests || 0, 10),
+        pendingTests: parseInt(row.PendingTests || row.pendingtests || 0, 10),
+        inProgressTests: parseInt(row.InProgressTests || row.inprogresstests || 0, 10),
+        urgentTests: parseInt(row.UrgentTests || row.urgenttests || 0, 10),
+        avgTATMinutes: avgTATMinutesValue ? Math.round(avgTATMinutesValue * 100) / 100 : null,
+        avgTATFormatted: avgTATFormatted,
+        tatCount: tatCount
+      };
+    });
+
+    // Process daily summary
+    const summary = summaryResults.rows[0];
+    const avgTATMinutes = summary.AvgTATMinutes || summary.avgtatminutes;
+    const tatCount = parseInt(summary.TATCount || summary.tatcount || 0, 10);
+    
+    // Format TAT
+    let avgTATFormatted = null;
+    let avgTATMinutesValue = null;
+    
+    if (avgTATMinutes !== null && avgTATMinutes !== undefined && !isNaN(avgTATMinutes) && tatCount > 0) {
+      avgTATMinutesValue = parseFloat(avgTATMinutes);
+      const hours = Math.floor(avgTATMinutesValue / 60);
+      const minutes = Math.floor(avgTATMinutesValue % 60);
+      if (hours > 0) {
+        avgTATFormatted = `${hours}h ${minutes}m`;
+      } else {
+        avgTATFormatted = `${minutes}m`;
+      }
+    }
+
+    const dailySummary = {
+      date: checkDate,
+      totalLabTests: parseInt(summary.TotalLabTests || summary.totallabtests || 0, 10),
+      totalPatients: parseInt(summary.TotalPatients || summary.totalpatients || 0, 10),
+      totalDoctors: parseInt(summary.TotalDoctors || summary.totaldoctors || 0, 10),
+      completedTests: parseInt(summary.CompletedTests || summary.completedtests || 0, 10),
+      pendingTests: parseInt(summary.PendingTests || summary.pendingtests || 0, 10),
+      inProgressTests: parseInt(summary.InProgressTests || summary.inprogresstests || 0, 10),
+      urgentTests: parseInt(summary.UrgentTests || summary.urgenttests || 0, 10),
+      normalTests: parseInt(summary.NormalTests || summary.normaltests || 0, 10),
+      testsDone: parseInt(summary.TestsDone || summary.testsdone || 0, 10),
+      testsNotDone: parseInt(summary.TestsNotDone || summary.testsnotdone || 0, 10),
+      avgTATMinutes: avgTATMinutesValue ? Math.round(avgTATMinutesValue * 100) / 100 : null,
+      avgTATFormatted: avgTATFormatted,
+      tatCount: tatCount
+    };
+
+    // Calculate percentages
+    if (dailySummary.totalLabTests > 0) {
+      dailySummary.completedPercentage = ((dailySummary.completedTests / dailySummary.totalLabTests) * 100).toFixed(2);
+      dailySummary.pendingPercentage = ((dailySummary.pendingTests / dailySummary.totalLabTests) * 100).toFixed(2);
+      dailySummary.inProgressPercentage = ((dailySummary.inProgressTests / dailySummary.totalLabTests) * 100).toFixed(2);
+    } else {
+      dailySummary.completedPercentage = '0.00';
+      dailySummary.pendingPercentage = '0.00';
+      dailySummary.inProgressPercentage = '0.00';
+    }
+
+    // Format data for chart (doctor-wise)
+    const chartData = {
+      labels: doctorWiseData.map(d => d.doctorName),
+      datasets: [
+        {
+          label: 'Total Lab Tests',
+          data: doctorWiseData.map(d => d.totalLabTests),
+          backgroundColor: 'rgba(54, 162, 235, 0.6)',
+          borderColor: 'rgba(54, 162, 235, 1)',
+          borderWidth: 1
+        },
+        {
+          label: 'Completed',
+          data: doctorWiseData.map(d => d.completedTests),
+          backgroundColor: 'rgba(75, 192, 192, 0.6)',
+          borderColor: 'rgba(75, 192, 192, 1)',
+          borderWidth: 1
+        },
+        {
+          label: 'Pending',
+          data: doctorWiseData.map(d => d.pendingTests),
+          backgroundColor: 'rgba(255, 206, 86, 0.6)',
+          borderColor: 'rgba(255, 206, 86, 1)',
+          borderWidth: 1
+        }
+      ]
+    };
+
+    // Summary chart data
+    const summaryChartData = {
+      labels: ['Completed', 'Pending', 'In Progress'],
+      data: [dailySummary.completedTests, dailySummary.pendingTests, dailySummary.inProgressTests],
+      percentages: [
+        dailySummary.completedPercentage,
+        dailySummary.pendingPercentage,
+        dailySummary.inProgressPercentage
+      ],
+      datasets: [{
+        label: 'Test Status Distribution',
+        data: [dailySummary.completedTests, dailySummary.pendingTests, dailySummary.inProgressTests],
+        backgroundColor: [
+          'rgba(75, 192, 192, 0.6)',
+          'rgba(255, 206, 86, 0.6)',
+          'rgba(54, 162, 235, 0.6)'
+        ],
+        borderColor: [
+          'rgba(75, 192, 192, 1)',
+          'rgba(255, 206, 86, 1)',
+          'rgba(54, 162, 235, 1)'
+        ],
+        borderWidth: 1
+      }]
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'Laboratory Tests Daily Report retrieved successfully',
+      filters: {
+        status: status,
+        date: checkDate
+      },
+      doctorWiseLabTests: doctorWiseData,
+      dailySummary: dailySummary,
+      chartData: chartData,
+      summaryChartData: summaryChartData
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching Laboratory Tests Daily Report',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get Laboratory Tests Weekly Report
+ * Returns: Weekly Lab Test Trend and Weekly Summary
+ * Query parameters:
+ * - status: Filter by status (Active, Inactive) - defaults to 'Active'
+ * - weekDate: Filter for a specific week (YYYY-MM-DD) - optional, defaults to current week
+ * Note: Uses the week containing weekDate (Monday to Sunday). If not provided, uses current week.
+ */
+exports.getLabTestWeeklyReport = async (req, res) => {
+  try {
+    const { status = 'Active', weekDate } = req.query;
+
+    // Validate status
+    const allowedStatus = ['Active', 'Inactive'];
+    if (!allowedStatus.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Must be "Active" or "Inactive".',
+      });
+    }
+
+    // Determine week start and end dates
+    let startDate;
+    if (weekDate) {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(weekDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid weekDate format. Please use YYYY-MM-DD format (e.g., 2025-12-01)',
+        });
+      }
+      startDate = getWeekStartDate(weekDate);
+    } else {
+      // Default to current week starting from Monday
+      const today = new Date();
+      const dayOfWeek = today.getDay();
+      const daysToMonday = dayOfWeek === 0 ? 6 : (dayOfWeek === 1 ? 0 : dayOfWeek - 1);
+      startDate = new Date(today);
+      startDate.setDate(today.getDate() - daysToMonday);
+      startDate.setHours(0, 0, 0, 0);
+    }
+
+    // Validate the date
+    if (isNaN(startDate.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid date provided',
+      });
+    }
+
+    // Calculate end date (Sunday)
+    const endDate = getWeekEndDate(startDate);
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+
+    // Day names array
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+    // Query to get daily lab test counts for the week
+    const weeklyTrendQuery = `
+      SELECT 
+        DATE(plt."CreatedDate") AS test_date,
+        TO_CHAR(DATE(plt."CreatedDate"), 'Day') AS day_name,
+        COUNT(plt."PatientLabTestsId") AS total_tests,
+        COUNT(DISTINCT plt."PatientId") AS total_patients,
+        COUNT(*) FILTER (WHERE plt."TestStatus" = 'Completed') AS completed_tests,
+        COUNT(*) FILTER (WHERE plt."TestStatus" = 'Pending') AS pending_tests,
+        COUNT(*) FILTER (WHERE plt."TestStatus" = 'InProgress') AS in_progress_tests,
+        COUNT(*) FILTER (WHERE plt."Priority" = 'Urgent') AS urgent_tests
+      FROM "PatientLabTest" plt
+      WHERE DATE(plt."CreatedDate") >= $1::date
+        AND DATE(plt."CreatedDate") <= $2::date
+        AND plt."Status" = $3
+      GROUP BY DATE(plt."CreatedDate")
+      ORDER BY DATE(plt."CreatedDate") ASC
+    `;
+
+    // Query for weekly summary
+    const weeklySummaryQuery = `
+      SELECT 
+        COUNT(plt."PatientLabTestsId") AS "TotalLabTests",
+        COUNT(DISTINCT plt."PatientId") AS "TotalPatients",
+        COUNT(DISTINCT plt."OrderedByDoctorId") AS "TotalDoctors",
+        COUNT(*) FILTER (WHERE plt."TestStatus" = 'Completed') AS "CompletedTests",
+        COUNT(*) FILTER (WHERE plt."TestStatus" = 'Pending') AS "PendingTests",
+        COUNT(*) FILTER (WHERE plt."TestStatus" = 'InProgress') AS "InProgressTests",
+        COUNT(*) FILTER (WHERE plt."Priority" = 'Urgent') AS "UrgentTests",
+        COUNT(*) FILTER (WHERE plt."Priority" = 'Normal') AS "NormalTests",
+        COUNT(*) FILTER (WHERE plt."LabTestDone" = 'Yes') AS "TestsDone",
+        COUNT(*) FILTER (WHERE plt."LabTestDone" = 'No') AS "TestsNotDone"
+      FROM "PatientLabTest" plt
+      WHERE DATE(plt."CreatedDate") >= $1::date
+        AND DATE(plt."CreatedDate") <= $2::date
+        AND plt."Status" = $3
+    `;
+
+    // Execute both queries in parallel
+    const [trendResults, summaryResults] = await Promise.all([
+      db.query(weeklyTrendQuery, [startDateStr, endDateStr, status]),
+      db.query(weeklySummaryQuery, [startDateStr, endDateStr, status])
+    ]);
+
+    // Create map of date to counts
+    const dateCountMap = new Map();
+    trendResults.rows.forEach(row => {
+      const dateStr = row.test_date.toISOString().split('T')[0];
+      dateCountMap.set(dateStr, {
+        totalTests: parseInt(row.total_tests || 0, 10),
+        totalPatients: parseInt(row.total_patients || 0, 10),
+        completedTests: parseInt(row.completed_tests || 0, 10),
+        pendingTests: parseInt(row.pending_tests || 0, 10),
+        inProgressTests: parseInt(row.in_progress_tests || 0, 10),
+        urgentTests: parseInt(row.urgent_tests || 0, 10)
+      });
+    });
+
+    // Generate data for all 7 days of the week
+    const weeklyTrendData = [];
+    const currentDate = new Date(startDate);
+    
+    for (let i = 0; i < 7; i++) {
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const dayOfWeek = currentDate.getDay();
+      const dayName = dayNames[dayOfWeek];
+      const dateInfo = dateCountMap.get(dateStr) || {
+        totalTests: 0,
+        totalPatients: 0,
+        completedTests: 0,
+        pendingTests: 0,
+        inProgressTests: 0,
+        urgentTests: 0
+      };
+      
+      weeklyTrendData.push({
+        date: dateStr,
+        day: dayName.trim(),
+        dayNumber: dayOfWeek,
+        totalTests: dateInfo.totalTests,
+        totalPatients: dateInfo.totalPatients,
+        completedTests: dateInfo.completedTests,
+        pendingTests: dateInfo.pendingTests,
+        inProgressTests: dateInfo.inProgressTests,
+        urgentTests: dateInfo.urgentTests
+      });
+      
+      // Move to next day
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    // Process weekly summary
+    const summary = summaryResults.rows[0];
+    const weeklySummary = {
+      weekStartDate: startDateStr,
+      weekEndDate: endDateStr,
+      totalLabTests: parseInt(summary.TotalLabTests || summary.totallabtests || 0, 10),
+      totalPatients: parseInt(summary.TotalPatients || summary.totalpatients || 0, 10),
+      totalDoctors: parseInt(summary.TotalDoctors || summary.totaldoctors || 0, 10),
+      completedTests: parseInt(summary.CompletedTests || summary.completedtests || 0, 10),
+      pendingTests: parseInt(summary.PendingTests || summary.pendingtests || 0, 10),
+      inProgressTests: parseInt(summary.InProgressTests || summary.inprogresstests || 0, 10),
+      urgentTests: parseInt(summary.UrgentTests || summary.urgenttests || 0, 10),
+      normalTests: parseInt(summary.NormalTests || summary.normaltests || 0, 10),
+      testsDone: parseInt(summary.TestsDone || summary.testsdone || 0, 10),
+      testsNotDone: parseInt(summary.TestsNotDone || summary.testsnotdone || 0, 10)
+    };
+
+    // Calculate percentages
+    if (weeklySummary.totalLabTests > 0) {
+      weeklySummary.completedPercentage = ((weeklySummary.completedTests / weeklySummary.totalLabTests) * 100).toFixed(2);
+      weeklySummary.pendingPercentage = ((weeklySummary.pendingTests / weeklySummary.totalLabTests) * 100).toFixed(2);
+      weeklySummary.inProgressPercentage = ((weeklySummary.inProgressTests / weeklySummary.totalLabTests) * 100).toFixed(2);
+    } else {
+      weeklySummary.completedPercentage = '0.00';
+      weeklySummary.pendingPercentage = '0.00';
+      weeklySummary.inProgressPercentage = '0.00';
+    }
+
+    // Calculate totals for trend
+    const totalTests = weeklyTrendData.reduce((sum, day) => sum + day.totalTests, 0);
+    const totalCompleted = weeklyTrendData.reduce((sum, day) => sum + day.completedTests, 0);
+    const totalPending = weeklyTrendData.reduce((sum, day) => sum + day.pendingTests, 0);
+
+    // Format data for weekly trend chart
+    const trendChartData = {
+      labels: weeklyTrendData.map(day => day.day),
+      dates: weeklyTrendData.map(day => day.date),
+      datasets: [
+        {
+          label: 'Total Lab Tests',
+          data: weeklyTrendData.map(day => day.totalTests),
+          backgroundColor: 'rgba(54, 162, 235, 0.6)',
+          borderColor: 'rgba(54, 162, 235, 1)',
+          borderWidth: 2,
+          tension: 0.4
+        },
+        {
+          label: 'Completed',
+          data: weeklyTrendData.map(day => day.completedTests),
+          backgroundColor: 'rgba(75, 192, 192, 0.6)',
+          borderColor: 'rgba(75, 192, 192, 1)',
+          borderWidth: 2,
+          tension: 0.4
+        },
+        {
+          label: 'Pending',
+          data: weeklyTrendData.map(day => day.pendingTests),
+          backgroundColor: 'rgba(255, 206, 86, 0.6)',
+          borderColor: 'rgba(255, 206, 86, 1)',
+          borderWidth: 2,
+          tension: 0.4
+        }
+      ]
+    };
+
+    // Summary chart data
+    const summaryChartData = {
+      labels: ['Completed', 'Pending', 'In Progress'],
+      data: [weeklySummary.completedTests, weeklySummary.pendingTests, weeklySummary.inProgressTests],
+      percentages: [
+        weeklySummary.completedPercentage,
+        weeklySummary.pendingPercentage,
+        weeklySummary.inProgressPercentage
+      ],
+      datasets: [{
+        label: 'Test Status Distribution',
+        data: [weeklySummary.completedTests, weeklySummary.pendingTests, weeklySummary.inProgressTests],
+        backgroundColor: [
+          'rgba(75, 192, 192, 0.6)',
+          'rgba(255, 206, 86, 0.6)',
+          'rgba(54, 162, 235, 0.6)'
+        ],
+        borderColor: [
+          'rgba(75, 192, 192, 1)',
+          'rgba(255, 206, 86, 1)',
+          'rgba(54, 162, 235, 1)'
+        ],
+        borderWidth: 1
+      }]
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'Laboratory Tests Weekly Report retrieved successfully',
+      filters: {
+        status: status,
+        weekDate: weekDate || null,
+        weekStartDate: startDateStr,
+        weekEndDate: endDateStr
+      },
+      weeklyTrend: weeklyTrendData,
+      weeklySummary: weeklySummary,
+      trendChartData: trendChartData,
+      summaryChartData: summaryChartData
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching Laboratory Tests Weekly Report',
+      error: error.message,
+    });
+  }
+};
+

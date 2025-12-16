@@ -94,6 +94,45 @@ Response: {
 } */
 router.get('/by-status/:status', emergencyAdmissionController.getEmergencyAdmissionByStatus);
 
+/* GET /api/emergency-admissions/patient/:patientId
+Params: patientId (String UUID)
+Query params: ?status=String (optional), ?emergencyStatus=String (optional)
+Response: {
+  success: Boolean,
+  count: Number,
+  patientId: String,
+  data: [{
+    EmergencyAdmissionId: Number,
+    DoctorId: Number,
+    PatientId: String (UUID),
+    EmergencyBedSlotId: Number,
+    EmergencyAdmissionDate: Date,
+    EmergencyStatus: String | null,
+    AllocationFromDate: Date | null,
+    AllocationToDate: Date | null,
+    NumberOfDays: Number | null,
+    Diagnosis: String | null,
+    TreatementDetails: String | null,
+    PatientCondition: String | null,
+    TransferToIPD: String,
+    TransferToOT: String,
+    TransferToICU: String,
+    TransferTo: String | null,
+    TransferDetails: String | null,
+    AdmissionCreatedBy: Number | null,
+    AdmissionCreatedAt: Date,
+    Status: String,
+    PatientName: String | null,
+    PatientNo: String | null,
+    DoctorName: String | null,
+    EBedSlotNo: String | null,
+    EmergencyBedNo: String | null,
+    CreatedByName: String | null,
+    EmergencyAdmissionId_EmergencyAdmissionDate: String | null
+  }]
+} */
+router.get('/patient/:patientId', emergencyAdmissionController.getEmergencyAdmissionsByPatientId);
+
 /* GET /api/emergency-admissions/:id
 Params: id (Number)
 Response: {

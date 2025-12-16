@@ -247,10 +247,10 @@ const validatePatientLabTestPayload = (body, requireAll = true) => {
     errors.push('Status must be Active or Inactive');
   }
 
-  if (body.CreatedBy) {
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(body.CreatedBy)) {
-      errors.push('CreatedBy must be a valid UUID');
+  if (body.CreatedBy !== undefined && body.CreatedBy !== null) {
+    const createdByInt = parseInt(body.CreatedBy, 10);
+    if (isNaN(createdByInt)) {
+      errors.push('CreatedBy must be a valid integer');
     }
   }
 
@@ -283,7 +283,7 @@ exports.createPatientLabTest = async (req, res) => {
       Priority,
       LabTestDone = 'No',
       ReportsUrl,
-      TestStatus,
+      TestStatus = 'Pending',
       TestDoneDateTime,
       Status = 'Active',
       CreatedBy,
@@ -291,12 +291,17 @@ exports.createPatientLabTest = async (req, res) => {
 
     // Validate CreatedBy if provided
     let createdByValue = null;
-    if (CreatedBy) {
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (!uuidRegex.test(CreatedBy)) {
-        return res.status(400).json({ success: false, message: 'CreatedBy must be a valid UUID' });
+    if (CreatedBy !== undefined && CreatedBy !== null && CreatedBy !== '') {
+      const createdByInt = parseInt(CreatedBy, 10);
+      if (isNaN(createdByInt)) {
+        return res.status(400).json({ success: false, message: 'CreatedBy must be a valid integer' });
       }
-      createdByValue = CreatedBy;
+      // Check if user exists
+      const userExists = await db.query('SELECT "UserId" FROM "Users" WHERE "UserId" = $1', [createdByInt]);
+      if (userExists.rows.length === 0) {
+        return res.status(400).json({ success: false, message: 'CreatedBy user does not exist' });
+      }
+      createdByValue = createdByInt;
     }
 
     // Validate AppointmentId if provided
@@ -399,7 +404,7 @@ exports.createPatientLabTest = async (req, res) => {
       TestStatus ? TestStatus.trim() : null,
       TestDoneDateTime || null,
       Status,
-      createdByValue, // null is fine for UUID columns in PostgreSQL
+      createdByValue, // null is fine for integer columns in PostgreSQL
     ]);
 
     res.status(201).json({
@@ -529,12 +534,19 @@ exports.updatePatientLabTest = async (req, res) => {
 
     // Validate CreatedBy if provided
     let createdByValue = null;
-    if (CreatedBy !== undefined && CreatedBy !== null) {
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (!uuidRegex.test(CreatedBy)) {
-        return res.status(400).json({ success: false, message: 'CreatedBy must be a valid UUID' });
+    if (CreatedBy !== undefined && CreatedBy !== null && CreatedBy !== '') {
+      const createdByInt = parseInt(CreatedBy, 10);
+      if (isNaN(createdByInt)) {
+        return res.status(400).json({ success: false, message: 'CreatedBy must be a valid integer' });
       }
-      createdByValue = CreatedBy;
+      // Check if user exists
+      const userExists = await db.query('SELECT "UserId" FROM "Users" WHERE "UserId" = $1', [createdByInt]);
+      if (userExists.rows.length === 0) {
+        return res.status(400).json({ success: false, message: 'CreatedBy user does not exist' });
+      }
+      createdByValue = createdByInt;
+    } else if (CreatedBy === null) {
+      createdByValue = null;
     }
 
     const updateQuery = `
@@ -553,7 +565,7 @@ exports.updatePatientLabTest = async (req, res) => {
         "TestStatus" = COALESCE($11, "TestStatus"),
         "TestDoneDateTime" = COALESCE($12, "TestDoneDateTime"),
         "Status" = COALESCE($13, "Status"),
-        "CreatedBy" = COALESCE($14::uuid, "CreatedBy")
+        "CreatedBy" = COALESCE($14, "CreatedBy")
       WHERE "PatientLabTestsId" = $15
       RETURNING *;
     `;
@@ -789,10 +801,14 @@ exports.getPatientLabTestsWithDetails = async (req, res) => {
         plt."LabTestDone",
         plt."ReportsUrl",
         plt."TestStatus",
+        plt."TestDoneDateTime",
         
         plt."Status",
         plt."CreatedBy",
         plt."CreatedDate",
+        
+        -- Created By User details
+        created_by_user."UserName" AS "CreatedByName",
         
         -- Patient details
         p."PatientId",
@@ -847,6 +863,7 @@ exports.getPatientLabTestsWithDetails = async (req, res) => {
       LEFT JOIN "Users" room_doctor ON ra."AdmittingDoctorId" = room_doctor."UserId"
       LEFT JOIN "DoctorDepartment" room_dept ON room_doctor."DoctorDepartmentId" = room_dept."DoctorDepartmentId"
       LEFT JOIN "Bills" b ON plt."BillId" = b."BillId"
+      LEFT JOIN "Users" created_by_user ON plt."CreatedBy" = created_by_user."UserId"
       ${hasOrderedByDoctorId ? 'LEFT JOIN "Users" doc ON plt."OrderedByDoctorId" = doc."UserId"' : ''}
     `;
 

@@ -644,5 +644,142 @@ Response: {
 } */
 router.get('/icu-statistics', reportsController.getICUStatistics);
 
+/* GET /api/reports/lab-test-daily-report
+Query Parameters:
+  - status: String, // "Active" | "Inactive", defaults to "Active"
+  - date: String (YYYY-MM-DD) | null, // Optional, defaults to today
+Note: If 'date' is provided, it will be used. Otherwise, defaults to today's date.
+Response: {
+  success: Boolean,
+  message: String,
+  filters: {
+    status: String,
+    date: String (YYYY-MM-DD)
+  },
+  doctorWiseLabTests: Array<{
+    doctorId: Number | null,
+    doctorName: String,
+    doctorEmail: String | null,
+    doctorPhone: String | null,
+    doctorQualification: String | null,
+    departmentName: String,
+    departmentId: String (UUID) | null,
+    totalLabTests: Number,
+    totalPatients: Number,
+    completedTests: Number,
+    pendingTests: Number,
+    inProgressTests: Number,
+    urgentTests: Number
+  }>,
+  dailySummary: {
+    date: String (YYYY-MM-DD),
+    totalLabTests: Number,
+    totalPatients: Number,
+    totalDoctors: Number,
+    completedTests: Number,
+    pendingTests: Number,
+    inProgressTests: Number,
+    urgentTests: Number,
+    normalTests: Number,
+    testsDone: Number,
+    testsNotDone: Number,
+    completedPercentage: String,
+    pendingPercentage: String,
+    inProgressPercentage: String
+  },
+  chartData: {
+    labels: Array<String>,
+    datasets: Array<{
+      label: String,
+      data: Array<Number>,
+      backgroundColor: String,
+      borderColor: String,
+      borderWidth: Number
+    }>
+  },
+  summaryChartData: {
+    labels: Array<String>,
+    data: Array<Number>,
+    percentages: Array<String>,
+    datasets: Array<{
+      label: String,
+      data: Array<Number>,
+      backgroundColor: Array<String>,
+      borderColor: Array<String>,
+      borderWidth: Number
+    }>
+  }
+} */
+router.get('/lab-test-daily-report', reportsController.getLabTestDailyReport);
+
+/* GET /api/reports/lab-test-weekly-report
+Query Parameters:
+  - status: String, // "Active" | "Inactive", defaults to "Active"
+  - weekDate: String (YYYY-MM-DD) | null, // Optional, defaults to current week
+Note: Uses the week containing weekDate (Monday to Sunday). If not provided, uses current week.
+Response: {
+  success: Boolean,
+  message: String,
+  filters: {
+    status: String,
+    weekDate: String (YYYY-MM-DD) | null,
+    weekStartDate: String (YYYY-MM-DD),
+    weekEndDate: String (YYYY-MM-DD)
+  },
+  weeklyTrend: Array<{
+    date: String (YYYY-MM-DD),
+    day: String, // "Monday", "Tuesday", etc.
+    dayNumber: Number, // 0-6 (0=Sunday, 1=Monday, etc.)
+    totalTests: Number,
+    totalPatients: Number,
+    completedTests: Number,
+    pendingTests: Number,
+    inProgressTests: Number,
+    urgentTests: Number
+  }>,
+  weeklySummary: {
+    weekStartDate: String (YYYY-MM-DD),
+    weekEndDate: String (YYYY-MM-DD),
+    totalLabTests: Number,
+    totalPatients: Number,
+    totalDoctors: Number,
+    completedTests: Number,
+    pendingTests: Number,
+    inProgressTests: Number,
+    urgentTests: Number,
+    normalTests: Number,
+    testsDone: Number,
+    testsNotDone: Number,
+    completedPercentage: String,
+    pendingPercentage: String,
+    inProgressPercentage: String
+  },
+  trendChartData: {
+    labels: Array<String>,
+    dates: Array<String>,
+    datasets: Array<{
+      label: String,
+      data: Array<Number>,
+      backgroundColor: String,
+      borderColor: String,
+      borderWidth: Number,
+      tension: Number
+    }>
+  },
+  summaryChartData: {
+    labels: Array<String>,
+    data: Array<Number>,
+    percentages: Array<String>,
+    datasets: Array<{
+      label: String,
+      data: Array<Number>,
+      backgroundColor: Array<String>,
+      borderColor: Array<String>,
+      borderWidth: Number
+    }>
+  }
+} */
+router.get('/lab-test-weekly-report', reportsController.getLabTestWeeklyReport);
+
 module.exports = router;
 
