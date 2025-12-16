@@ -1,6 +1,6 @@
 const db = require('../db');
 
-const allowedAdmissionStatus = ['Active', 'Surgery Scheduled', 'Moved to ICU', 'Discharged'];
+const allowedAdmissionStatus = ['Active', 'Moved to ICU', 'Surgery Scheduled', 'Discharged'];
 const allowedYesNo = ['Yes', 'No'];
 const allowedStatus = ['Active', 'Inactive'];
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -175,7 +175,7 @@ exports.getRoomAdmissionsByPatientId = async (req, res) => {
         pa."TokenNo" AS "AppointmentTokenNo",
         rb."BedNo", rb."RoomNo",
         u."UserName" AS "AllocatedByName",
-        CONCAT(rb."BedNo", '_', ra."RoomAllocationDate"::text) AS "RoomAdmissionId_RoomAllocationDate"
+        CONCAT(ra."RoomAdmissionId", '_', ra."RoomAllocationDate"::text) AS "RoomAdmissionId_RoomAllocationDate"
       FROM "RoomAdmission" ra
       LEFT JOIN "PatientRegistration" p ON ra."PatientId" = p."PatientId"
       LEFT JOIN "Users" d ON ra."AdmittingDoctorId" = d."UserId"
@@ -297,7 +297,7 @@ const validateRoomAdmissionPayload = (body, requireAll = true) => {
   }
 
   if (body.AdmissionStatus && !allowedAdmissionStatus.includes(body.AdmissionStatus)) {
-    errors.push('AdmissionStatus must be "Active", "Surgery Scheduled", "Moved to ICU", or "Discharged"');
+    errors.push(`AdmissionStatus must be one of: ${allowedAdmissionStatus.join(', ')}`);
   }
 
   if (body.ShiftToAnotherRoom && !allowedYesNo.includes(body.ShiftToAnotherRoom)) {
@@ -869,7 +869,7 @@ exports.getRoomCapacityOverview = async (req, res) => {
  * Returns Bed No, Patient Name, Age/Gender, Room Type, Admission Date, Admitted By, Diagnosis, AdmissionStatus
  * Optional query parameters:
  * - status: Filter by status (Active, Inactive)
- * - admissionStatus: Filter by admission status (Active, Surgery Scheduled, Moved to ICU, Discharged)
+ * - admissionStatus: Filter by admission status (Active, Moved to ICU, Surgery Scheduled, Discharged)
  */
 exports.getRoomAdmissionsData = async (req, res) => {
   try {
@@ -888,11 +888,16 @@ exports.getRoomAdmissionsData = async (req, res) => {
         ra."CaseSheetDetails" AS "Diagnosis",
         ra."AdmissionStatus",
         ra."Status",
-        ra."ScheduleOT"
+        ra."ScheduleOT",
+        d."UserName" as "AdmittingDoctorName",
+        ra."PatientId" as "PatientId",
+        p."PatientNo" as "PatientNo",
+        ra."AdmittingDoctorId" as "AdmittingDoctorId"
       FROM "RoomAdmission" ra
       INNER JOIN "RoomBeds" rb ON ra."RoomBedsId" = rb."RoomBedsId"
       INNER JOIN "PatientRegistration" p ON ra."PatientId" = p."PatientId"
       LEFT JOIN "Users" u ON ra."AllocatedBy" = u."UserId"
+      LEFT JOIN "Users" d ON ra."AdmittingDoctorId" = d."UserId"
     `;
     
     const params = [];
@@ -990,11 +995,15 @@ exports.getRoomAdmissionsDataById = async (req, res) => {
         ra."CaseSheetDetails" AS "Diagnosis",
         ra."AdmissionStatus",
         ra."Status",
-        ra."ScheduleOT"
+        ra."ScheduleOT",
+        p."PatientNo",
+        d."UserName" as "AdmittingDoctorName",
+        ra."PatientId" as "PatientId"
       FROM "RoomAdmission" ra
-      INNER JOIN "RoomBeds" rb ON ra."RoomBedsId" = rb."RoomBedsId"
-      INNER JOIN "PatientRegistration" p ON ra."PatientId" = p."PatientId"
+      LEFT JOIN "PatientRegistration" p ON ra."PatientId" = p."PatientId"
+      LEFT JOIN "RoomBeds" rb ON ra."RoomBedsId" = rb."RoomBedsId"
       LEFT JOIN "Users" u ON ra."AllocatedBy" = u."UserId"
+      LEFT JOIN "Users" d ON ra."AdmittingDoctorId" = d."UserId"
       WHERE ra."RoomAdmissionId" = $1
     `;
     
@@ -1007,7 +1016,6 @@ exports.getRoomAdmissionsDataById = async (req, res) => {
       });
     }
     
-    // Format data with separate Age and Gender fields
     const row = rows[0];
     const age = row.Age || row.age || null;
     const gender = row.Gender || row.gender || null;
@@ -1024,7 +1032,10 @@ exports.getRoomAdmissionsDataById = async (req, res) => {
       diagnosis: row.Diagnosis || row.diagnosis || null,
       admissionStatus: row.AdmissionStatus || row.admissionstatus || null,
       status: row.Status || row.status || null,
-      scheduleOT: row.ScheduleOT || row.scheduleot || null
+      scheduleOT: row.ScheduleOT || row.scheduleot || null,
+      patientNo: row.PatientNo || row.patientno || null,
+      admittingDoctorName: row.AdmittingDoctorName || row.admittingdoctorname || null,
+      patientId: row.PatientId || row.patientid || null,
     };
     
     res.status(200).json({

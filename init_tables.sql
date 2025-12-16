@@ -297,7 +297,7 @@ CREATE TABLE IF NOT EXISTS "RoomAdmission" (
     "RoomBedsId" INTEGER NOT NULL,
     "RoomAllocationDate" TIMESTAMP NOT NULL,
     "RoomVacantDate" TIMESTAMP,
-    "AdmissionStatus" VARCHAR(50) DEFAULT 'Active' CHECK ("AdmissionStatus" IN ('Active', 'Surgery Scheduled', 'Moved to ICU', 'Discharged')),
+    "AdmissionStatus" VARCHAR(50) DEFAULT 'Active' CHECK ("AdmissionStatus" IN ('Active', 'Moved to ICU', 'Surgery Scheduled', 'Discharged')),
     "CaseSheetDetails" TEXT,
     "CaseSheet" TEXT,
     "ShiftToAnotherRoom" VARCHAR(10) DEFAULT 'No' CHECK ("ShiftToAnotherRoom" IN ('Yes', 'No')),
