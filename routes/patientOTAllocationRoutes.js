@@ -7,13 +7,13 @@ const patientOTAllocationController = require('../controllers/patientOTAllocatio
 Response: {
   success: Boolean,
   message: String,
-  date: String (YYYY-MM-DD),
+  date: String (DD-MM-YYYY),
   counts: {
     todayScheduled: Number,
     inProgress: Number
   },
   data: {
-    date: String (YYYY-MM-DD),
+    date: String (DD-MM-YYYY),
     todayScheduledCount: Number,
     inProgressCount: Number,
     todayScheduledStatus: Array<String>, // ["Scheduled", "In Progress"]
@@ -28,13 +28,13 @@ Query Parameters:
 Response: {
   success: Boolean,
   message: String,
-  date: String (YYYY-MM-DD),
+  date: String (DD-MM-YYYY),
   counts: {
     scheduled: Number,
     inProgress: Number
   },
   data: {
-    date: String (YYYY-MM-DD),
+    date: String (DD-MM-YYYY),
     scheduledCount: Number,
     inProgressCount: Number,
     scheduledStatus: Array<String>, // ["Scheduled", "In Progress"]
@@ -51,8 +51,8 @@ Query Parameters:
   - otId: Number | null,
   - surgeryId: Number | null,
   - leadSurgeonId: Number | null,
-  - fromDate: String (YYYY-MM-DD) | null,
-  - toDate: String (YYYY-MM-DD) | null
+  - fromDate: String (DD-MM-YYYY) | null,
+  - toDate: String (DD-MM-YYYY) | null
 Response: {
   success: Boolean,
   count: Number,
@@ -68,14 +68,15 @@ Response: {
       OTSlotNo: Number,
       SlotStartTime: String,
       SlotEndTime: String,
-      OTSlotStatus: String
+      OTSlotStatus: String,
+      OTAllocationDate: String (DD-MM-YYYY) // OT Allocation Date from PatientOTAllocationSlots
     }> | null,
     SurgeryId: Number | null,
     LeadSurgeonId: Number,
     AssistantDoctorId: Number | null,
     AnaesthetistId: Number | null,
     NurseId: Number | null,
-    OTAllocationDate: Date,
+    OTAllocationDate: String (DD-MM-YYYY),
     Duration: Number | null,
     OTStartTime: String (HH:MM:SS) | null,
     OTEndTime: String (HH:MM:SS) | null,
@@ -122,14 +123,15 @@ Response: {
       OTSlotNo: Number,
       SlotStartTime: String,
       SlotEndTime: String,
-      OTSlotStatus: String
+      OTSlotStatus: String,
+      OTAllocationDate: String (DD-MM-YYYY) // OT Allocation Date from PatientOTAllocationSlots
     }> | null,
     SurgeryId: Number | null,
     LeadSurgeonId: Number,
     AssistantDoctorId: Number | null,
     AnaesthetistId: Number | null,
     NurseId: Number | null,
-    OTAllocationDate: Date,
+    OTAllocationDate: String (DD-MM-YYYY),
     Duration: Number | null,
     OTStartTime: String (HH:MM:SS) | null,
     OTEndTime: String (HH:MM:SS) | null,
@@ -183,7 +185,7 @@ Request: {
   AssistantDoctorId: Number | null,
   AnaesthetistId: Number | null,
   NurseId: Number | null,
-  OTAllocationDate: String (YYYY-MM-DD), (required)
+  OTAllocationDate: String (DD-MM-YYYY), (required)
   Duration: Number | null,
   OTStartTime: String (HH:MM or HH:MM:SS) | null,
   OTEndTime: String (HH:MM or HH:MM:SS) | null,
@@ -212,7 +214,7 @@ Response: {
     AssistantDoctorId: Number | null,
     AnaesthetistId: Number | null,
     NurseId: Number | null,
-    OTAllocationDate: Date,
+    OTAllocationDate: String (DD-MM-YYYY),
     Duration: Number | null,
     OTStartTime: String (HH:MM:SS) | null,
     OTEndTime: String (HH:MM:SS) | null,
@@ -256,7 +258,7 @@ Request: {
   AssistantDoctorId: Number | null,
   AnaesthetistId: Number | null,
   NurseId: Number | null,
-  OTAllocationDate: String (YYYY-MM-DD),
+  OTAllocationDate: String (DD-MM-YYYY),
   Duration: Number | null,
   OTStartTime: String (HH:MM or HH:MM:SS) | null,
   OTEndTime: String (HH:MM or HH:MM:SS) | null,
@@ -285,7 +287,7 @@ Response: {
     AssistantDoctorId: Number | null,
     AnaesthetistId: Number | null,
     NurseId: Number | null,
-    OTAllocationDate: Date,
+    OTAllocationDate: String (DD-MM-YYYY),
     Duration: Number | null,
     OTStartTime: String (HH:MM:SS) | null,
     OTEndTime: String (HH:MM:SS) | null,

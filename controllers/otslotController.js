@@ -2,6 +2,52 @@ const db = require('../db');
 
 const allowedStatus = ['Active', 'InActive'];
 
+// Helper function to get today's date in IST (Indian Standard Time)
+const getTodayIST = () => {
+  const now = new Date();
+  // IST is UTC+5:30
+  // Get UTC time and add IST offset (5 hours 30 minutes = 19800000 milliseconds)
+  const istOffset = 5.5 * 60 * 60 * 1000; // 5 hours 30 minutes in milliseconds
+  const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000); // Convert to UTC
+  const istTime = new Date(utcTime + istOffset);
+  
+  const year = istTime.getUTCFullYear();
+  const month = String(istTime.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(istTime.getUTCDate()).padStart(2, '0');
+  
+  return {
+    dbFormat: `${year}-${month}-${day}`, // YYYY-MM-DD for database
+    displayFormat: `${day}-${month}-${year}` // DD-MM-YYYY for display
+  };
+};
+
+// Helper function to convert DD-MM-YYYY to YYYY-MM-DD for database
+const convertToDBDate = (dateStr) => {
+  if (!dateStr) return null;
+  // Check if it's already in YYYY-MM-DD format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return dateStr;
+  }
+  // Check if it's in DD-MM-YYYY format
+  if (/^\d{2}-\d{2}-\d{4}$/.test(dateStr)) {
+    const [day, month, year] = dateStr.split('-');
+    return `${year}-${month}-${day}`;
+  }
+  return null;
+};
+
+// Helper function to convert YYYY-MM-DD to DD-MM-YYYY for API response
+const convertToDisplayDate = (dateStr) => {
+  if (!dateStr) return null;
+  // Check if it's in YYYY-MM-DD format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const [year, month, day] = dateStr.split('-');
+    return `${day}-${month}-${year}`;
+  }
+  // Already in DD-MM-YYYY format
+  return dateStr;
+};
+
 const mapOTSlotRow = (row) => ({
   OTSlotId: row.OTSlotId || row.otslotid,
   OTId: row.OTId || row.otid,
@@ -19,6 +65,8 @@ const mapOTSlotRow = (row) => ({
   // Patient information (only when slot is occupied)
   OccupiedByPatientId: row.OccupiedByPatientId || row.occupiedbypatientid || null,
   OccupiedByPatientNo: row.OccupiedByPatientNo || row.occupiedbypatientno || null,
+  // OT Allocation Date (from PatientOTAllocationSlots)
+  OTAllocationDate: row.OTAllocationDate || row.otallocationdate || null,
 });
 
 /**
@@ -46,7 +94,36 @@ const generateOTSlotNo = async (otId) => {
 
 exports.getAllOTSlots = async (req, res) => {
   try {
-    const { status, otId } = req.query;
+    const { status, otId, date } = req.query;
+    
+    // Default to today's date in IST if not provided
+    let checkDate = date;
+    let displayDate = date;
+    if (!checkDate) {
+      const todayIST = getTodayIST();
+      checkDate = todayIST.dbFormat; // YYYY-MM-DD for database
+      displayDate = todayIST.displayFormat; // DD-MM-YYYY for display
+    } else {
+      // Validate and convert date format
+      const dateRegex = /^(\d{2}-\d{2}-\d{4}|\d{4}-\d{2}-\d{2})$/;
+      if (!dateRegex.test(checkDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date format. Please use DD-MM-YYYY format (e.g., 15-12-2024)',
+        });
+      }
+      
+      // Convert DD-MM-YYYY to YYYY-MM-DD for database queries
+      const dbDate = convertToDBDate(checkDate);
+      if (!dbDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date format. Please use DD-MM-YYYY format (e.g., 15-12-2024)',
+        });
+      }
+      checkDate = dbDate; // Use YYYY-MM-DD for database
+      displayDate = convertToDisplayDate(dbDate); // Use DD-MM-YYYY for display
+    }
     
     // If otId is provided, include availability check from PatientOTAllocation
     const includeAvailability = otId !== undefined;
@@ -56,7 +133,13 @@ exports.getAllOTSlots = async (req, res) => {
     const conditions = [];
 
     if (includeAvailability) {
+      // Add date parameter first
+      params.push(checkDate);
+      const dateParamIndex = params.length;
+      
       // Efficient query using LEFT JOINs to check all PatientOTAllocation records
+      // Check availability based on OTAllocationDate from PatientOTAllocationSlots
+      // A slot is occupied if OTAllocationDate matches the query date OR OTAllocationDate is NULL (treats NULL as matching query date/today)
       query = `
         SELECT DISTINCT ON (os."OTSlotId")
           os.*,
@@ -64,14 +147,18 @@ exports.getAllOTSlots = async (req, res) => {
           ot."OTName",
           ot."OTType",
           CASE 
-            WHEN pta."PatientOTAllocationId" IS NOT NULL THEN false
+            WHEN pta."PatientOTAllocationId" IS NOT NULL 
+              AND (pas."OTAllocationDate"::date = $${dateParamIndex}::date 
+                   OR pas."OTAllocationDate" IS NULL) THEN false
             ELSE true
           END AS "IsAvailable",
           p."PatientId" AS "OccupiedByPatientId",
-          p."PatientNo" AS "OccupiedByPatientNo"
+          p."PatientNo" AS "OccupiedByPatientNo",
+          COALESCE(pas."OTAllocationDate"::date, $${dateParamIndex}::date) AS "OTAllocationDate"
         FROM "OTSlot" os
         LEFT JOIN "OT" ot ON os."OTId" = ot."OTId"
         LEFT JOIN "PatientOTAllocationSlots" pas ON os."OTSlotId" = pas."OTSlotId"
+          AND (pas."OTAllocationDate"::date = $${dateParamIndex}::date OR pas."OTAllocationDate" IS NULL)
         LEFT JOIN "PatientOTAllocation" pta ON pas."PatientOTAllocationId" = pta."PatientOTAllocationId"
           AND pta."Status" = 'Active'
           AND pta."OperationStatus" NOT IN ('Completed', 'Cancelled')
@@ -141,10 +228,20 @@ exports.getAllOTSlots = async (req, res) => {
 
     const finalRows = includeAvailability ? Object.values(processedRows) : processedRows;
     
+    // Convert OTAllocationDate in response to DD-MM-YYYY format
+    const formattedRows = finalRows.map(row => {
+      const mapped = mapOTSlotRow(row);
+      if (mapped.OTAllocationDate) {
+        mapped.OTAllocationDate = convertToDisplayDate(mapped.OTAllocationDate);
+      }
+      return mapped;
+    });
+    
     res.status(200).json({
       success: true,
-      count: finalRows.length,
-      data: finalRows.map(mapOTSlotRow),
+      count: formattedRows.length,
+      date: displayDate, // Include the date being checked in DD-MM-YYYY format
+      data: formattedRows,
     });
   } catch (error) {
     res.status(500).json({
@@ -197,12 +294,42 @@ exports.getOTSlotById = async (req, res) => {
 exports.getOTSlotsByOTId = async (req, res) => {
   try {
     const { otId } = req.params;
+    const { date } = req.query;
     const otIdInt = parseInt(otId, 10);
     if (isNaN(otIdInt)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid OTId. Must be an integer.',
       });
+    }
+
+    // Default to today's date in IST if not provided
+    let checkDate = date;
+    let displayDate = date;
+    if (!checkDate) {
+      const todayIST = getTodayIST();
+      checkDate = todayIST.dbFormat; // YYYY-MM-DD for database
+      displayDate = todayIST.displayFormat; // DD-MM-YYYY for display
+    } else {
+      // Validate and convert date format
+      const dateRegex = /^(\d{2}-\d{2}-\d{4}|\d{4}-\d{2}-\d{2})$/;
+      if (!dateRegex.test(checkDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date format. Please use DD-MM-YYYY format (e.g., 15-12-2024)',
+        });
+      }
+      
+      // Convert DD-MM-YYYY to YYYY-MM-DD for database queries
+      const dbDate = convertToDBDate(checkDate);
+      if (!dbDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date format. Please use DD-MM-YYYY format (e.g., 15-12-2024)',
+        });
+      }
+      checkDate = dbDate; // Use YYYY-MM-DD for database
+      displayDate = convertToDisplayDate(dbDate); // Use DD-MM-YYYY for display
     }
 
     // Verify OT exists
@@ -212,6 +339,8 @@ exports.getOTSlotsByOTId = async (req, res) => {
     }
 
     // Efficient query using LEFT JOINs to check all PatientOTAllocation records
+    // Check availability based on OTAllocationDate from PatientOTAllocationSlots
+    // A slot is occupied if OTAllocationDate matches the query date OR OTAllocationDate is NULL (treats NULL as matching query date/today)
     const { rows } = await db.query(
       `
       SELECT DISTINCT ON (os."OTSlotId")
@@ -220,14 +349,18 @@ exports.getOTSlotsByOTId = async (req, res) => {
         ot."OTName",
         ot."OTType",
         CASE 
-          WHEN pta."PatientOTAllocationId" IS NOT NULL THEN false
+          WHEN pta."PatientOTAllocationId" IS NOT NULL 
+            AND (pas."OTAllocationDate"::date = $2::date 
+                 OR pas."OTAllocationDate" IS NULL) THEN false
           ELSE true
         END AS "IsAvailable",
         p."PatientId" AS "OccupiedByPatientId",
-        p."PatientNo" AS "OccupiedByPatientNo"
+        p."PatientNo" AS "OccupiedByPatientNo",
+        COALESCE(pas."OTAllocationDate"::date, $2::date) AS "OTAllocationDate"
       FROM "OTSlot" os
       LEFT JOIN "OT" ot ON os."OTId" = ot."OTId"
       LEFT JOIN "PatientOTAllocationSlots" pas ON os."OTSlotId" = pas."OTSlotId"
+        AND (pas."OTAllocationDate"::date = $2::date OR pas."OTAllocationDate" IS NULL)
       LEFT JOIN "PatientOTAllocation" pta ON pas."PatientOTAllocationId" = pta."PatientOTAllocationId"
         AND pta."Status" = 'Active'
         AND pta."OperationStatus" NOT IN ('Completed', 'Cancelled')
@@ -235,7 +368,7 @@ exports.getOTSlotsByOTId = async (req, res) => {
       WHERE os."OTId" = $1
       ORDER BY os."OTSlotId" ASC, os."SlotStartTime" ASC, pta."PatientOTAllocationId" ASC
       `,
-      [otIdInt]
+      [otIdInt, checkDate]
     );
     
     // Process rows to get the first occupied patient if multiple allocations exist
@@ -264,11 +397,22 @@ exports.getOTSlotsByOTId = async (req, res) => {
     }, {});
     
     const finalRows = Object.values(processedRows);
+    
+    // Convert OTAllocationDate in response to DD-MM-YYYY format
+    const formattedRows = finalRows.map(row => {
+      const mapped = mapOTSlotRow(row);
+      if (mapped.OTAllocationDate) {
+        mapped.OTAllocationDate = convertToDisplayDate(mapped.OTAllocationDate);
+      }
+      return mapped;
+    });
 
     res.status(200).json({
       success: true,
-      count: finalRows.length,
-      data: finalRows.map(mapOTSlotRow),
+      count: formattedRows.length,
+      otId: otIdInt,
+      date: displayDate, // Include the date being checked in DD-MM-YYYY format
+      data: formattedRows,
     });
   } catch (error) {
     res.status(500).json({

@@ -768,7 +768,7 @@ exports.getTestStatusWiseCounts = async (req, res) => {
  */
 exports.getPatientLabTestsWithDetails = async (req, res) => {
   try {
-    const { status, testStatus, patientId, labTestId, appointmentId, roomAdmissionId } = req.query;
+    const { status, testStatus, patientId, labTestId, appointmentId, roomAdmissionId, emergencyBedSlotId } = req.query;
 
     // Check if OrderedByDoctorId column exists
     let hasOrderedByDoctorId = false;
@@ -783,6 +783,21 @@ exports.getPatientLabTestsWithDetails = async (req, res) => {
       hasOrderedByDoctorId = columnCheck.rows.length > 0;
     } catch (err) {
       hasOrderedByDoctorId = false;
+    }
+
+    // Check CreatedBy column type - it might be UUID or INTEGER
+    let createdByIsInteger = false;
+    try {
+      const createdByCheck = await db.query(`
+        SELECT data_type 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientLabTest' 
+        AND column_name = 'CreatedBy'
+      `);
+      createdByIsInteger = createdByCheck.rows.length > 0 && createdByCheck.rows[0].data_type === 'integer';
+    } catch (err) {
+      createdByIsInteger = false;
     }
 
     let query = `
@@ -808,10 +823,10 @@ exports.getPatientLabTestsWithDetails = async (req, res) => {
         plt."CreatedDate",
         
         -- Created By User details
-        created_by_user."UserName" AS "CreatedByName",
+        ${createdByIsInteger ? 'created_by_user."UserName" AS "CreatedByName",' : ''}
+        ${createdByIsInteger ? 'created_by_user."EmailId" AS "CreatedByEmail",' : ''}
         
         -- Patient details
-        p."PatientId",
         p."PatientName",
         p."PatientNo",
         p."PhoneNo" AS "PatientPhoneNo",
@@ -863,7 +878,7 @@ exports.getPatientLabTestsWithDetails = async (req, res) => {
       LEFT JOIN "Users" room_doctor ON ra."AdmittingDoctorId" = room_doctor."UserId"
       LEFT JOIN "DoctorDepartment" room_dept ON room_doctor."DoctorDepartmentId" = room_dept."DoctorDepartmentId"
       LEFT JOIN "Bills" b ON plt."BillId" = b."BillId"
-      LEFT JOIN "Users" created_by_user ON plt."CreatedBy" = created_by_user."UserId"
+      ${createdByIsInteger ? 'LEFT JOIN "Users" created_by_user ON plt."CreatedBy" = created_by_user."UserId"' : ''}
       ${hasOrderedByDoctorId ? 'LEFT JOIN "Users" doc ON plt."OrderedByDoctorId" = doc."UserId"' : ''}
     `;
 
@@ -929,6 +944,18 @@ exports.getPatientLabTestsWithDetails = async (req, res) => {
       params.push(roomAdmissionIdInt);
     }
 
+    if (emergencyBedSlotId) {
+      const emergencyBedSlotIdInt = parseInt(emergencyBedSlotId, 10);
+      if (isNaN(emergencyBedSlotIdInt)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid emergencyBedSlotId. Must be a valid integer.',
+        });
+      }
+      conditions.push(`plt."EmergencyBedSlotId" = $${params.length + 1}`);
+      params.push(emergencyBedSlotIdInt);
+    }
+
     if (conditions.length > 0) {
       query += ' WHERE ' + conditions.join(' AND ');
     }
@@ -943,6 +970,9 @@ exports.getPatientLabTestsWithDetails = async (req, res) => {
       PatientLabTestsId: row.PatientLabTestsId || row.patientlabtestsid,
       PatientType: row.PatientType || row.patienttype,
       AppointmentId: row.AppointmentId || row.appointmentid || null,
+      RoomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
+      EmergencyBedSlotId: row.EmergencyBedSlotId || row.emergencybedslotid || null,
+      BillId: row.BillId || row.billid || null,
       TestStatus: row.TestStatus || row.teststatus,
       LabTestDone: row.LabTestDone || row.labtestdone,
       Priority: row.Priority || row.priority,
@@ -1025,8 +1055,8 @@ exports.getPatientLabTestsWithDetails = async (req, res) => {
       // Created By
       CreatedBy: row.CreatedBy ? {
         UserId: row.CreatedBy || row.createdby,
-        UserName: row.CreatedByName || row.createdbyname,
-        Email: row.CreatedByEmail || row.createdbyemail,
+        UserName: createdByIsInteger ? (row.CreatedByName || row.createdbyname) : null,
+        Email: createdByIsInteger ? (row.CreatedByEmail || row.createdbyemail) : null,
       } : null,
     }));
 
@@ -1039,6 +1069,8 @@ exports.getPatientLabTestsWithDetails = async (req, res) => {
         patientId: patientId || null,
         labTestId: labTestId || null,
         appointmentId: appointmentId || null,
+        roomAdmissionId: roomAdmissionId || null,
+        emergencyBedSlotId: emergencyBedSlotId || null,
       },
       data: mappedData,
     });

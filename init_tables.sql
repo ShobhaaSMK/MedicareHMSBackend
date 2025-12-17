@@ -564,6 +564,7 @@ CREATE TABLE IF NOT EXISTS "PatientOTAllocationSlots" (
     "PatientOTAllocationSlotId" SERIAL PRIMARY KEY,
     "PatientOTAllocationId" INTEGER NOT NULL,
     "OTSlotId" INTEGER NOT NULL,
+    "OTAllocationDate" DATE NOT NULL,
     "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY ("PatientOTAllocationId") REFERENCES "PatientOTAllocation"("PatientOTAllocationId") ON DELETE CASCADE,
     FOREIGN KEY ("OTSlotId") REFERENCES "OTSlot"("OTSlotId") ON DELETE RESTRICT,

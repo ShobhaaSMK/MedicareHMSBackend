@@ -266,6 +266,7 @@ async function ensureAllTablesAndColumns(pool) {
       { table: 'EmergencyAdmissionVitals', column: 'VitalsStatus', type: 'VARCHAR(50)' },
       { table: 'EmergencyBed', column: 'EmergencyRoomNameNo', type: 'VARCHAR(100)' },
       { table: 'EmergencyBed', column: 'ChargesPerDay', type: 'DECIMAL(10, 2)' },
+      { table: 'PatientOTAllocationSlots', column: 'OTAllocationDate', type: 'DATE' },
     ];
     
     // Convert scanned columns to column checks format

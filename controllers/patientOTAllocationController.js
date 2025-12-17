@@ -3,6 +3,52 @@ const db = require('../db');
 const allowedStatus = ['Active', 'Inactive'];
 const allowedOperationStatus = ['Scheduled', 'In Progress', 'Completed', 'Cancelled', 'Postponed'];
 
+// Helper function to get today's date in IST (Indian Standard Time)
+const getTodayIST = () => {
+  const now = new Date();
+  // IST is UTC+5:30
+  // Get UTC time and add IST offset (5 hours 30 minutes = 19800000 milliseconds)
+  const istOffset = 5.5 * 60 * 60 * 1000; // 5 hours 30 minutes in milliseconds
+  const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000); // Convert to UTC
+  const istTime = new Date(utcTime + istOffset);
+  
+  const year = istTime.getUTCFullYear();
+  const month = String(istTime.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(istTime.getUTCDate()).padStart(2, '0');
+  
+  return {
+    dbFormat: `${year}-${month}-${day}`, // YYYY-MM-DD for database
+    displayFormat: `${day}-${month}-${year}` // DD-MM-YYYY for display
+  };
+};
+
+// Helper function to convert DD-MM-YYYY to YYYY-MM-DD for database
+const convertToDBDate = (dateStr) => {
+  if (!dateStr) return null;
+  // Check if it's already in YYYY-MM-DD format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return dateStr;
+  }
+  // Check if it's in DD-MM-YYYY format
+  if (/^\d{2}-\d{2}-\d{4}$/.test(dateStr)) {
+    const [day, month, year] = dateStr.split('-');
+    return `${year}-${month}-${day}`;
+  }
+  return null;
+};
+
+// Helper function to convert YYYY-MM-DD to DD-MM-YYYY for API response
+const convertToDisplayDate = (dateStr) => {
+  if (!dateStr) return null;
+  // Check if it's in YYYY-MM-DD format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const [year, month, day] = dateStr.split('-');
+    return `${day}-${month}-${year}`;
+  }
+  // Already in DD-MM-YYYY format
+  return dateStr;
+};
+
 const mapPatientOTAllocationRow = (row) => ({
   PatientOTAllocationId: row.PatientOTAllocationId || row.patientotallocationid,
   PatientId: row.PatientId || row.patientid,
@@ -16,7 +62,7 @@ const mapPatientOTAllocationRow = (row) => ({
   AssistantDoctorId: row.AssistantDoctorId || row.assistantdoctorid || null,
   AnaesthetistId: row.AnaesthetistId || row.anaesthetistid || null,
   NurseId: row.NurseId || row.nurseid || null,
-  OTAllocationDate: row.OTAllocationDate || row.otallocationdate,
+  OTAllocationDate: convertToDisplayDate(row.OTAllocationDate || row.otallocationdate),
   Duration: row.Duration || row.duration || null,
   OTStartTime: row.OTStartTime || row.otstarttime || null,
   OTEndTime: row.OTEndTime || row.otendtime || null,
@@ -117,12 +163,28 @@ exports.getAllPatientOTAllocations = async (req, res) => {
       }
     }
     if (fromDate) {
+      // Convert DD-MM-YYYY to YYYY-MM-DD for database query
+      const dbFromDate = convertToDBDate(fromDate);
+      if (!dbFromDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid fromDate format. Please use DD-MM-YYYY format (e.g., 15-12-2024)',
+        });
+      }
       conditions.push(`pta."OTAllocationDate" >= $${params.length + 1}::date`);
-      params.push(fromDate);
+      params.push(dbFromDate);
     }
     if (toDate) {
+      // Convert DD-MM-YYYY to YYYY-MM-DD for database query
+      const dbToDate = convertToDBDate(toDate);
+      if (!dbToDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid toDate format. Please use DD-MM-YYYY format (e.g., 15-12-2024)',
+        });
+      }
       conditions.push(`pta."OTAllocationDate" <= $${params.length + 1}::date`);
-      params.push(toDate);
+      params.push(dbToDate);
     }
 
     if (conditions.length > 0) {
@@ -140,6 +202,7 @@ exports.getAllPatientOTAllocations = async (req, res) => {
         SELECT 
           pas."PatientOTAllocationId",
           pas."OTSlotId",
+          pas."OTAllocationDate",
           os."OTSlotNo",
           os."SlotStartTime",
           os."SlotEndTime",
@@ -165,6 +228,7 @@ exports.getAllPatientOTAllocations = async (req, res) => {
           SlotStartTime: slot.SlotStartTime,
           SlotEndTime: slot.SlotEndTime,
           OTSlotStatus: slot.OTSlotStatus,
+          OTAllocationDate: convertToDisplayDate(slot.OTAllocationDate),
         });
       });
       
@@ -235,6 +299,7 @@ exports.getPatientOTAllocationById = async (req, res) => {
     const { rows: slotRows } = await db.query(
       `
       SELECT 
+        pas."OTAllocationDate",
         os."OTSlotId",
         os."OTSlotNo",
         os."SlotStartTime",
@@ -256,6 +321,7 @@ exports.getPatientOTAllocationById = async (req, res) => {
       SlotStartTime: s.SlotStartTime,
       SlotEndTime: s.SlotEndTime,
       OTSlotStatus: s.OTSlotStatus,
+      OTAllocationDate: convertToDisplayDate(s.OTAllocationDate),
     }));
 
     res.status(200).json({ success: true, data: mapPatientOTAllocationRow(resultRow) });
@@ -377,8 +443,12 @@ const validatePatientOTAllocationPayload = (body, requireAll = true) => {
   if (requireAll && !body.OTAllocationDate) {
     errors.push('OTAllocationDate is required');
   }
-  if (body.OTAllocationDate && !/^\d{4}-\d{2}-\d{2}$/.test(body.OTAllocationDate)) {
-    errors.push('OTAllocationDate must be in YYYY-MM-DD format');
+  if (body.OTAllocationDate) {
+    // Accept both DD-MM-YYYY and YYYY-MM-DD formats, but prefer DD-MM-YYYY
+    const dbDate = convertToDBDate(body.OTAllocationDate);
+    if (!dbDate) {
+      errors.push('OTAllocationDate must be in DD-MM-YYYY format (e.g., 15-12-2024)');
+    }
   }
 
   if (body.OTStartTime && !/^\d{2}:\d{2}(:\d{2})?$/.test(body.OTStartTime)) {
@@ -464,6 +534,16 @@ exports.createPatientOTAllocation = async (req, res) => {
       normalizedOTSlotIds = OTSlotIds;
     } else if (OTSlotId !== undefined && OTSlotId !== null) {
       normalizedOTSlotIds = [OTSlotId]; // Convert single to array
+    }
+
+    // Use OTAllocationDate for all slots - convert to database format
+    // OTAllocationDate is required and will be used for all slots in PatientOTAllocationSlots
+    const otAllocationDateDB = convertToDBDate(OTAllocationDate);
+    if (!otAllocationDateDB) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'OTAllocationDate is required and must be in DD-MM-YYYY format (e.g., 15-12-2024)' 
+      });
     }
 
     // Validate foreign key existence
@@ -603,7 +683,7 @@ exports.createPatientOTAllocation = async (req, res) => {
         AssistantDoctorId ? parseInt(AssistantDoctorId, 10) : null,
         AnaesthetistId ? parseInt(AnaesthetistId, 10) : null,
         NurseId ? parseInt(NurseId, 10) : null,
-        OTAllocationDate,
+        convertToDBDate(OTAllocationDate), // Convert DD-MM-YYYY to YYYY-MM-DD for database
         Duration || null,
         OTStartTime || null,
         OTEndTime || null,
@@ -622,14 +702,16 @@ exports.createPatientOTAllocation = async (req, res) => {
       const patientOTAllocationId = rows[0].PatientOTAllocationId;
 
       // Insert into junction table if slots are provided
+      // Use OTAllocationDate for all slots
       if (normalizedOTSlotIds.length > 0) {
         const slotInsertQuery = `
-          INSERT INTO "PatientOTAllocationSlots" ("PatientOTAllocationId", "OTSlotId")
-          VALUES ($1, $2)
-          ON CONFLICT ("PatientOTAllocationId", "OTSlotId") DO NOTHING
+          INSERT INTO "PatientOTAllocationSlots" ("PatientOTAllocationId", "OTSlotId", "OTAllocationDate")
+          VALUES ($1, $2, $3)
+          ON CONFLICT ("PatientOTAllocationId", "OTSlotId") DO UPDATE SET "OTAllocationDate" = EXCLUDED."OTAllocationDate"
         `;
         for (const slotId of normalizedOTSlotIds) {
-          await client.query(slotInsertQuery, [patientOTAllocationId, parseInt(slotId, 10)]);
+          // Use OTAllocationDate for all slots
+          await client.query(slotInsertQuery, [patientOTAllocationId, parseInt(slotId, 10), otAllocationDateDB]);
         }
       }
 
@@ -668,6 +750,7 @@ exports.createPatientOTAllocation = async (req, res) => {
       const { rows: slotRows } = await db.query(
         `
         SELECT 
+          pas."OTAllocationDate",
           os."OTSlotId",
           os."OTSlotNo",
           os."SlotStartTime",
@@ -690,6 +773,7 @@ exports.createPatientOTAllocation = async (req, res) => {
           SlotStartTime: s.SlotStartTime,
           SlotEndTime: s.SlotEndTime,
           OTSlotStatus: s.OTSlotStatus,
+          OTAllocationDate: convertToDisplayDate(s.OTAllocationDate),
         }));
       }
 
@@ -772,6 +856,31 @@ exports.updatePatientOTAllocation = async (req, res) => {
       }
     } else if (OTSlotId !== undefined && OTSlotId !== null) {
       normalizedOTSlotIds = [OTSlotId]; // Convert single to array
+    }
+
+    // Use OTAllocationDate for all slots - get from update or existing allocation
+    let otAllocationDateDB = null;
+    if (OTAllocationDate !== undefined && OTAllocationDate !== null) {
+      otAllocationDateDB = convertToDBDate(OTAllocationDate);
+      if (!otAllocationDateDB) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'OTAllocationDate must be in DD-MM-YYYY format (e.g., 15-12-2024)' 
+        });
+      }
+    } else {
+      // Get existing OTAllocationDate if not provided in update
+      const currentAllocation = await db.query(
+        'SELECT "OTAllocationDate" FROM "PatientOTAllocation" WHERE "PatientOTAllocationId" = $1',
+        [otAllocationId]
+      );
+      if (currentAllocation.rows.length > 0 && currentAllocation.rows[0].OTAllocationDate) {
+        otAllocationDateDB = currentAllocation.rows[0].OTAllocationDate;
+      } else {
+        // Default to today's date in IST if no date available
+        const todayIST = getTodayIST();
+        otAllocationDateDB = todayIST.dbFormat;
+      }
     }
 
     // Validate foreign key existence if provided
@@ -944,8 +1053,16 @@ exports.updatePatientOTAllocation = async (req, res) => {
       params.push(NurseId !== null ? parseInt(NurseId, 10) : null);
     }
     if (OTAllocationDate !== undefined) {
+      // Convert DD-MM-YYYY to YYYY-MM-DD for database
+      const dbOTAllocationDate = convertToDBDate(OTAllocationDate);
+      if (OTAllocationDate !== null && !dbOTAllocationDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'OTAllocationDate must be in DD-MM-YYYY format (e.g., 15-12-2024)',
+        });
+      }
       updates.push(`"OTAllocationDate" = $${paramIndex++}::date`);
-      params.push(OTAllocationDate);
+      params.push(dbOTAllocationDate);
     }
     if (Duration !== undefined) {
       updates.push(`"Duration" = $${paramIndex++}`);
@@ -1031,14 +1148,16 @@ exports.updatePatientOTAllocation = async (req, res) => {
         );
         
         // Insert new slots
+        // Use OTAllocationDate for all slots
         if (normalizedOTSlotIds.length > 0) {
           const slotInsertQuery = `
-            INSERT INTO "PatientOTAllocationSlots" ("PatientOTAllocationId", "OTSlotId")
-            VALUES ($1, $2)
-            ON CONFLICT ("PatientOTAllocationId", "OTSlotId") DO NOTHING
+            INSERT INTO "PatientOTAllocationSlots" ("PatientOTAllocationId", "OTSlotId", "OTAllocationDate")
+            VALUES ($1, $2, $3)
+            ON CONFLICT ("PatientOTAllocationId", "OTSlotId") DO UPDATE SET "OTAllocationDate" = EXCLUDED."OTAllocationDate"
           `;
           for (const slotId of normalizedOTSlotIds) {
-            await client.query(slotInsertQuery, [otAllocationId, parseInt(slotId, 10)]);
+            // Use OTAllocationDate for all slots
+            await client.query(slotInsertQuery, [otAllocationId, parseInt(slotId, 10), otAllocationDateDB]);
           }
         }
       }
@@ -1078,6 +1197,7 @@ exports.updatePatientOTAllocation = async (req, res) => {
       const { rows: slotRows } = await db.query(
         `
         SELECT 
+          pas."OTAllocationDate",
           os."OTSlotId",
           os."OTSlotNo",
           os."SlotStartTime",
@@ -1100,6 +1220,7 @@ exports.updatePatientOTAllocation = async (req, res) => {
           SlotStartTime: s.SlotStartTime,
           SlotEndTime: s.SlotEndTime,
           OTSlotStatus: s.OTSlotStatus,
+          OTAllocationDate: convertToDisplayDate(s.OTAllocationDate),
         }));
       }
 
@@ -1138,7 +1259,10 @@ exports.updatePatientOTAllocation = async (req, res) => {
  */
 exports.getTodayOTScheduledAndInProgressCount = async (req, res) => {
   try {
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    // Get today's date in IST
+    const todayIST = getTodayIST();
+    const todayDB = todayIST.dbFormat; // YYYY-MM-DD for database
+    const todayDisplay = todayIST.displayFormat; // DD-MM-YYYY for display
     
     // Query to get both counts
     const query = `
@@ -1149,7 +1273,7 @@ exports.getTodayOTScheduledAndInProgressCount = async (req, res) => {
       FROM "PatientOTAllocation"
     `;
 
-    const { rows } = await db.query(query, [today]);
+    const { rows } = await db.query(query, [todayDB]);
 
     const scheduledCount = parseInt(rows[0].scheduled_count, 10) || 0;
     const inProgressCount = parseInt(rows[0].in_progress_count, 10) || 0;
@@ -1157,13 +1281,13 @@ exports.getTodayOTScheduledAndInProgressCount = async (req, res) => {
     res.status(200).json({
       success: true,
       message: 'Today\'s OT scheduled and In Progress counts retrieved successfully',
-      date: today,
+      date: todayDisplay, // Return in DD-MM-YYYY format
       counts: {
         todayScheduled: scheduledCount,
         inProgress: inProgressCount
       },
       data: {
-        date: today,
+        date: todayDisplay, // Return in DD-MM-YYYY format
         todayScheduledCount: scheduledCount,
         inProgressCount: inProgressCount,
         todayScheduledStatus: ['Scheduled', 'In Progress'],
@@ -1195,12 +1319,12 @@ exports.getOTScheduledAndInProgressCountByDate = async (req, res) => {
       });
     }
 
-    // Validate date format
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(date)) {
+    // Convert DD-MM-YYYY to YYYY-MM-DD for database query
+    const dbDate = convertToDBDate(date);
+    if (!dbDate) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid date format. Please use YYYY-MM-DD format (e.g., 2025-12-03)',
+        message: 'Invalid date format. Please use DD-MM-YYYY format (e.g., 15-12-2024)',
       });
     }
 
@@ -1214,7 +1338,7 @@ exports.getOTScheduledAndInProgressCountByDate = async (req, res) => {
       FROM "PatientOTAllocation"
     `;
 
-    const { rows } = await db.query(query, [date]);
+    const { rows } = await db.query(query, [dbDate]);
 
     const scheduledCount = parseInt(rows[0].scheduled_count, 10) || 0;
     const inProgressCount = parseInt(rows[0].in_progress_count, 10) || 0;
@@ -1222,13 +1346,13 @@ exports.getOTScheduledAndInProgressCountByDate = async (req, res) => {
     res.status(200).json({
       success: true,
       message: 'OT scheduled and In Progress counts retrieved successfully',
-      date: date,
+      date: convertToDisplayDate(dbDate), // Return in DD-MM-YYYY format
       counts: {
         scheduled: scheduledCount,
         inProgress: inProgressCount
       },
       data: {
-        date: date,
+        date: convertToDisplayDate(dbDate), // Return in DD-MM-YYYY format
         scheduledCount: scheduledCount,
         inProgressCount: inProgressCount,
         scheduledStatus: ['Scheduled', 'In Progress'],

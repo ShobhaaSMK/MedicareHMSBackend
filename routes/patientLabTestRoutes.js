@@ -113,7 +113,8 @@ Query Parameters:
   - patientId: String (UUID) | null,
   - labTestId: Number | null,
   - appointmentId: Number | null,
-  - roomAdmissionId: Number | null
+  - roomAdmissionId: Number | null,
+  - emergencyBedSlotId: Number | null
 Response: {
   success: Boolean,
   count: Number,
