@@ -125,6 +125,7 @@ const mapPatientICUAdmissionRow = (row) => ({
   ICUAllocationCreatedAt: row.ICUAllocationCreatedAt || row.icuallocationcreatedat,
   Status: row.Status || row.status,
   OnVentilator: row.OnVentilator || row.onventilator || 'No',
+  AttendingDoctorId: row.AttendingDoctorId !== undefined && row.AttendingDoctorId !== null ? parseInt(row.AttendingDoctorId, 10) : (row.attendingdoctorid !== undefined && row.attendingdoctorid !== null ? parseInt(row.attendingdoctorid, 10) : null),
   // Joined fields
   PatientName: row.PatientName || row.patientname || null,
   PatientNo: row.PatientNo || row.patientno || null,
@@ -333,6 +334,13 @@ const validatePatientICUAdmissionPayload = (body, requireAll = true) => {
     errors.push('OnVentilator must be Yes or No');
   }
 
+  if (body.AttendingDoctorId !== undefined && body.AttendingDoctorId !== null) {
+    const attendingDoctorIdInt = parseInt(body.AttendingDoctorId, 10);
+    if (isNaN(attendingDoctorIdInt)) {
+      errors.push('AttendingDoctorId must be a valid integer');
+    }
+  }
+
   return errors;
 };
 
@@ -360,6 +368,7 @@ exports.createPatientICUAdmission = async (req, res) => {
       ICUAllocationCreatedBy,
       Status = 'Active',
       OnVentilator = 'No',
+      AttendingDoctorId,
     } = req.body;
 
     // Generate random UUID for PatientICUAdmissionId
@@ -413,6 +422,19 @@ exports.createPatientICUAdmission = async (req, res) => {
         return res.status(400).json({ success: false, message: 'ICUAllocationCreatedBy user does not exist.' });
       }
       createdByValue = createdByInt;
+    }
+
+    let attendingDoctorIdValue = null;
+    if (AttendingDoctorId !== undefined && AttendingDoctorId !== null && AttendingDoctorId !== '') {
+      const attendingDoctorIdInt = parseInt(AttendingDoctorId, 10);
+      if (isNaN(attendingDoctorIdInt)) {
+        return res.status(400).json({ success: false, message: 'AttendingDoctorId must be a valid integer.' });
+      }
+      const doctorExists = await db.query('SELECT "UserId" FROM "Users" WHERE "UserId" = $1', [attendingDoctorIdInt]);
+      if (doctorExists.rows.length === 0) {
+        return res.status(400).json({ success: false, message: 'AttendingDoctorId does not exist.' });
+      }
+      attendingDoctorIdValue = attendingDoctorIdInt;
     }
 
     // Check if ICU bed is already occupied for the given date range
@@ -493,8 +515,8 @@ exports.createPatientICUAdmission = async (req, res) => {
       INSERT INTO "PatientICUAdmission"
         ("PatientICUAdmissionId", "PatientId", "PatientAppointmentId", "EmergencyBedSlotId", "RoomAdmissionId", "ICUId",
          "ICUPatientStatus", "ICUAdmissionStatus", "ICUAllocationFromDate", "ICUAllocationToDate", "NumberOfDays",
-         "Diagnosis", "TreatementDetails", "PatientCondition", "ICUAllocationCreatedBy", "Status", "OnVentilator")
-      VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+         "Diagnosis", "TreatementDetails", "PatientCondition", "ICUAllocationCreatedBy", "Status", "OnVentilator", "AttendingDoctorId")
+      VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING *;
     `;
 
@@ -516,6 +538,7 @@ exports.createPatientICUAdmission = async (req, res) => {
       createdByValue,
       Status,
       OnVentilator || 'No',
+      attendingDoctorIdValue,
     ]);
 
     res.status(201).json({
@@ -564,6 +587,7 @@ exports.updatePatientICUAdmission = async (req, res) => {
       ICUAllocationCreatedBy,
       Status,
       OnVentilator,
+      AttendingDoctorId,
     } = req.body;
 
     // Validate foreign key existence if provided
@@ -609,6 +633,21 @@ exports.updatePatientICUAdmission = async (req, res) => {
       createdByValue = createdByInt;
     } else if (ICUAllocationCreatedBy === null) {
       createdByValue = null;
+    }
+
+    let attendingDoctorIdValue = null;
+    if (AttendingDoctorId !== undefined && AttendingDoctorId !== null && AttendingDoctorId !== '') {
+      const attendingDoctorIdInt = parseInt(AttendingDoctorId, 10);
+      if (isNaN(attendingDoctorIdInt)) {
+        return res.status(400).json({ success: false, message: 'AttendingDoctorId must be a valid integer.' });
+      }
+      const doctorExists = await db.query('SELECT "UserId" FROM "Users" WHERE "UserId" = $1', [attendingDoctorIdInt]);
+      if (doctorExists.rows.length === 0) {
+        return res.status(400).json({ success: false, message: 'AttendingDoctorId does not exist.' });
+      }
+      attendingDoctorIdValue = attendingDoctorIdInt;
+    } else if (AttendingDoctorId === null) {
+      attendingDoctorIdValue = null;
     }
 
     // Build dynamic update query
@@ -675,6 +714,10 @@ exports.updatePatientICUAdmission = async (req, res) => {
     if (OnVentilator !== undefined) {
       updates.push(`"OnVentilator" = $${paramIndex++}`);
       params.push(OnVentilator || 'No');
+    }
+    if (AttendingDoctorId !== undefined) {
+      updates.push(`"AttendingDoctorId" = $${paramIndex++}`);
+      params.push(attendingDoctorIdValue);
     }
 
     if (updates.length === 0) {
@@ -1043,13 +1086,15 @@ exports.getICUAdmissionsforICUMgmt = async (req, res) => {
         pica."ICUAllocationCreatedAt",
         pica."Status" AS "AdmissionStatus",
         pica."OnVentilator",
+        pica."AttendingDoctorId",
         p."PatientName",
         p."PatientNo",
         p."Age",
         p."Gender",
         p."PhoneNo" AS "PatientPhoneNo",
         pa."TokenNo" AS "AppointmentTokenNo",
-        u."UserName" AS "CreatedByName"
+        u."UserName" AS "CreatedByName",
+        attendingDoctor."UserName" AS "AttendingDoctorName"
       FROM "ICU" icu
       INNER JOIN "PatientICUAdmission" pica ON icu."ICUId" = pica."ICUId"
         AND pica."Status" = 'Active'
@@ -1066,6 +1111,7 @@ exports.getICUAdmissionsforICUMgmt = async (req, res) => {
       LEFT JOIN "PatientRegistration" p ON pica."PatientId" = p."PatientId"
       LEFT JOIN "PatientAppointment" pa ON pica."PatientAppointmentId" = pa."PatientAppointmentId"
       LEFT JOIN "Users" u ON pica."ICUAllocationCreatedBy" = u."UserId"
+      LEFT JOIN "Users" attendingDoctor ON pica."AttendingDoctorId" = attendingDoctor."UserId"
       WHERE icu."Status" = 'Active'
       ORDER BY icu."ICUBedNo" ASC
     `;
@@ -1103,6 +1149,7 @@ exports.getICUAdmissionsforICUMgmt = async (req, res) => {
       icuAllocationCreatedAt: row.ICUAllocationCreatedAt || row.icuallocationcreatedat || null,
       admissionStatus: row.AdmissionStatus || row.admissionstatus || null,
       onVentilator: row.OnVentilator || row.onventilator || null,
+      attendingDoctorId: row.AttendingDoctorId !== undefined && row.AttendingDoctorId !== null ? parseInt(row.AttendingDoctorId, 10) : (row.attendingdoctorid !== undefined && row.attendingdoctorid !== null ? parseInt(row.attendingdoctorid, 10) : null),
       // Patient Details (null if bed is available)
       patientName: row.PatientName || row.patientname || null,
       patientNo: row.PatientNo || row.patientno || null,
@@ -1111,6 +1158,8 @@ exports.getICUAdmissionsforICUMgmt = async (req, res) => {
       patientPhoneNo: row.PatientPhoneNo || row.patientphoneno || null,
       appointmentTokenNo: row.AppointmentTokenNo || row.appointmenttokenno || null,
       createdByName: row.CreatedByName || row.createdbyname || null,
+      // Attending Doctor
+      attendingDoctorName: row.AttendingDoctorName || row.attendingdoctorname || null,
       // Computed field
       isOccupied: row.PatientICUAdmissionId ? true : false
     }));
@@ -1512,6 +1561,7 @@ exports.getICUBedsDetailsMgmtByICUId = async (req, res) => {
         pica."ICUAllocationCreatedAt",
         pica."Status" AS "AdmissionStatus",
         pica."OnVentilator",
+        pica."AttendingDoctorId",
         p."PatientName",
         p."PatientNo",
         p."Age",
@@ -1520,11 +1570,13 @@ exports.getICUBedsDetailsMgmtByICUId = async (req, res) => {
         pa."TokenNo" AS "AppointmentTokenNo",
         pa."AppointmentDate",
         pa."AppointmentTime",
-        u."UserName" AS "CreatedByName"
+        u."UserName" AS "CreatedByName",
+        attendingDoctor."UserName" AS "AttendingDoctorName"
       FROM "PatientICUAdmission" pica
       LEFT JOIN "PatientRegistration" p ON pica."PatientId" = p."PatientId"
       LEFT JOIN "PatientAppointment" pa ON pica."PatientAppointmentId" = pa."PatientAppointmentId"
       LEFT JOIN "Users" u ON pica."ICUAllocationCreatedBy" = u."UserId"
+      LEFT JOIN "Users" attendingDoctor ON pica."AttendingDoctorId" = attendingDoctor."UserId"
       WHERE pica."ICUId" = $1
       ORDER BY pica."ICUAllocationFromDate" DESC NULLS LAST
     `;
@@ -1569,6 +1621,7 @@ exports.getICUBedsDetailsMgmtByICUId = async (req, res) => {
           icuAllocationCreatedAt: row.ICUAllocationCreatedAt || null,
           admissionStatus: row.AdmissionStatus || null,
           onVentilator: row.OnVentilator || null,
+          attendingDoctorId: row.AttendingDoctorId !== undefined && row.AttendingDoctorId !== null ? parseInt(row.AttendingDoctorId, 10) : (row.attendingdoctorid !== undefined && row.attendingdoctorid !== null ? parseInt(row.attendingdoctorid, 10) : null),
           // Patient Details
           patientName: row.PatientName || null,
           patientNo: row.PatientNo || null,
@@ -1580,7 +1633,9 @@ exports.getICUBedsDetailsMgmtByICUId = async (req, res) => {
           appointmentDate: row.AppointmentDate || null,
           appointmentTime: row.AppointmentTime || null,
       // Created By
-      createdByName: row.CreatedByName || null
+      createdByName: row.CreatedByName || null,
+      // Attending Doctor
+      attendingDoctorName: row.AttendingDoctorName || row.attendingdoctorname || null
     }));
 
     // Prepare response data
@@ -1651,6 +1706,7 @@ exports.getICUBedsDetailsMgmtByICUBedId = async (req, res) => {
         pica."ICUAllocationCreatedAt",
         pica."Status" AS "AdmissionStatus",
         pica."OnVentilator",
+        pica."AttendingDoctorId",
         -- Patient Details
         p."PatientName",
         p."PatientNo",
@@ -1662,12 +1718,15 @@ exports.getICUBedsDetailsMgmtByICUBedId = async (req, res) => {
         pa."AppointmentDate",
         pa."AppointmentTime",
         -- Created By User Details
-        u."UserName" AS "CreatedByName"
+        u."UserName" AS "CreatedByName",
+        -- Attending Doctor Details
+        attendingDoctor."UserName" AS "AttendingDoctorName"
       FROM "ICU" icu
       LEFT JOIN "PatientICUAdmission" pica ON icu."ICUId" = pica."ICUId"
       LEFT JOIN "PatientRegistration" p ON pica."PatientId" = p."PatientId"
       LEFT JOIN "PatientAppointment" pa ON pica."PatientAppointmentId" = pa."PatientAppointmentId"
       LEFT JOIN "Users" u ON pica."ICUAllocationCreatedBy" = u."UserId"
+      LEFT JOIN "Users" attendingDoctor ON pica."AttendingDoctorId" = attendingDoctor."UserId"
       WHERE icu."ICUBedNo" = $1
       ORDER BY pica."ICUAllocationFromDate" DESC NULLS LAST
     `;
@@ -1719,6 +1778,7 @@ exports.getICUBedsDetailsMgmtByICUBedId = async (req, res) => {
           icuAllocationCreatedAt: row.ICUAllocationCreatedAt || row.icuallocationcreatedat || null,
           admissionStatus: row.AdmissionStatus || row.admissionstatus || null,
           onVentilator: row.OnVentilator || row.onventilator || null,
+          attendingDoctorId: row.AttendingDoctorId !== undefined && row.AttendingDoctorId !== null ? parseInt(row.AttendingDoctorId, 10) : (row.attendingdoctorid !== undefined && row.attendingdoctorid !== null ? parseInt(row.attendingdoctorid, 10) : null),
           // Patient Details
           patientName: row.PatientName || row.patientname || null,
           patientNo: row.PatientNo || row.patientno || null,
@@ -1730,7 +1790,9 @@ exports.getICUBedsDetailsMgmtByICUBedId = async (req, res) => {
           appointmentDate: row.AppointmentDate || row.appointmentdate || null,
           appointmentTime: row.AppointmentTime || row.appointmenttime || null,
           // Created By
-          createdByName: row.CreatedByName || row.createdbyname || null
+          createdByName: row.CreatedByName || row.createdbyname || null,
+          // Attending Doctor
+          attendingDoctorName: row.AttendingDoctorName || row.attendingdoctorname || null
         });
       }
     });
@@ -1802,6 +1864,7 @@ exports.getICUAdmissionsforICUMgmtByPatientICUAdmissionId = async (req, res) => 
         pica."ICUAllocationCreatedAt",
         pica."Status" AS "AdmissionStatus",
         pica."OnVentilator",
+        pica."AttendingDoctorId",
         -- Patient Details
         p."PatientName",
         p."PatientNo",
@@ -1823,12 +1886,17 @@ exports.getICUAdmissionsforICUMgmtByPatientICUAdmissionId = async (req, res) => 
         -- Created By User Details
         u."UserName" AS "CreatedByName",
         u."EmailId" AS "CreatedByEmail",
-        u."PhoneNo" AS "CreatedByPhone"
+        u."PhoneNo" AS "CreatedByPhone",
+        -- Attending Doctor Details
+        attendingDoctor."UserName" AS "AttendingDoctorName",
+        attendingDoctor."EmailId" AS "AttendingDoctorEmail",
+        attendingDoctor."PhoneNo" AS "AttendingDoctorPhone"
       FROM "PatientICUAdmission" pica
       INNER JOIN "ICU" icu ON pica."ICUId" = icu."ICUId"
       INNER JOIN "PatientRegistration" p ON pica."PatientId" = p."PatientId"
       LEFT JOIN "PatientAppointment" pa ON pica."PatientAppointmentId" = pa."PatientAppointmentId"
       LEFT JOIN "Users" u ON pica."ICUAllocationCreatedBy" = u."UserId"
+      LEFT JOIN "Users" attendingDoctor ON pica."AttendingDoctorId" = attendingDoctor."UserId"
       WHERE pica."PatientICUAdmissionId" = $1::uuid
     `;
 
@@ -1878,7 +1946,8 @@ exports.getICUAdmissionsforICUMgmtByPatientICUAdmissionId = async (req, res) => 
         icuAllocationCreatedBy: row.ICUAllocationCreatedBy || row.icuallocationcreatedby || null,
         icuAllocationCreatedAt: row.ICUAllocationCreatedAt || row.icuallocationcreatedat || null,
         admissionStatus: row.AdmissionStatus || row.admissionstatus || null,
-        onVentilator: row.OnVentilator || row.onventilator || null
+        onVentilator: row.OnVentilator || row.onventilator || null,
+        attendingDoctorId: row.AttendingDoctorId !== undefined && row.AttendingDoctorId !== null ? parseInt(row.AttendingDoctorId, 10) : (row.attendingdoctorid !== undefined && row.attendingdoctorid !== null ? parseInt(row.attendingdoctorid, 10) : null)
       },
       // Patient Details
       patient: {
@@ -1910,6 +1979,13 @@ exports.getICUAdmissionsforICUMgmtByPatientICUAdmissionId = async (req, res) => 
         userName: row.CreatedByName || row.createdbyname || null,
         emailId: row.CreatedByEmail || row.createdbyemail || null,
         phoneNo: row.CreatedByPhone || row.createdbyphone || null
+      } : null,
+      // Attending Doctor Details
+      attendingDoctor: row.AttendingDoctorId ? {
+        userId: row.AttendingDoctorId !== undefined && row.AttendingDoctorId !== null ? parseInt(row.AttendingDoctorId, 10) : (row.attendingdoctorid !== undefined && row.attendingdoctorid !== null ? parseInt(row.attendingdoctorid, 10) : null),
+        userName: row.AttendingDoctorName || row.attendingdoctorname || null,
+        emailId: row.AttendingDoctorEmail || row.attendingdoctoremail || null,
+        phoneNo: row.AttendingDoctorPhone || row.attendingdoctorphone || null
       } : null
     };
 

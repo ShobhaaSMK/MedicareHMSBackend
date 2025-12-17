@@ -280,11 +280,13 @@ CREATE TABLE IF NOT EXISTS "PatientICUAdmission" (
     "ICUAllocationCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active',
     "OnVentilator" VARCHAR(10) DEFAULT 'No' CHECK ("OnVentilator" IN ('Yes', 'No')),
+    "AttendingDoctorId" INTEGER,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("PatientAppointmentId") REFERENCES "PatientAppointment"("PatientAppointmentId") ON DELETE SET NULL,
     FOREIGN KEY ("EmergencyBedSlotId") REFERENCES "EmergencyBedSlot"("EmergencyBedSlotId") ON DELETE SET NULL,
     FOREIGN KEY ("ICUId") REFERENCES "ICU"("ICUId") ON DELETE RESTRICT,
-    FOREIGN KEY ("ICUAllocationCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    FOREIGN KEY ("ICUAllocationCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL,
+    FOREIGN KEY ("AttendingDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
 -- RoomAdmission table
