@@ -197,6 +197,7 @@ Response: {
       icuAllocationCreatedAt: Date | null,
       admissionStatus: String | null,
       onVentilator: String | null,
+      attendingDoctorId: Number | null,
       patientName: String | null,
       patientNo: String | null,
       patientAge: Number | null,
@@ -249,6 +250,7 @@ Response: {
       icuAllocationCreatedAt: Date | null,
       admissionStatus: String | null,
       onVentilator: String | null,
+      attendingDoctorId: Number | null,
       patientName: String | null,
       patientNo: String | null,
       patientAge: Number | null,
@@ -302,6 +304,7 @@ Response: {
       icuAllocationCreatedAt: Date | null,
       admissionStatus: String | null,
       onVentilator: String | null,
+      attendingDoctorId: Number | null,
       patientName: String | null,
       patientNo: String | null,
       patientAge: Number | null,
@@ -355,7 +358,8 @@ Response: {
       icuAllocationCreatedBy: Number | null,
       icuAllocationCreatedAt: Date | null,
       admissionStatus: String | null,
-      onVentilator: String | null // "Yes" | "No"
+      onVentilator: String | null, // "Yes" | "No"
+      attendingDoctorId: Number | null
     },
     patient: {
       patientId: String (UUID),
@@ -456,6 +460,7 @@ Response: {
     ICUAllocationCreatedAt: Date,
     Status: String, // "Active" | "Inactive"
     OnVentilator: String, // "Yes" | "No"
+    AttendingDoctorId: Number | null
     PatientName: String | null,
     PatientNo: String | null,
     ICUNo: String | null,
@@ -490,6 +495,7 @@ Response: {
     ICUAllocationCreatedAt: Date,
     Status: String, // "Active" | "Inactive"
     OnVentilator: String, // "Yes" | "No"
+    AttendingDoctorId: Number | null
     PatientName: String | null,
     PatientNo: String | null,
     ICUNo: String | null,
@@ -518,6 +524,7 @@ Request: {
   ICUAllocationCreatedBy: Number, (required)
   Status: String, // "Active" | "Inactive", defaults to "Active"
   OnVentilator: String, // "Yes" | "No", defaults to "No"
+  AttendingDoctorId: Number | null, (optional)
 }
 Response: {
   success: Boolean,
@@ -541,6 +548,7 @@ Response: {
     ICUAllocationCreatedAt: Date,
     Status: String, // "Active" | "Inactive"
     OnVentilator: String, // "Yes" | "No"
+    AttendingDoctorId: Number | null
     PatientName: String | null,
     PatientNo: String | null,
     ICUNo: String | null,
@@ -570,6 +578,7 @@ Request: {
   ICUAllocationCreatedBy: Number,
   Status: String, // "Active" | "Inactive"
   OnVentilator: String, // "Yes" | "No"
+  AttendingDoctorId: Number | null
 }
 Response: {
   success: Boolean,
@@ -593,6 +602,7 @@ Response: {
     ICUAllocationCreatedAt: Date,
     Status: String, // "Active" | "Inactive"
     OnVentilator: String, // "Yes" | "No"
+    AttendingDoctorId: Number | null
     PatientName: String | null,
     PatientNo: String | null,
     ICUNo: String | null,

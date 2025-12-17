@@ -30,6 +30,7 @@ const mapICUVisitVitalsRow = (row) => ({
   VitalsCreatedBy: row.VitalsCreatedBy || row.vitalscreatedby,
   VitalsCreatedAt: row.VitalsCreatedAt || row.vitalscreatedat,
   Status: row.Status || row.status,
+  NurseName: row.NurseName || row.nursename || null,
 });
 
 exports.getAllICUVisitVitals = async (req, res) => {
@@ -160,6 +161,55 @@ exports.getICUVisitVitalsByICUAdmissionId = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching ICU visit vitals by ICU admission ID',
+      error: error.message,
+    });
+  }
+};
+
+exports.getLatestICUVisitVitalsByICUAdmissionId = async (req, res) => {
+  try {
+    const { icuAdmissionId } = req.params;
+    
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(icuAdmissionId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid ICUAdmissionId. Must be a valid UUID.',
+      });
+    }
+
+    const { rows } = await db.query(
+      `
+      SELECT 
+        ivv.*,
+        u."UserName" AS "NurseName"
+      FROM "ICUVisitVitals" ivv
+      LEFT JOIN "Users" u ON ivv."NurseId" = u."UserId"
+      WHERE ivv."ICUAdmissionId" = $1::uuid
+      ORDER BY ivv."RecordedDateTime" DESC
+      LIMIT 1
+      `,
+      [icuAdmissionId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No ICU visit vitals found for the given ICU admission ID',
+        icuAdmissionId: icuAdmissionId,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      icuAdmissionId: icuAdmissionId,
+      data: mapICUVisitVitalsRow(rows[0]),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching latest ICU visit vitals by ICU admission ID',
       error: error.message,
     });
   }

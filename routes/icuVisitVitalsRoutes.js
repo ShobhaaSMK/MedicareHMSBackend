@@ -64,6 +64,37 @@ Response: {
 } */
 router.get('/icu-admission/:icuAdmissionId', icuVisitVitalsController.getICUVisitVitalsByICUAdmissionId);
 
+/* GET /api/icu-visit-vitals/icu-admission/:icuAdmissionId/latest
+Path Parameters:
+  - icuAdmissionId: String (UUID), (required)
+Response: {
+  success: Boolean,
+  icuAdmissionId: String (UUID),
+  data: {
+    ICUVisitVitalsId: String (UUID),
+    ICUAdmissionId: String (UUID),
+    PatientId: String (UUID),
+    NurseId: Number,
+    NurseVisitsDetails: String | null,
+    PatientCondition: String | null,
+    DailyOrHourlyVitals: String | null,
+    RecordedDateTime: Date,
+    HeartRate: Number | null,
+    BloodPressure: String | null,
+    Temperature: Number | null,
+    O2Saturation: Number | null,
+    BloodSugar: Number | null,
+    RespiratoryRate: Number | null,
+    PulseRate: Number | null,
+    VitalsStatus: String | null,
+    VitalsRemarks: String | null,
+    VitalsCreatedBy: Number | null,
+    VitalsCreatedAt: Date,
+    Status: String
+  }
+} */
+router.get('/icu-admission/:icuAdmissionId/latest', icuVisitVitalsController.getLatestICUVisitVitalsByICUAdmissionId);
+
 /* GET /api/icu-visit-vitals/:id
 Params: id (String - UUID)
 Response: {
