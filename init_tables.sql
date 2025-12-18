@@ -294,6 +294,7 @@ CREATE TABLE IF NOT EXISTS "RoomAdmission" (
     "RoomAdmissionId" SERIAL PRIMARY KEY,
     "PatientAppointmentId" INTEGER,
     "EmergencyBedSlotId" INTEGER,
+    "PatientType" VARCHAR(50) CHECK ("PatientType" IN ('OPD', 'Emergency', 'Direct')),
     "AdmittingDoctorId" INTEGER NOT NULL,
     "PatientId" UUID NOT NULL,
     "RoomBedsId" INTEGER NOT NULL,

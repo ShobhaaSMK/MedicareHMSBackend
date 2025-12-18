@@ -128,11 +128,13 @@ const validateICUPayload = (body, requireAll = true) => {
     errors.push('ICUBedNo is required');
   }
   
-  if (requireAll && !body.IsVentilatorAttached) {
+  if (requireAll && (body.IsVentilatorAttached === undefined || body.IsVentilatorAttached === null || body.IsVentilatorAttached === '')) {
     errors.push('IsVentilatorAttached is required');
   }
-  if (body.IsVentilatorAttached && !allowedVentilatorStatus.includes(body.IsVentilatorAttached)) {
-    errors.push('IsVentilatorAttached must be Yes or No');
+  if (body.IsVentilatorAttached !== undefined && body.IsVentilatorAttached !== null && body.IsVentilatorAttached !== '') {
+    if (!allowedVentilatorStatus.includes(body.IsVentilatorAttached)) {
+      errors.push('IsVentilatorAttached must be "Yes" or "No"');
+    }
   }
   
   if (body.Status && !allowedStatus.includes(body.Status)) {
@@ -244,6 +246,7 @@ exports.updateICU = async (req, res) => {
         message: 'Invalid ICUId. Must be an integer.' 
       });
     }
+    console.log("***********req.body*******", req.body);
     const {
       ICUBedNo,
       ICUType,
@@ -299,12 +302,18 @@ exports.updateICU = async (req, res) => {
       }
     }
 
+    // Handle IsVentilatorAttached - if provided, use it; if not provided (undefined), keep existing value
+    let isVentilatorAttachedValue = null;
+    if (IsVentilatorAttached !== undefined && IsVentilatorAttached !== null && IsVentilatorAttached !== '') {
+      isVentilatorAttachedValue = IsVentilatorAttached;
+    }
+
     const updateParams = [
       ICUBedNo ? ICUBedNo.trim() : null,
       ICUType ? ICUType.trim() : null,
       ICURoomNameNo ? ICURoomNameNo.trim() : null,
       ICUDescription ? ICUDescription.trim() : null,
-      IsVentilatorAttached || null,
+      isVentilatorAttachedValue,
       ICUStartTimeofDay || null,
       ICUEndTimeofDay || null,
       Status || null,

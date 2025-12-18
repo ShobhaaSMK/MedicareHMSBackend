@@ -1,4 +1,7 @@
 const db = require('../db');
+const fs = require('fs');
+const path = require('path');
+const multer = require('multer');
 
 const allowedPatientTypes = ['OPD', 'Emergency', 'IPD', 'Direct'];
 const allowedLabTestDone = ['Yes', 'No'];
@@ -142,12 +145,26 @@ exports.getAllPatientLabTests = async (req, res) => {
 exports.getPatientLabTestById = async (req, res) => {
   try {
     const { id } = req.params;
+    
+    // Check if this is a common endpoint that was accessed via GET instead of POST
+    if (id === 'upload-files' || id === 'get-folder') {
+      return res.status(405).json({
+        success: false,
+        message: `Method not allowed. The endpoint '/${id}' requires a ${id === 'upload-files' ? 'POST' : 'GET'} request, but you are using ${req.method}.`,
+        hint: id === 'upload-files' 
+          ? 'For file uploads, use POST method with multipart/form-data and FormData in your request body.'
+          : 'This endpoint should be accessed directly, not as a path parameter.',
+      });
+    }
+    
     // Validate that id is an integer
     const patientLabTestId = parseInt(id, 10);
     if (isNaN(patientLabTestId)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid PatientLabTestsId. Must be an integer.'
+        message: 'Invalid PatientLabTestsId. Must be an integer.',
+        receivedId: id,
+        hint: 'If you are trying to access a specific endpoint, make sure you are using the correct HTTP method (GET, POST, PUT, DELETE).'
       });
     }
     const { rows } = await db.query(
@@ -264,6 +281,12 @@ const validatePatientLabTestPayload = (body, requireAll = true) => {
   return errors;
 };
 
+/**
+ * Create a new patient lab test
+ * PatientType can be: 'OPD', 'Emergency', 'IPD', or 'Direct'
+ * Note: For 'Direct' PatientType, AppointmentId, RoomAdmissionId, and EmergencyBedSlotId should be null
+ * as Direct patients don't come through appointments, room admissions, or emergency slots
+ */
 exports.createPatientLabTest = async (req, res) => {
   try {
     const errors = validatePatientLabTestPayload(req.body, true);
@@ -288,6 +311,28 @@ exports.createPatientLabTest = async (req, res) => {
       Status = 'Active',
       CreatedBy,
     } = req.body;
+
+    // For Direct PatientType, ensure AppointmentId, RoomAdmissionId, and EmergencyBedSlotId are null
+    if (PatientType === 'Direct') {
+      if (AppointmentId !== undefined && AppointmentId !== null && AppointmentId !== '') {
+        return res.status(400).json({
+          success: false,
+          message: 'AppointmentId should be null for Direct PatientType',
+        });
+      }
+      if (RoomAdmissionId !== undefined && RoomAdmissionId !== null && RoomAdmissionId !== '') {
+        return res.status(400).json({
+          success: false,
+          message: 'RoomAdmissionId should be null for Direct PatientType',
+        });
+      }
+      if (EmergencyBedSlotId !== undefined && EmergencyBedSlotId !== null && EmergencyBedSlotId !== '') {
+        return res.status(400).json({
+          success: false,
+          message: 'EmergencyBedSlotId should be null for Direct PatientType',
+        });
+      }
+    }
 
     // Validate CreatedBy if provided
     let createdByValue = null;
@@ -462,6 +507,28 @@ exports.updatePatientLabTest = async (req, res) => {
       Status,
       CreatedBy,
     } = req.body;
+
+    // If PatientType is being updated to 'Direct', ensure AppointmentId, RoomAdmissionId, and EmergencyBedSlotId are null
+    if (PatientType === 'Direct') {
+      if (AppointmentId !== undefined && AppointmentId !== null && AppointmentId !== '') {
+        return res.status(400).json({
+          success: false,
+          message: 'AppointmentId should be null for Direct PatientType',
+        });
+      }
+      if (RoomAdmissionId !== undefined && RoomAdmissionId !== null && RoomAdmissionId !== '') {
+        return res.status(400).json({
+          success: false,
+          message: 'RoomAdmissionId should be null for Direct PatientType',
+        });
+      }
+      if (EmergencyBedSlotId !== undefined && EmergencyBedSlotId !== null && EmergencyBedSlotId !== '') {
+        return res.status(400).json({
+          success: false,
+          message: 'EmergencyBedSlotId should be null for Direct PatientType',
+        });
+      }
+    }
 
     // Validate AppointmentId if provided
     let appointmentIdValue = null;
@@ -1573,6 +1640,387 @@ exports.getDoctorWiseCounts = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching doctor wise counts',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Create multer middleware for patient lab test file uploads
+ * Accepts PatientNo_PatientName as query parameter or form field
+ * Creates a folder with format: patientNo_PatientName_Date
+ */
+const createPatientLabTestUploadMiddleware = () => {
+  return multer({
+    storage: multer.diskStorage({
+      destination: function (req, file, cb) {
+        try {
+          // Get PatientNo_PatientName from query or body
+          const PatientNo_PatientName = (req.query.PatientNo_PatientName || 
+                                       (req.body && req.body.PatientNo_PatientName) || '').trim();
+
+          if (!PatientNo_PatientName) {
+            return cb(new Error('PatientNo_PatientName parameter is required'));
+          }
+
+          // Get current date in YYYY-MM-DD format
+          const currentDate = new Date().toISOString().split('T')[0];
+          
+          // Create folder name: patientNo_PatientName_Date
+          const folderName = `${PatientNo_PatientName}_${currentDate}`;
+          
+          // Create uploads directory if it doesn't exist
+          const uploadsDir = path.join(__dirname, '..', 'uploads');
+          if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+          }
+
+          // Create patient-specific folder
+          const patientFolder = path.join(uploadsDir, folderName);
+          if (!fs.existsSync(patientFolder)) {
+            fs.mkdirSync(patientFolder, { recursive: true });
+          }
+
+          // Store folder info in request for later use
+          req.uploadFolderName = folderName;
+          req.uploadFolderPath = patientFolder;
+          console.log('*****************patientFolder', patientFolder);  
+          console.log('folderName', folderName);  
+
+          cb(null, patientFolder);
+        } catch (error) {
+          cb(error);
+        }
+      },
+      filename: function (req, file, cb) {
+        // Generate unique filename: originalname_timestamp.ext
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const ext = path.extname(file.originalname);
+        const name = path.basename(file.originalname, ext);
+        cb(null, `${name}_${uniqueSuffix}${ext}`);
+      }
+    }),
+    limits: {
+      fileSize: 10 * 1024 * 1024 // 10MB limit
+    },
+    fileFilter: function (req, file, cb) {
+      // Accept all file types, or you can add specific file type validation here
+      cb(null, true);
+    }
+  });
+};
+
+/**
+ * Upload files for a patient lab test
+ * Accepts PatientNo_PatientName parameter (query or form field) and creates a folder with format: patientNo_PatientName_Date
+ * Saves uploaded files to that folder
+ */
+exports.uploadPatientLabTestFiles = async (req, res) => {
+  try {
+    // Get PatientNo_PatientName from query or body
+    const PatientNo_PatientName = (req.query.PatientNo_PatientName || req.body.PatientNo_PatientName || '').trim();
+    console.log('&&&&&&&&&&&&&&PatientNo_PatientName', PatientNo_PatientName);  
+    if (!PatientNo_PatientName) {
+      return res.status(400).json({
+        success: false,
+        message: 'PatientNo_PatientName parameter is required (as query parameter or form field)',
+      });
+    }
+
+    // Create multer middleware
+    const upload = createPatientLabTestUploadMiddleware();
+    
+    // Handle single or multiple files
+    // Try to use a specific field name first (common: 'files', 'file', 'upload')
+    // If that doesn't work, fall back to .any() to accept files with any field name
+    // This prevents "Unexpected field" errors when other form fields are present
+    
+    // Check Content-Type to ensure it's multipart/form-data
+    // Note: Some clients may not set this header initially, so we'll let multer handle it
+    const contentType = req.headers['content-type'] || '';
+    if (contentType && !contentType.includes('multipart/form-data')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Content-Type must be multipart/form-data for file uploads',
+        receivedContentType: contentType,
+        hint: 'Make sure you are using FormData in your frontend and not manually setting Content-Type header',
+      });
+    }
+    
+    // Use .any() to accept files with any field name (most flexible)
+    const uploadMiddleware = upload.any(); // Accept any field name for files
+
+    uploadMiddleware(req, res, function (err) {
+      // Debug logging
+      console.log('Upload middleware callback called');
+      console.log('req.files:', req.files);
+      console.log('req.body:', req.body);
+      console.log('Error:', err);
+      
+      if (err instanceof multer.MulterError) {
+        console.log('MulterError:', err.code, err.message);
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({
+            success: false,
+            message: 'File size too large. Maximum size is 10MB',
+          });
+        }
+        if (err.code === 'LIMIT_FILE_COUNT') {
+          return res.status(400).json({
+            success: false,
+            message: 'Too many files. Maximum is 10 files',
+          });
+        }
+        if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+          return res.status(400).json({
+            success: false,
+            message: 'Unexpected file field. Please check your form field names.',
+            error: err.message,
+          });
+        }
+        return res.status(400).json({
+          success: false,
+          message: 'File upload error',
+          error: err.message,
+          code: err.code,
+        });
+      } else if (err) {
+        console.log('Non-multer error:', err);
+        return res.status(500).json({
+          success: false,
+          message: 'Error uploading files',
+          error: err.message,
+        });
+      }
+
+      // Check for files - multer.any() puts files in req.files array
+      // Also check if files might be in a different location
+      let uploadedFiles = [];
+      
+      if (req.files && Array.isArray(req.files)) {
+        // Filter to only include actual file objects (not text fields)
+        uploadedFiles = req.files.filter(file => file && file.fieldname && file.originalname);
+      } else if (req.files && typeof req.files === 'object') {
+        // If req.files is an object, convert to array
+        uploadedFiles = Object.values(req.files).flat().filter(file => file && file.fieldname && file.originalname);
+      }
+      
+      console.log('Filtered uploadedFiles:', uploadedFiles.length, uploadedFiles);
+      
+      // If no files were uploaded
+      if (uploadedFiles.length === 0) {
+        // Provide helpful debugging information
+        const debugInfo = {
+          hasFiles: !!req.files,
+          filesType: typeof req.files,
+          filesValue: req.files,
+          filesLength: req.files ? (Array.isArray(req.files) ? req.files.length : Object.keys(req.files).length) : 0,
+          contentType: req.headers['content-type'],
+          method: req.method,
+          url: req.url,
+          bodyKeys: req.body ? Object.keys(req.body) : [],
+        };
+        
+        console.log('No files uploaded. Debug info:', debugInfo);
+        
+        return res.status(400).json({
+          success: false,
+          message: 'No files were uploaded. Please ensure you are sending files in the request with Content-Type: multipart/form-data.',
+          hint: 'Make sure your frontend is sending files using FormData and the request has Content-Type: multipart/form-data',
+          debug: debugInfo,
+        });
+      }
+
+      // Limit to 10 files (since upload.any() doesn't have a limit parameter)
+      if (uploadedFiles.length > 10) {
+        return res.status(400).json({
+          success: false,
+          message: 'Too many files. Maximum is 10 files',
+        });
+      }
+
+      // Prepare response with uploaded file information
+      const fileDetails = uploadedFiles.map(file => ({
+        originalName: file.originalname,
+        fileName: file.filename,
+        filePath: path.relative(path.join(__dirname, '..'), file.path),
+        size: file.size,
+        mimetype: file.mimetype,
+      }));
+
+      res.status(200).json({
+        success: true,
+        message: `Files uploaded successfully to folder: ${req.uploadFolderName}`,
+        folderName: req.uploadFolderName,
+        folderPath: path.relative(path.join(__dirname, '..'), req.uploadFolderPath),
+        filesCount: fileDetails.length,
+        files: fileDetails,
+      });
+    });
+
+  } catch (error) {
+    console.error('Error in uploadPatientLabTestFiles:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({
+      success: false,
+      message: 'Error uploading patient lab test files',
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+    });
+  }
+};
+
+/**
+ * Get folder information for a patient lab test
+ * Accepts PatientNo_PatientName parameter and optional date
+ * Returns folder name and URL/path information
+ * Query Parameters:
+ *   - PatientNo_PatientName: String (required) - Format: "PatientNo_PatientName" (e.g., "P001_JohnDoe")
+ *   - date: String (optional) - Format: "YYYY-MM-DD" - If provided, returns specific date folder, otherwise returns all folders
+ */
+exports.getPatientLabTestFolder = async (req, res) => {
+  try {
+    const { PatientNo_PatientName, date } = req.query;
+
+    if (!PatientNo_PatientName) {
+      return res.status(400).json({
+        success: false,
+        message: 'PatientNo_PatientName parameter is required',
+      });
+    }
+
+    // Get uploads directory
+    const uploadsDir = path.join(__dirname, '..', 'uploads');
+    
+    if (!fs.existsSync(uploadsDir)) {
+      return res.status(200).json({
+        success: true,
+        message: 'No folders found for this patient',
+        PatientNo_PatientName: PatientNo_PatientName,
+        folders: [],
+        count: 0,
+      });
+    }
+
+    // If date is provided, return specific folder
+    if (date) {
+      // Validate date format
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(date)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date format. Please use YYYY-MM-DD format (e.g., 2025-01-15)',
+        });
+      }
+
+      const folderName = `${PatientNo_PatientName}_${date}`;
+      const folderPath = path.join(uploadsDir, folderName);
+      const folderExists = fs.existsSync(folderPath);
+
+      if (!folderExists) {
+        return res.status(404).json({
+          success: false,
+          message: `Folder not found for ${PatientNo_PatientName} on date ${date}`,
+          PatientNo_PatientName: PatientNo_PatientName,
+          date: date,
+          folderName: folderName,
+        });
+      }
+
+      // Get folder contents
+      const files = fs.readdirSync(folderPath);
+      const fileDetails = files.map(file => {
+        const filePath = path.join(folderPath, file);
+        const stats = fs.statSync(filePath);
+        return {
+          fileName: file,
+          filePath: path.relative(path.join(__dirname, '..'), filePath),
+          fileUrl: `/uploads/${folderName}/${file}`,
+          size: stats.size,
+          createdDate: stats.birthtime,
+          modifiedDate: stats.mtime,
+          isDirectory: stats.isDirectory(),
+        };
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: `Folder found for ${PatientNo_PatientName} on date ${date}`,
+        PatientNo_PatientName: PatientNo_PatientName,
+        date: date,
+        folderName: folderName,
+        folderPath: path.relative(path.join(__dirname, '..'), folderPath),
+        folderUrl: `/uploads/${folderName}`,
+        filesCount: fileDetails.filter(f => !f.isDirectory).length,
+        files: fileDetails.filter(f => !f.isDirectory),
+      });
+    }
+
+    // If no date provided, return all folders for this patient
+    const allFolders = fs.readdirSync(uploadsDir);
+    const patientFolders = allFolders.filter(folder => {
+      const folderPath = path.join(uploadsDir, folder);
+      if (!fs.statSync(folderPath).isDirectory()) {
+        return false;
+      }
+      // Check if folder name starts with PatientNo_PatientName
+      return folder.startsWith(`${PatientNo_PatientName}_`);
+    });
+
+    if (patientFolders.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'No folders found for this patient',
+        PatientNo_PatientName: PatientNo_PatientName,
+        folders: [],
+        count: 0,
+      });
+    }
+
+    // Get details for each folder
+    const folderDetails = patientFolders.map(folderName => {
+      const folderPath = path.join(uploadsDir, folderName);
+      const stats = fs.statSync(folderPath);
+      const files = fs.readdirSync(folderPath);
+      const fileCount = files.filter(file => {
+        const filePath = path.join(folderPath, file);
+        return fs.statSync(filePath).isFile();
+      }).length;
+
+      // Extract date from folder name (format: PatientNo_PatientName_YYYY-MM-DD)
+      const dateMatch = folderName.match(/_(\d{4}-\d{2}-\d{2})$/);
+      const folderDate = dateMatch ? dateMatch[1] : null;
+
+      return {
+        folderName: folderName,
+        folderPath: path.relative(path.join(__dirname, '..'), folderPath),
+        folderUrl: `/uploads/${folderName}`,
+        date: folderDate,
+        createdDate: stats.birthtime,
+        modifiedDate: stats.mtime,
+        filesCount: fileCount,
+      };
+    });
+
+    // Sort by date (most recent first)
+    folderDetails.sort((a, b) => {
+      if (a.date && b.date) {
+        return new Date(b.date) - new Date(a.date);
+      }
+      return new Date(b.modifiedDate) - new Date(a.modifiedDate);
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Found ${folderDetails.length} folder(s) for ${PatientNo_PatientName}`,
+      PatientNo_PatientName: PatientNo_PatientName,
+      count: folderDetails.length,
+      folders: folderDetails,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving patient lab test folder information',
       error: error.message,
     });
   }

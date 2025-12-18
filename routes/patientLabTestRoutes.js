@@ -250,6 +250,49 @@ Response: {
 } */
 router.get('/', patientLabTestController.getAllPatientLabTests);
 
+/* GET /api/patient-lab-tests/get-folder
+Query Parameters:
+  - PatientNo_PatientName: String (required), // Format: "PatientNo_PatientName" (e.g., "P001_JohnDoe")
+  - date: String (optional), // Format: "YYYY-MM-DD" (e.g., "2025-01-15") - If provided, returns specific date folder
+Response (with date):
+  {
+    success: Boolean,
+    message: String,
+    PatientNo_PatientName: String,
+    date: String,
+    folderName: String,
+    folderPath: String,
+    folderUrl: String,
+    filesCount: Number,
+    files: Array<{
+      fileName: String,
+      filePath: String,
+      fileUrl: String,
+      size: Number,
+      createdDate: Date,
+      modifiedDate: Date,
+      isDirectory: Boolean
+    }>
+  }
+Response (without date - returns all folders):
+  {
+    success: Boolean,
+    message: String,
+    PatientNo_PatientName: String,
+    count: Number,
+    folders: Array<{
+      folderName: String,
+      folderPath: String,
+      folderUrl: String,
+      date: String | null,
+      createdDate: Date,
+      modifiedDate: Date,
+      filesCount: Number
+    }>
+  }
+} */
+router.get('/get-folder', patientLabTestController.getPatientLabTestFolder);
+
 /* GET /api/patient-lab-tests/:id
 Path Parameters:
   - id: Number, (required)
@@ -330,6 +373,27 @@ Response: {
   }
 } */
 router.post('/', patientLabTestController.createPatientLabTest);
+
+/* POST /api/patient-lab-tests/upload-files
+Query Parameters or Form Field:
+  - PatientNo_PatientName: String (required), // Format: "PatientNo_PatientName" (e.g., "P001_JohnDoe")
+Request Body (multipart/form-data):
+  - files: File[] (required), // One or more files to upload (max 10 files, 10MB each)
+Response: {
+  success: Boolean,
+  message: String,
+  folderName: String, // Format: "PatientNo_PatientName_YYYY-MM-DD"
+  folderPath: String,
+  filesCount: Number,
+  files: Array<{
+    originalName: String,
+    fileName: String,
+    filePath: String,
+    size: Number,
+    mimetype: String
+  }>
+} */
+router.post('/upload-files', patientLabTestController.uploadPatientLabTestFiles);
 
 /* PUT /api/patient-lab-tests/:id
 Path Parameters:
