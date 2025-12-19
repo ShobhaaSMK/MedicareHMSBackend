@@ -1719,7 +1719,7 @@ exports.uploadPatientLabTestFiles = async (req, res) => {
   try {
     // Get PatientNo_PatientName from query or body
     const PatientNo_PatientName = (req.query.PatientNo_PatientName || req.body.PatientNo_PatientName || '').trim();
-    console.log('&&&&&&&&&&&&&&PatientNo_PatientName', PatientNo_PatientName);  
+    console.log('PatientNo_PatientName', PatientNo_PatientName);  
     if (!PatientNo_PatientName) {
       return res.status(400).json({
         success: false,
@@ -1843,7 +1843,7 @@ exports.uploadPatientLabTestFiles = async (req, res) => {
       const fileDetails = uploadedFiles.map(file => ({
         originalName: file.originalname,
         fileName: file.filename,
-        filePath: path.relative(path.join(__dirname, '..'), file.path),
+        filePath: file.path, // Complete absolute file path
         size: file.size,
         mimetype: file.mimetype,
       }));
@@ -1852,7 +1852,7 @@ exports.uploadPatientLabTestFiles = async (req, res) => {
         success: true,
         message: `Files uploaded successfully to folder: ${req.uploadFolderName}`,
         folderName: req.uploadFolderName,
-        folderPath: path.relative(path.join(__dirname, '..'), req.uploadFolderPath),
+        folderPath: req.uploadFolderPath, // Complete absolute folder path
         filesCount: fileDetails.length,
         files: fileDetails,
       });
