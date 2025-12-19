@@ -119,10 +119,9 @@ Response: {
     emergencyBedSlotId: Number | null, // EmergencyBedSlotId from RoomAdmission
     emergencyAdmissionId: Number | null, // Latest EmergencyAdmissionId based on EmergencyAdmissionDate
     emergencyAdmissionDate: Date | null, // Latest EmergencyAdmissionDate
-    emergencyAdmissionBedSlotId: Number | null, // EmergencyBedSlotId from latest EmergencyAdmission
+    emergencyAdmissionBedId: Number | null, // EmergencyBedId from latest EmergencyAdmission
     emergencyStatus: String | null, // Latest EmergencyStatus from EmergencyAdmission
-    emergencyBedNo: String | null, // Emergency Bed No from latest EmergencyAdmission
-    eBedSlotNo: String | null // Emergency Bed Slot No (EBedSlotNo) from latest EmergencyAdmission
+    emergencyBedNo: String | null // Emergency Bed No from latest EmergencyAdmission
   }]
 } */
 router.get('/data', roomAdmissionController.getRoomAdmissionsData);

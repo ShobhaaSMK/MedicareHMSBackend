@@ -611,9 +611,10 @@ CREATE TABLE IF NOT EXISTS "EmergencyAdmission" (
     "EmergencyAdmissionId" SERIAL PRIMARY KEY,
     "DoctorId" INTEGER NOT NULL,
     "PatientId" UUID NOT NULL,
-    "EmergencyBedSlotId" INTEGER NOT NULL,
+    "EmergencyBedId" INTEGER NOT NULL,
     "EmergencyAdmissionDate" DATE NOT NULL,
     "EmergencyStatus" VARCHAR(50) CHECK ("EmergencyStatus" IN ('Admitted', 'IPD', 'OT', 'ICU', 'Discharged')),
+    "Priority" VARCHAR(50),
     "AllocationFromDate" DATE,
     "AllocationToDate" DATE,
     "NumberOfDays" INTEGER,
@@ -630,7 +631,7 @@ CREATE TABLE IF NOT EXISTS "EmergencyAdmission" (
     "Status" VARCHAR(50) DEFAULT 'Active',
     FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
-    FOREIGN KEY ("EmergencyBedSlotId") REFERENCES "EmergencyBedSlot"("EmergencyBedSlotId") ON DELETE RESTRICT,
+    FOREIGN KEY ("EmergencyBedId") REFERENCES "EmergencyBed"("EmergencyBedId") ON DELETE RESTRICT,
     FOREIGN KEY ("AdmissionCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
@@ -971,7 +972,7 @@ BEGIN
 END $$;
 CREATE INDEX IF NOT EXISTS idx_emergencyadmission_doctorid ON "EmergencyAdmission"("DoctorId");
 CREATE INDEX IF NOT EXISTS idx_emergencyadmission_patientid ON "EmergencyAdmission"("PatientId");
-CREATE INDEX IF NOT EXISTS idx_emergencyadmission_emergencybedslotid ON "EmergencyAdmission"("EmergencyBedSlotId");
+CREATE INDEX IF NOT EXISTS idx_emergencyadmission_emergencybedid ON "EmergencyAdmission"("EmergencyBedId");
 CREATE INDEX IF NOT EXISTS idx_emergencyadmission_emergencystatus ON "EmergencyAdmission"("EmergencyStatus");
 CREATE INDEX IF NOT EXISTS idx_emergencyadmission_status ON "EmergencyAdmission"("Status");
 CREATE INDEX IF NOT EXISTS idx_emergencyadmission_admissiondate ON "EmergencyAdmission"("EmergencyAdmissionDate");

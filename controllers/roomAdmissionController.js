@@ -1036,10 +1036,9 @@ exports.getRoomAdmissionsData = async (req, res) => {
         latest_appt."TokenNo" as "AppointmentTokenNo",
         latest_emergency."EmergencyAdmissionId" as "EmergencyAdmissionId",
         latest_emergency."EmergencyAdmissionDate" as "EmergencyAdmissionDate",
-        latest_emergency."EmergencyBedSlotId" as "EmergencyAdmissionBedSlotId",
+        latest_emergency."EmergencyBedId" as "EmergencyAdmissionBedId",
         latest_emergency."EmergencyStatus" as "EmergencyStatus",
-        latest_emergency."EmergencyBedNo" as "EmergencyBedNo",
-        latest_emergency."EBedSlotNo" as "EBedSlotNo"
+        latest_emergency."EmergencyBedNo" as "EmergencyBedNo"
       FROM "RoomAdmission" ra
       INNER JOIN "RoomBeds" rb ON ra."RoomBedsId" = rb."RoomBedsId"
       INNER JOIN "PatientRegistration" p ON ra."PatientId" = p."PatientId"
@@ -1059,13 +1058,11 @@ exports.getRoomAdmissionsData = async (req, res) => {
         SELECT 
           ea."EmergencyAdmissionId",
           ea."EmergencyAdmissionDate",
-          ea."EmergencyBedSlotId",
+          ea."EmergencyBedId",
           ea."EmergencyStatus",
-          ebs."EBedSlotNo",
           eb."EmergencyBedNo"
         FROM "EmergencyAdmission" ea
-        LEFT JOIN "EmergencyBedSlot" ebs ON ea."EmergencyBedSlotId" = ebs."EmergencyBedSlotId"
-        LEFT JOIN "EmergencyBed" eb ON ebs."EmergencyBedId" = eb."EmergencyBedId"
+        LEFT JOIN "EmergencyBed" eb ON ea."EmergencyBedId" = eb."EmergencyBedId"
         WHERE ea."PatientId" = ra."PatientId"
         ORDER BY ea."EmergencyAdmissionDate" DESC, ea."EmergencyAdmissionId" DESC
         LIMIT 1
@@ -1127,10 +1124,9 @@ exports.getRoomAdmissionsData = async (req, res) => {
         emergencyBedSlotId: row.EmergencyBedSlotId || row.emergencybedslotid || null,
         emergencyAdmissionId: row.EmergencyAdmissionId || row.emergencyadmissionid || null,
         emergencyAdmissionDate: row.EmergencyAdmissionDate || row.emergencyadmissiondate || null,
-        emergencyAdmissionBedSlotId: row.EmergencyAdmissionBedSlotId || row.emergencyadmissionbedslotid || null,
+        emergencyAdmissionBedId: row.EmergencyAdmissionBedId || row.emergencyadmissionbedid || null,
         emergencyStatus: row.EmergencyStatus || row.emergencystatus || null,
-        emergencyBedNo: row.EmergencyBedNo || row.emergencybedno || null,
-        eBedSlotNo: row.EBedSlotNo || row.ebedslotno || null
+        emergencyBedNo: row.EmergencyBedNo || row.emergencybedno || null
       };
     });
     

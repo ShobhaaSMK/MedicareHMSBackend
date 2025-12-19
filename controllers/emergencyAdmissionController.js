@@ -9,9 +9,10 @@ const mapEmergencyAdmissionRow = (row) => ({
   EmergencyAdmissionId: row.EmergencyAdmissionId || row.emergencyadmissionid,
   DoctorId: row.DoctorId || row.doctorid,
   PatientId: row.PatientId || row.patientid,
-  EmergencyBedSlotId: row.EmergencyBedSlotId || row.emergencybedslotid,
+  EmergencyBedId: row.EmergencyBedId || row.emergencybedid,
   EmergencyAdmissionDate: row.EmergencyAdmissionDate || row.emergencyadmissiondate,
   EmergencyStatus: row.EmergencyStatus || row.emergencystatus,
+  Priority: row.Priority || row.priority || null,
   AllocationFromDate: row.AllocationFromDate || row.allocationfromdate,
   AllocationToDate: row.AllocationToDate || row.allocationtodate,
   NumberOfDays: row.NumberOfDays || row.numberofdays,
@@ -30,16 +31,15 @@ const mapEmergencyAdmissionRow = (row) => ({
   PatientName: row.PatientName || row.patientname || null,
   PatientNo: row.PatientNo || row.patientno || null,
   DoctorName: row.DoctorName || row.doctorname || null,
-  EBedSlotNo: row.EBedSlotNo || row.ebedslotno || null,
   EmergencyBedNo: row.EmergencyBedNo || row.emergencybedno || null,
   CreatedByName: row.CreatedByName || row.createdbyname || null,
   EmergencyAdmissionId_EmergencyAdmissionDate: row.EmergencyAdmissionId_EmergencyAdmissionDate || row.emergencyadmissionid_emergencyadmissiondate || null,
-  EmergencyBedId_emergency_BedSlotId_AllocationFromDate: row.EmergencyBedId_emergency_BedSlotId_AllocationFromDate || row.emergencybedid_emergency_bedslotid_allocationfromdate || null,
+  EmergencyBedId_AllocationFromDate: row.EmergencyBedId_AllocationFromDate || row.emergencybedid_allocationfromdate || null,
 });
 
 exports.getAllEmergencyAdmissions = async (req, res) => {
   try {
-    const { status, emergencyStatus, patientId, doctorId, emergencyBedSlotId } = req.query;
+    const { status, emergencyStatus, patientId, doctorId, emergencyBedId } = req.query;
     let query = 'SELECT * FROM "EmergencyAdmission"';
     const params = [];
     const conditions = [];
@@ -70,11 +70,11 @@ exports.getAllEmergencyAdmissions = async (req, res) => {
         params.push(doctorIdInt);
       }
     }
-    if (emergencyBedSlotId) {
-      const emergencyBedSlotIdInt = parseInt(emergencyBedSlotId, 10);
-      if (!isNaN(emergencyBedSlotIdInt)) {
-        conditions.push(`"EmergencyBedSlotId" = $${params.length + 1}`);
-        params.push(emergencyBedSlotIdInt);
+    if (emergencyBedId) {
+      const emergencyBedIdInt = parseInt(emergencyBedId, 10);
+      if (!isNaN(emergencyBedIdInt)) {
+        conditions.push(`"EmergencyBedId" = $${params.length + 1}`);
+        params.push(emergencyBedIdInt);
       }
     }
 
@@ -221,16 +221,14 @@ exports.getEmergencyAdmissionsByPatientId = async (req, res) => {
         ea.*,
         p."PatientName", p."PatientNo",
         d."UserName" AS "DoctorName",
-        ebs."EBedSlotNo",
         e."EmergencyBedNo",
         u."UserName" AS "CreatedByName",
-        CONCAT(ebs."EBedSlotNo", '_', ea."EmergencyAdmissionDate"::text) AS "EmergencyAdmissionId_EmergencyAdmissionDate",
-        CONCAT(COALESCE(e."EmergencyBedId"::text, ''), '_', COALESCE(ea."EmergencyBedSlotId"::text, ''), '_', COALESCE(ea."AllocationFromDate"::text, '')) AS "EmergencyBedId_emergency_BedSlotId_AllocationFromDate"
+        CONCAT(ea."EmergencyAdmissionId"::text, '_', ea."EmergencyAdmissionDate"::text) AS "EmergencyAdmissionId_EmergencyAdmissionDate",
+        CONCAT(COALESCE(ea."EmergencyBedId"::text, ''), '_', COALESCE(ea."AllocationFromDate"::text, '')) AS "EmergencyBedId_AllocationFromDate"
       FROM "EmergencyAdmission" ea
       LEFT JOIN "PatientRegistration" p ON ea."PatientId" = p."PatientId"
       LEFT JOIN "Users" d ON ea."DoctorId" = d."UserId"
-      LEFT JOIN "EmergencyBedSlot" ebs ON ea."EmergencyBedSlotId" = ebs."EmergencyBedSlotId"
-      LEFT JOIN "EmergencyBed" e ON ebs."EmergencyBedId" = e."EmergencyBedId"
+      LEFT JOIN "EmergencyBed" e ON ea."EmergencyBedId" = e."EmergencyBedId"
       LEFT JOIN "Users" u ON ea."AdmissionCreatedBy" = u."UserId"
       WHERE ea."PatientId" = $1::uuid
     `;
@@ -305,13 +303,13 @@ const validateEmergencyAdmissionPayload = (body, requireAll = true) => {
     }
   }
 
-  if (requireAll && body.EmergencyBedSlotId === undefined) {
-    errors.push('EmergencyBedSlotId is required');
+  if (requireAll && body.EmergencyBedId === undefined) {
+    errors.push('EmergencyBedId is required');
   }
-  if (body.EmergencyBedSlotId !== undefined && body.EmergencyBedSlotId !== null) {
-    const emergencyBedSlotIdInt = parseInt(body.EmergencyBedSlotId, 10);
-    if (isNaN(emergencyBedSlotIdInt)) {
-      errors.push('EmergencyBedSlotId must be a valid integer');
+  if (body.EmergencyBedId !== undefined && body.EmergencyBedId !== null) {
+    const emergencyBedIdInt = parseInt(body.EmergencyBedId, 10);
+    if (isNaN(emergencyBedIdInt)) {
+      errors.push('EmergencyBedId must be a valid integer');
     }
   }
 
@@ -389,6 +387,10 @@ const validateEmergencyAdmissionPayload = (body, requireAll = true) => {
     errors.push('Status must be Active or Inactive');
   }
 
+  if (body.Priority !== undefined && body.Priority !== null && typeof body.Priority !== 'string') {
+    errors.push('Priority must be a string');
+  }
+
   return errors;
 };
 
@@ -402,9 +404,10 @@ exports.createEmergencyAdmission = async (req, res) => {
     const {
       DoctorId,
       PatientId,
-      EmergencyBedSlotId,
+      EmergencyBedId,
       EmergencyAdmissionDate,
       EmergencyStatus,
+      Priority,
       AllocationFromDate,
       AllocationToDate,
       NumberOfDays,
@@ -423,20 +426,21 @@ exports.createEmergencyAdmission = async (req, res) => {
     // EmergencyAdmissionId is auto-generated by PostgreSQL SERIAL, so we don't include it in INSERT
     const insertQuery = `
       INSERT INTO "EmergencyAdmission"
-        ("DoctorId", "PatientId", "EmergencyBedSlotId", "EmergencyAdmissionDate",
-         "EmergencyStatus", "AllocationFromDate", "AllocationToDate", "NumberOfDays", "Diagnosis",
+        ("DoctorId", "PatientId", "EmergencyBedId", "EmergencyAdmissionDate",
+         "EmergencyStatus", "Priority", "AllocationFromDate", "AllocationToDate", "NumberOfDays", "Diagnosis",
          "TreatementDetails", "PatientCondition", "TransferToIPD", "TransferToOT", "TransferToICU",
          "TransferTo", "TransferDetails", "AdmissionCreatedBy", "Status")
-      VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       RETURNING *;
     `;
 
     const { rows } = await db.query(insertQuery, [
       parseInt(DoctorId, 10),
       PatientId, // UUID, not parsed as integer
-      parseInt(EmergencyBedSlotId, 10),
+      parseInt(EmergencyBedId, 10),
       EmergencyAdmissionDate,
       EmergencyStatus || null,
+      Priority || null,
       AllocationFromDate || null,
       AllocationToDate || null,
       NumberOfDays ? parseInt(NumberOfDays, 10) : null,
@@ -462,7 +466,15 @@ exports.createEmergencyAdmission = async (req, res) => {
       // Foreign key constraint violation
       return res.status(400).json({
         success: false,
-        message: 'Invalid DoctorId, PatientId, or EmergencyBedSlotId. Please ensure they exist.',
+        message: 'Invalid DoctorId, PatientId, or EmergencyBedId. Please ensure they exist.',
+        error: error.message,
+      });
+    }
+    if (error.code === '42703') {
+      // Column does not exist
+      return res.status(500).json({
+        success: false,
+        message: 'Database schema error: Priority column may not exist. Please run the migration: node migrations/add_priority_to_emergency_admission.js',
         error: error.message,
       });
     }
@@ -485,9 +497,10 @@ exports.updateEmergencyAdmission = async (req, res) => {
     const {
       DoctorId,
       PatientId,
-      EmergencyBedSlotId,
+      EmergencyBedId,
       EmergencyAdmissionDate,
       EmergencyStatus,
+      Priority,
       AllocationFromDate,
       AllocationToDate,
       NumberOfDays,
@@ -513,12 +526,12 @@ exports.updateEmergencyAdmission = async (req, res) => {
       params.push(DoctorId !== null ? parseInt(DoctorId, 10) : null);
     }
     if (PatientId !== undefined) {
-      updates.push(`"PatientId" = $${paramIndex++}`);
-      params.push(PatientId !== null ? parseInt(PatientId, 10) : null);
+      updates.push(`"PatientId" = $${paramIndex++}::uuid`);
+      params.push(PatientId !== null ? PatientId : null);
     }
-    if (EmergencyBedSlotId !== undefined) {
-      updates.push(`"EmergencyBedSlotId" = $${paramIndex++}`);
-      params.push(EmergencyBedSlotId !== null ? parseInt(EmergencyBedSlotId, 10) : null);
+    if (EmergencyBedId !== undefined) {
+      updates.push(`"EmergencyBedId" = $${paramIndex++}`);
+      params.push(EmergencyBedId !== null ? parseInt(EmergencyBedId, 10) : null);
     }
     if (EmergencyAdmissionDate !== undefined) {
       updates.push(`"EmergencyAdmissionDate" = $${paramIndex++}`);
@@ -527,6 +540,10 @@ exports.updateEmergencyAdmission = async (req, res) => {
     if (EmergencyStatus !== undefined) {
       updates.push(`"EmergencyStatus" = $${paramIndex++}`);
       params.push(EmergencyStatus);
+    }
+    if (Priority !== undefined) {
+      updates.push(`"Priority" = $${paramIndex++}`);
+      params.push(Priority);
     }
     if (AllocationFromDate !== undefined) {
       updates.push(`"AllocationFromDate" = $${paramIndex++}`);
@@ -617,7 +634,7 @@ exports.updateEmergencyAdmission = async (req, res) => {
     if (error.code === '23503') {
       return res.status(400).json({
         success: false,
-        message: 'Invalid DoctorId, PatientId, or EmergencyBedSlotId. Please ensure they exist.',
+        message: 'Invalid DoctorId, PatientId, or EmergencyBedId. Please ensure they exist.',
         error: error.message,
       });
     }
