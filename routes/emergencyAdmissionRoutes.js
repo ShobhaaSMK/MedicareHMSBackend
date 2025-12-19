@@ -3,7 +3,7 @@ const router = express.Router();
 const emergencyAdmissionController = require('../controllers/emergencyAdmissionController');
 
 /* GET /api/emergency-admissions
-Query params: ?status=String (optional), ?emergencyStatus=String (optional), ?patientId=String UUID (optional), ?doctorId=Number (optional), ?emergencyBedSlotId=Number (optional)
+Query params: ?status=String (optional), ?emergencyStatus=String (optional), ?patientId=String UUID (optional), ?doctorId=Number (optional), ?emergencyBedId=Number (optional)
 Response: {
   success: Boolean,
   count: Number,
@@ -11,7 +11,7 @@ Response: {
     EmergencyAdmissionId: Number,
     DoctorId: Number,
     PatientId: String (UUID),
-    EmergencyBedSlotId: Number,
+    EmergencyBedId: Number,
     EmergencyAdmissionDate: Date,
     EmergencyStatus: String | null,
     AllocationFromDate: Date | null,
@@ -42,7 +42,7 @@ Response: {
     EmergencyAdmissionId: Number,
     DoctorId: Number,
     PatientId: String (UUID),
-    EmergencyBedSlotId: Number,
+    EmergencyBedId: Number,
     EmergencyAdmissionDate: Date,
     EmergencyStatus: String | null,
     AllocationFromDate: Date | null,
@@ -73,7 +73,7 @@ Response: {
     EmergencyAdmissionId: Number,
     DoctorId: Number,
     PatientId: String (UUID),
-    EmergencyBedSlotId: Number,
+    EmergencyBedId: Number,
     EmergencyAdmissionDate: Date,
     EmergencyStatus: String | null,
     AllocationFromDate: Date | null,
@@ -105,7 +105,7 @@ Response: {
     EmergencyAdmissionId: Number,
     DoctorId: Number,
     PatientId: String (UUID),
-    EmergencyBedSlotId: Number,
+    EmergencyBedId: Number,
     EmergencyAdmissionDate: Date,
     EmergencyStatus: String | null,
     AllocationFromDate: Date | null,
@@ -125,7 +125,6 @@ Response: {
     PatientName: String | null,
     PatientNo: String | null,
     DoctorName: String | null,
-    EBedSlotNo: String | null,
     EmergencyBedNo: String | null,
     CreatedByName: String | null,
     EmergencyAdmissionId_EmergencyAdmissionDate: String | null
@@ -141,7 +140,7 @@ Response: {
     EmergencyAdmissionId: Number,
     DoctorId: Number,
     PatientId: String (UUID),
-    EmergencyBedSlotId: Number,
+    EmergencyBedId: Number,
     EmergencyAdmissionDate: Date,
     EmergencyStatus: String | null,
     AllocationFromDate: Date | null,
@@ -166,7 +165,7 @@ router.get('/:id', emergencyAdmissionController.getEmergencyAdmissionById);
 Request: {
   DoctorId: Number (required),
   PatientId: String UUID (required),
-  EmergencyBedSlotId: Number (required),
+  EmergencyBedId: Number (required),
   EmergencyAdmissionDate: String (required), // YYYY-MM-DD format
   EmergencyStatus: String (optional), // "Admitted" | "IPD" | "OT" | "ICU" | "Discharged"
   AllocationFromDate: String (optional), // YYYY-MM-DD format
@@ -190,7 +189,7 @@ Response: {
     EmergencyAdmissionId: Number,
     DoctorId: Number,
     PatientId: String (UUID),
-    EmergencyBedSlotId: Number,
+    EmergencyBedId: Number,
     EmergencyAdmissionDate: Date,
     EmergencyStatus: String | null,
     AllocationFromDate: Date | null,
@@ -216,7 +215,7 @@ Params: id (Number)
 Request: {
   DoctorId: Number (optional),
   PatientId: String UUID (optional),
-  EmergencyBedSlotId: Number (optional),
+  EmergencyBedId: Number (optional),
   EmergencyAdmissionDate: String (optional), // YYYY-MM-DD format
   EmergencyStatus: String (optional), // "Admitted" | "IPD" | "OT" | "ICU" | "Discharged"
   AllocationFromDate: String (optional), // YYYY-MM-DD format
@@ -240,7 +239,7 @@ Response: {
     EmergencyAdmissionId: Number,
     DoctorId: Number,
     PatientId: String (UUID),
-    EmergencyBedSlotId: Number,
+    EmergencyBedId: Number,
     EmergencyAdmissionDate: Date,
     EmergencyStatus: String | null,
     AllocationFromDate: Date | null,
@@ -270,7 +269,7 @@ Response: {
     EmergencyAdmissionId: Number,
     DoctorId: Number,
     PatientId: String (UUID),
-    EmergencyBedSlotId: Number,
+    EmergencyBedId: Number,
     EmergencyAdmissionDate: Date,
     EmergencyStatus: String | null,
     AllocationFromDate: Date | null,
