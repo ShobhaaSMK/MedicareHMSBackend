@@ -385,7 +385,7 @@ CREATE TABLE IF NOT EXISTS "PatientLabTest" (
     "LabTestId" INTEGER NOT NULL,
     "AppointmentId" INTEGER,
     "RoomAdmissionId" INTEGER,
-    "EmergencyBedSlotId" INTEGER,
+    "EmergencyAdmissionId" INTEGER,
     "BillId" INTEGER,
     "OrderedByDoctorId" INTEGER,
     "Priority" VARCHAR(50) CHECK ("Priority" IN ('Normal', 'Urgent')),
@@ -399,7 +399,7 @@ CREATE TABLE IF NOT EXISTS "PatientLabTest" (
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("LabTestId") REFERENCES "LabTest"("LabTestId") ON DELETE RESTRICT,
     FOREIGN KEY ("AppointmentId") REFERENCES "PatientAppointment"("PatientAppointmentId") ON DELETE SET NULL,
-    FOREIGN KEY ("EmergencyBedSlotId") REFERENCES "EmergencyBedSlot"("EmergencyBedSlotId") ON DELETE SET NULL,
+    FOREIGN KEY ("EmergencyAdmissionId") REFERENCES "EmergencyAdmission"("EmergencyAdmissionId") ON DELETE SET NULL,
     FOREIGN KEY ("BillId") REFERENCES "Bills"("BillId") ON DELETE SET NULL
 );
 
@@ -524,6 +524,85 @@ BEGIN
                 RAISE NOTICE 'CreatedBy column is not INTEGER type. Please run migration change_createdby_to_integer_patient_lab_test.sql first.';
             END IF;
         END IF;
+        
+        -- Migrate EmergencyBedSlotId to EmergencyAdmissionId if old column exists
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = 'PatientLabTest' 
+            AND column_name = 'EmergencyBedSlotId'
+        ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = 'PatientLabTest' 
+            AND column_name = 'EmergencyAdmissionId'
+        ) THEN
+            -- Drop old foreign key constraint if it exists
+            IF EXISTS (
+                SELECT 1 FROM pg_constraint 
+                WHERE conname = 'PatientLabTest_EmergencyBedSlotId_fkey'
+            ) THEN
+                ALTER TABLE "PatientLabTest" 
+                DROP CONSTRAINT "PatientLabTest_EmergencyBedSlotId_fkey";
+                RAISE NOTICE 'Dropped old PatientLabTest_EmergencyBedSlotId_fkey constraint';
+            END IF;
+            
+            -- Rename the column
+            ALTER TABLE "PatientLabTest" 
+            RENAME COLUMN "EmergencyBedSlotId" TO "EmergencyAdmissionId";
+            RAISE NOTICE 'Renamed EmergencyBedSlotId to EmergencyAdmissionId in PatientLabTest';
+            
+            -- Add new foreign key constraint
+            IF EXISTS (
+                SELECT 1 FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'EmergencyAdmission'
+            ) AND NOT EXISTS (
+                SELECT 1 FROM pg_constraint 
+                WHERE conname = 'PatientLabTest_EmergencyAdmissionId_fkey'
+            ) THEN
+                ALTER TABLE "PatientLabTest" 
+                ADD CONSTRAINT "PatientLabTest_EmergencyAdmissionId_fkey" 
+                FOREIGN KEY ("EmergencyAdmissionId") 
+                REFERENCES "EmergencyAdmission"("EmergencyAdmissionId") 
+                ON DELETE SET NULL;
+                RAISE NOTICE 'Added PatientLabTest_EmergencyAdmissionId_fkey constraint';
+            END IF;
+        END IF;
+        
+        -- Add EmergencyAdmissionId column if it doesn't exist (for new tables)
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = 'PatientLabTest' 
+            AND column_name = 'EmergencyAdmissionId'
+        ) AND NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = 'PatientLabTest' 
+            AND column_name = 'EmergencyBedSlotId'
+        ) THEN
+            ALTER TABLE "PatientLabTest" ADD COLUMN "EmergencyAdmissionId" INTEGER;
+            RAISE NOTICE 'Added EmergencyAdmissionId column to PatientLabTest';
+            
+            -- Add foreign key constraint if EmergencyAdmission table exists
+            IF EXISTS (
+                SELECT 1 FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'EmergencyAdmission'
+            ) AND NOT EXISTS (
+                SELECT 1 FROM pg_constraint 
+                WHERE conname = 'PatientLabTest_EmergencyAdmissionId_fkey'
+            ) THEN
+                ALTER TABLE "PatientLabTest" 
+                ADD CONSTRAINT "PatientLabTest_EmergencyAdmissionId_fkey" 
+                FOREIGN KEY ("EmergencyAdmissionId") 
+                REFERENCES "EmergencyAdmission"("EmergencyAdmissionId") 
+                ON DELETE SET NULL;
+                RAISE NOTICE 'Added PatientLabTest_EmergencyAdmissionId_fkey constraint';
+            END IF;
+        END IF;
+        
     END IF;
 END $$;
 
@@ -1017,6 +1096,16 @@ BEGIN
         AND column_name = 'OrderedByDoctorId'
     ) THEN
         CREATE INDEX IF NOT EXISTS idx_patientlabtest_orderedbydoctorid ON "PatientLabTest"("OrderedByDoctorId");
+    END IF;
+    
+    -- EmergencyAdmissionId index
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientLabTest' 
+        AND column_name = 'EmergencyAdmissionId'
+    ) THEN
+        CREATE INDEX IF NOT EXISTS idx_patientlabtest_emergencyadmissionid ON "PatientLabTest"("EmergencyAdmissionId");
     END IF;
 END $$;
 CREATE INDEX IF NOT EXISTS idx_emergencyadmission_doctorid ON "EmergencyAdmission"("DoctorId");

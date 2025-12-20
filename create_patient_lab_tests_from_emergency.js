@@ -4,13 +4,13 @@ const PORT = process.env.PORT || 4000;
 const BASE_URL = `http://localhost:${PORT}`;
 
 // Sample PatientLabTest records for EmergencyAdmission (Emergency) patients
-// Required: PatientType ('Emergency'), PatientId (UUID), LabTestId (integer), EmergencyBedSlotId (integer)
+// Required: PatientType ('Emergency'), PatientId (UUID), LabTestId (integer), EmergencyAdmissionId (integer)
 const patientLabTests = [
   {
     PatientType: "Emergency",
     PatientId: "b7b06427-a484-439f-9566-b5333ea718a9", // Arjun - from EmergencyAdmission ID 1
     LabTestId: 12, // ECG
-    EmergencyBedSlotId: 10, // Link to EmergencyBedSlot from EmergencyAdmission
+    EmergencyAdmissionId: 1, // Link to EmergencyAdmission (EmergencyAdmissionId)
     Priority: "High",
     LabTestDone: "No",
     TestStatus: "Pending",
@@ -20,7 +20,7 @@ const patientLabTests = [
     PatientType: "Emergency",
     PatientId: "b7b06427-a484-439f-9566-b5333ea718a9", // Arjun - from EmergencyAdmission ID 1
     LabTestId: 15, // Urine Routine
-    EmergencyBedSlotId: 10,
+    EmergencyAdmissionId: 1,
     Priority: "High",
     LabTestDone: "No",
     TestStatus: "Pending",
@@ -30,7 +30,7 @@ const patientLabTests = [
     PatientType: "Emergency",
     PatientId: "5bccd6d7-0acc-4184-9d34-5ec0f940eb00", // Sneha - from EmergencyAdmission ID 2
     LabTestId: 13, // Echocardiography
-    EmergencyBedSlotId: 11,
+    EmergencyAdmissionId: 2,
     Priority: "High",
     LabTestDone: "No",
     TestStatus: "Pending",
@@ -40,7 +40,7 @@ const patientLabTests = [
     PatientType: "Emergency",
     PatientId: "5bccd6d7-0acc-4184-9d34-5ec0f940eb00", // Sneha - from EmergencyAdmission ID 2
     LabTestId: 12, // ECG
-    EmergencyBedSlotId: 11,
+    EmergencyAdmissionId: 2,
     Priority: "High",
     LabTestDone: "No",
     TestStatus: "Pending",
@@ -50,7 +50,7 @@ const patientLabTests = [
     PatientType: "Emergency",
     PatientId: "184ac63a-60dc-4558-8470-b2c2e2a6b817", // Deepak - from EmergencyAdmission ID 3
     LabTestId: 18, // Ultrasound Abdomen
-    EmergencyBedSlotId: 1,
+    EmergencyAdmissionId: 3,
     Priority: "Normal",
     LabTestDone: "No",
     TestStatus: "Pending",
@@ -60,7 +60,7 @@ const patientLabTests = [
     PatientType: "Emergency",
     PatientId: "184ac63a-60dc-4558-8470-b2c2e2a6b817", // Deepak - from EmergencyAdmission ID 3
     LabTestId: 14, // Doppler Study
-    EmergencyBedSlotId: 1,
+    EmergencyAdmissionId: 3,
     Priority: "Normal",
     LabTestDone: "No",
     TestStatus: "Pending",
@@ -70,7 +70,7 @@ const patientLabTests = [
     PatientType: "Emergency",
     PatientId: "7e8715e2-d0c6-40be-b658-021f8f128735", // Karan - from EmergencyAdmission ID 4
     LabTestId: 16, // Urine Culture
-    EmergencyBedSlotId: 12,
+    EmergencyAdmissionId: 4,
     Priority: "Normal",
     LabTestDone: "No",
     TestStatus: "Pending",
@@ -80,7 +80,7 @@ const patientLabTests = [
     PatientType: "Emergency",
     PatientId: "7e8715e2-d0c6-40be-b658-021f8f128735", // Karan - from EmergencyAdmission ID 4
     LabTestId: 17, // Urine Microscopy
-    EmergencyBedSlotId: 12,
+    EmergencyAdmissionId: 4,
     Priority: "Normal",
     LabTestDone: "No",
     TestStatus: "Pending",
@@ -90,7 +90,7 @@ const patientLabTests = [
     PatientType: "Emergency",
     PatientId: "d2023e9e-5b6e-4e22-ba5b-992b6780a72f", // Anjali - from EmergencyAdmission ID 5
     LabTestId: 19, // Ultrasound Pelvis
-    EmergencyBedSlotId: 13,
+    EmergencyAdmissionId: 5,
     Priority: "Normal",
     LabTestDone: "No",
     TestStatus: "Pending",
@@ -100,7 +100,7 @@ const patientLabTests = [
     PatientType: "Emergency",
     PatientId: "d2023e9e-5b6e-4e22-ba5b-992b6780a72f", // Anjali - from EmergencyAdmission ID 5
     LabTestId: 20, // Transvaginal Ultrasound
-    EmergencyBedSlotId: 13,
+    EmergencyAdmissionId: 5,
     Priority: "Normal",
     LabTestDone: "No",
     TestStatus: "Pending",
@@ -123,7 +123,7 @@ async function createPatientLabTest(labTestData) {
     if (response.ok) {
       console.log('✓ Created Patient Lab Test:', result.data.PatientLabTestsId);
       console.log('  Patient ID:', result.data.PatientId);
-      console.log('  Emergency Bed Slot ID:', result.data.EmergencyBedSlotId || 'N/A');
+      console.log('  Emergency Admission ID:', result.data.EmergencyAdmissionId || 'N/A');
       console.log('  Lab Test ID:', result.data.LabTestId);
       console.log('  Test Status:', result.data.TestStatus);
       console.log('  Priority:', result.data.Priority);
@@ -173,7 +173,7 @@ async function main() {
     console.log('\nSuccessfully created Patient Lab Tests:');
     results.forEach((result, index) => {
       if (result) {
-        console.log(`  ${index + 1}. ID ${result.PatientLabTestsId}: Patient ${result.PatientId} - Emergency Bed Slot ${result.EmergencyBedSlotId || 'N/A'} - Lab Test ${result.LabTestId} (${result.TestStatus})`);
+        console.log(`  ${index + 1}. ID ${result.PatientLabTestsId}: Patient ${result.PatientId} - Emergency Admission ${result.EmergencyAdmissionId || 'N/A'} - Lab Test ${result.LabTestId} (${result.TestStatus})`);
       }
     });
   }
@@ -216,7 +216,7 @@ if (typeof fetch === 'undefined') {
             if (res.statusCode >= 200 && res.statusCode < 300) {
               console.log('✓ Created Patient Lab Test:', result.data.PatientLabTestsId);
               console.log('  Patient ID:', result.data.PatientId);
-              console.log('  Emergency Bed Slot ID:', result.data.EmergencyBedSlotId || 'N/A');
+              console.log('  Emergency Admission ID:', result.data.EmergencyAdmissionId || 'N/A');
               console.log('  Lab Test ID:', result.data.LabTestId);
               console.log('  Test Status:', result.data.TestStatus);
               console.log('  Priority:', result.data.Priority);
@@ -277,7 +277,7 @@ if (typeof fetch === 'undefined') {
       console.log('\nSuccessfully created Patient Lab Tests:');
       results.forEach((result, index) => {
         if (result) {
-          console.log(`  ${index + 1}. ID ${result.PatientLabTestsId}: Patient ${result.PatientId} - Emergency Bed Slot ${result.EmergencyBedSlotId || 'N/A'} - Lab Test ${result.LabTestId} (${result.TestStatus})`);
+          console.log(`  ${index + 1}. ID ${result.PatientLabTestsId}: Patient ${result.PatientId} - Emergency Admission ${result.EmergencyAdmissionId || 'N/A'} - Lab Test ${result.LabTestId} (${result.TestStatus})`);
         }
       });
     }

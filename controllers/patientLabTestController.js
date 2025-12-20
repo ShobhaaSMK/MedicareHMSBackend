@@ -1,3 +1,4 @@
+require('dotenv').config();
 const db = require('../db');
 const fs = require('fs');
 const path = require('path');
@@ -16,7 +17,7 @@ const mapPatientLabTestRow = (row) => ({
   LabTestId: row.LabTestId || row.labtestid,
   AppointmentId: row.AppointmentId || row.appointmentid || null,
   RoomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
-  EmergencyBedSlotId: row.EmergencyBedSlotId || row.emergencybedslotid || null,
+  EmergencyAdmissionId: row.EmergencyAdmissionId || row.emergencyadmissionid || null,
   BillId: row.BillId || row.billid || null,
   OrderedByDoctorId: row.OrderedByDoctorId || row.orderedbydoctorid || null,
   Priority: row.Priority || row.priority,
@@ -227,10 +228,10 @@ const validatePatientLabTestPayload = (body, requireAll = true) => {
     }
   }
 
-  if (body.EmergencyBedSlotId !== undefined && body.EmergencyBedSlotId !== null && body.EmergencyBedSlotId !== '') {
-    const emergencyBedSlotIdInt = parseInt(body.EmergencyBedSlotId, 10);
-    if (isNaN(emergencyBedSlotIdInt)) {
-      errors.push('EmergencyBedSlotId must be a valid integer');
+  if (body.EmergencyAdmissionId !== undefined && body.EmergencyAdmissionId !== null && body.EmergencyAdmissionId !== '') {
+    const emergencyAdmissionIdInt = parseInt(body.EmergencyAdmissionId, 10);
+    if (isNaN(emergencyAdmissionIdInt)) {
+      errors.push('EmergencyAdmissionId must be a valid integer');
     }
   }
 
@@ -284,8 +285,8 @@ const validatePatientLabTestPayload = (body, requireAll = true) => {
 /**
  * Create a new patient lab test
  * PatientType can be: 'OPD', 'Emergency', 'IPD', or 'Direct'
- * Note: For 'Direct' PatientType, AppointmentId, RoomAdmissionId, and EmergencyBedSlotId should be null
- * as Direct patients don't come through appointments, room admissions, or emergency slots
+ * Note: For 'Direct' PatientType, AppointmentId, RoomAdmissionId, and EmergencyAdmissionId should be null
+ * as Direct patients don't come through appointments, room admissions, or emergency admissions
  */
 exports.createPatientLabTest = async (req, res) => {
   try {
@@ -300,7 +301,7 @@ exports.createPatientLabTest = async (req, res) => {
       LabTestId,
       AppointmentId,
       RoomAdmissionId,
-      EmergencyBedSlotId,
+      EmergencyAdmissionId,
       BillId,
       OrderedByDoctorId,
       Priority,
@@ -312,7 +313,7 @@ exports.createPatientLabTest = async (req, res) => {
       CreatedBy,
     } = req.body;
 
-    // For Direct PatientType, ensure AppointmentId, RoomAdmissionId, and EmergencyBedSlotId are null
+    // For Direct PatientType, ensure AppointmentId, RoomAdmissionId, and EmergencyAdmissionId are null
     if (PatientType === 'Direct') {
       if (AppointmentId !== undefined && AppointmentId !== null && AppointmentId !== '') {
         return res.status(400).json({
@@ -326,10 +327,10 @@ exports.createPatientLabTest = async (req, res) => {
           message: 'RoomAdmissionId should be null for Direct PatientType',
         });
       }
-      if (EmergencyBedSlotId !== undefined && EmergencyBedSlotId !== null && EmergencyBedSlotId !== '') {
+      if (EmergencyAdmissionId !== undefined && EmergencyAdmissionId !== null && EmergencyAdmissionId !== '') {
         return res.status(400).json({
           success: false,
-          message: 'EmergencyBedSlotId should be null for Direct PatientType',
+          message: 'EmergencyAdmissionId should be null for Direct PatientType',
         });
       }
     }
@@ -379,19 +380,19 @@ exports.createPatientLabTest = async (req, res) => {
       roomAdmissionIdValue = roomAdmissionIdInt;
     }
 
-    // Validate EmergencyBedSlotId if provided
-    let emergencyBedSlotIdValue = null;
-    if (EmergencyBedSlotId !== undefined && EmergencyBedSlotId !== null && EmergencyBedSlotId !== '') {
-      const emergencyBedSlotIdInt = parseInt(EmergencyBedSlotId, 10);
-      if (isNaN(emergencyBedSlotIdInt)) {
-        return res.status(400).json({ success: false, message: 'EmergencyBedSlotId must be a valid integer' });
+    // Validate EmergencyAdmissionId if provided
+    let emergencyAdmissionIdValue = null;
+    if (EmergencyAdmissionId !== undefined && EmergencyAdmissionId !== null && EmergencyAdmissionId !== '') {
+      const emergencyAdmissionIdInt = parseInt(EmergencyAdmissionId, 10);
+      if (isNaN(emergencyAdmissionIdInt)) {
+        return res.status(400).json({ success: false, message: 'EmergencyAdmissionId must be a valid integer' });
       }
-      // Check if emergency bed slot exists
-      const emergencyBedSlotExists = await db.query('SELECT "EmergencyBedSlotId" FROM "EmergencyBedSlot" WHERE "EmergencyBedSlotId" = $1', [emergencyBedSlotIdInt]);
-      if (emergencyBedSlotExists.rows.length === 0) {
-        return res.status(400).json({ success: false, message: 'EmergencyBedSlotId does not exist' });
+      // Check if emergency admission exists
+      const emergencyAdmissionExists = await db.query('SELECT "EmergencyAdmissionId" FROM "EmergencyAdmission" WHERE "EmergencyAdmissionId" = $1', [emergencyAdmissionIdInt]);
+      if (emergencyAdmissionExists.rows.length === 0) {
+        return res.status(400).json({ success: false, message: 'EmergencyAdmissionId does not exist' });
       }
-      emergencyBedSlotIdValue = emergencyBedSlotIdInt;
+      emergencyAdmissionIdValue = emergencyAdmissionIdInt;
     }
 
     // Validate BillId if provided
@@ -427,7 +428,7 @@ exports.createPatientLabTest = async (req, res) => {
     // PatientLabTestsId is auto-generated by PostgreSQL SERIAL, so we don't include it in INSERT
     const insertQuery = `
       INSERT INTO "PatientLabTest"
-        ("PatientType", "PatientId", "LabTestId", "AppointmentId", "RoomAdmissionId", "EmergencyBedSlotId", "BillId", "OrderedByDoctorId",
+        ("PatientType", "PatientId", "LabTestId", "AppointmentId", "RoomAdmissionId", "EmergencyAdmissionId", "BillId", "OrderedByDoctorId",
          "Priority", "LabTestDone", "ReportsUrl", "TestStatus", "TestDoneDateTime",
          "Status", "CreatedBy")
       VALUES ($1, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
@@ -440,7 +441,7 @@ exports.createPatientLabTest = async (req, res) => {
       parseInt(LabTestId, 10),
       appointmentIdValue,
       roomAdmissionIdValue,
-      emergencyBedSlotIdValue,
+      emergencyAdmissionIdValue,
       billIdValue,
       orderedByDoctorIdValue,
       Priority ? Priority.trim() : null,
@@ -496,7 +497,7 @@ exports.updatePatientLabTest = async (req, res) => {
       LabTestId,
       AppointmentId,
       RoomAdmissionId,
-      EmergencyBedSlotId,
+      EmergencyAdmissionId,
       BillId,
       OrderedByDoctorId,
       Priority,
@@ -508,7 +509,7 @@ exports.updatePatientLabTest = async (req, res) => {
       CreatedBy,
     } = req.body;
 
-    // If PatientType is being updated to 'Direct', ensure AppointmentId, RoomAdmissionId, and EmergencyBedSlotId are null
+    // If PatientType is being updated to 'Direct', ensure AppointmentId, RoomAdmissionId, and EmergencyAdmissionId are null
     if (PatientType === 'Direct') {
       if (AppointmentId !== undefined && AppointmentId !== null && AppointmentId !== '') {
         return res.status(400).json({
@@ -522,10 +523,10 @@ exports.updatePatientLabTest = async (req, res) => {
           message: 'RoomAdmissionId should be null for Direct PatientType',
         });
       }
-      if (EmergencyBedSlotId !== undefined && EmergencyBedSlotId !== null && EmergencyBedSlotId !== '') {
+      if (EmergencyAdmissionId !== undefined && EmergencyAdmissionId !== null && EmergencyAdmissionId !== '') {
         return res.status(400).json({
           success: false,
-          message: 'EmergencyBedSlotId should be null for Direct PatientType',
+          message: 'EmergencyAdmissionId should be null for Direct PatientType',
         });
       }
     }
@@ -548,21 +549,21 @@ exports.updatePatientLabTest = async (req, res) => {
     }
 
 
-    // Validate EmergencyBedSlotId if provided
-    let emergencyBedSlotIdValue = null;
-    if (EmergencyBedSlotId !== undefined && EmergencyBedSlotId !== null && EmergencyBedSlotId !== '') {
-      const emergencyBedSlotIdInt = parseInt(EmergencyBedSlotId, 10);
-      if (isNaN(emergencyBedSlotIdInt)) {
-        return res.status(400).json({ success: false, message: 'EmergencyBedSlotId must be a valid integer' });
+    // Validate EmergencyAdmissionId if provided
+    let emergencyAdmissionIdValue = null;
+    if (EmergencyAdmissionId !== undefined && EmergencyAdmissionId !== null && EmergencyAdmissionId !== '') {
+      const emergencyAdmissionIdInt = parseInt(EmergencyAdmissionId, 10);
+      if (isNaN(emergencyAdmissionIdInt)) {
+        return res.status(400).json({ success: false, message: 'EmergencyAdmissionId must be a valid integer' });
       }
-      // Check if emergency bed slot exists
-      const emergencyBedSlotExists = await db.query('SELECT "EmergencyBedSlotId" FROM "EmergencyBedSlot" WHERE "EmergencyBedSlotId" = $1', [emergencyBedSlotIdInt]);
-      if (emergencyBedSlotExists.rows.length === 0) {
-        return res.status(400).json({ success: false, message: 'EmergencyBedSlotId does not exist' });
+      // Check if emergency admission exists
+      const emergencyAdmissionExists = await db.query('SELECT "EmergencyAdmissionId" FROM "EmergencyAdmission" WHERE "EmergencyAdmissionId" = $1', [emergencyAdmissionIdInt]);
+      if (emergencyAdmissionExists.rows.length === 0) {
+        return res.status(400).json({ success: false, message: 'EmergencyAdmissionId does not exist' });
       }
-      emergencyBedSlotIdValue = emergencyBedSlotIdInt;
-    } else if (EmergencyBedSlotId === null) {
-      emergencyBedSlotIdValue = null;
+      emergencyAdmissionIdValue = emergencyAdmissionIdInt;
+    } else if (EmergencyAdmissionId === null) {
+      emergencyAdmissionIdValue = null;
     }
 
     // Validate BillId if provided
@@ -623,7 +624,7 @@ exports.updatePatientLabTest = async (req, res) => {
         "PatientId" = COALESCE($2::uuid, "PatientId"),
         "LabTestId" = COALESCE($3, "LabTestId"),
         "AppointmentId" = COALESCE($4, "AppointmentId"),
-        "EmergencyBedSlotId" = COALESCE($5, "EmergencyBedSlotId"),
+        "EmergencyAdmissionId" = COALESCE($5, "EmergencyAdmissionId"),
         "BillId" = COALESCE($6, "BillId"),
         "OrderedByDoctorId" = COALESCE($7, "OrderedByDoctorId"),
         "Priority" = COALESCE($8, "Priority"),
@@ -642,7 +643,7 @@ exports.updatePatientLabTest = async (req, res) => {
       PatientId !== undefined && PatientId !== null ? PatientId : null,
       LabTestId !== undefined && LabTestId !== null ? parseInt(LabTestId, 10) : null,
       appointmentIdValue,
-      emergencyBedSlotIdValue,
+      emergencyAdmissionIdValue,
       billIdValue,
       orderedByDoctorIdValue,
       Priority ? Priority.trim() : null,
@@ -835,7 +836,7 @@ exports.getTestStatusWiseCounts = async (req, res) => {
  */
 exports.getPatientLabTestsWithDetails = async (req, res) => {
   try {
-    const { status, testStatus, patientId, labTestId, appointmentId, roomAdmissionId, emergencyBedSlotId } = req.query;
+    const { status, testStatus, patientId, labTestId, appointmentId, roomAdmissionId, emergencyAdmissionId } = req.query;
 
     // Check if OrderedByDoctorId column exists
     let hasOrderedByDoctorId = false;
@@ -876,7 +877,7 @@ exports.getPatientLabTestsWithDetails = async (req, res) => {
         plt."LabTestId",
         plt."AppointmentId",
         plt."RoomAdmissionId",
-        plt."EmergencyBedSlotId",
+        plt."EmergencyAdmissionId",
         plt."BillId",
         ${hasOrderedByDoctorId ? 'plt."OrderedByDoctorId",' : ''}
         plt."Priority",
@@ -1011,16 +1012,16 @@ exports.getPatientLabTestsWithDetails = async (req, res) => {
       params.push(roomAdmissionIdInt);
     }
 
-    if (emergencyBedSlotId) {
-      const emergencyBedSlotIdInt = parseInt(emergencyBedSlotId, 10);
-      if (isNaN(emergencyBedSlotIdInt)) {
+    if (emergencyAdmissionId) {
+      const emergencyAdmissionIdInt = parseInt(emergencyAdmissionId, 10);
+      if (isNaN(emergencyAdmissionIdInt)) {
         return res.status(400).json({
           success: false,
-          message: 'Invalid emergencyBedSlotId. Must be a valid integer.',
+          message: 'Invalid emergencyAdmissionId. Must be a valid integer.',
         });
       }
-      conditions.push(`plt."EmergencyBedSlotId" = $${params.length + 1}`);
-      params.push(emergencyBedSlotIdInt);
+      conditions.push(`plt."EmergencyAdmissionId" = $${params.length + 1}`);
+      params.push(emergencyAdmissionIdInt);
     }
 
     if (conditions.length > 0) {
@@ -1038,7 +1039,7 @@ exports.getPatientLabTestsWithDetails = async (req, res) => {
       PatientType: row.PatientType || row.patienttype,
       AppointmentId: row.AppointmentId || row.appointmentid || null,
       RoomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
-      EmergencyBedSlotId: row.EmergencyBedSlotId || row.emergencybedslotid || null,
+      EmergencyAdmissionId: row.EmergencyAdmissionId || row.emergencyadmissionid || null,
       BillId: row.BillId || row.billid || null,
       TestStatus: row.TestStatus || row.teststatus,
       LabTestDone: row.LabTestDone || row.labtestdone,
@@ -1137,15 +1138,17 @@ exports.getPatientLabTestsWithDetails = async (req, res) => {
         labTestId: labTestId || null,
         appointmentId: appointmentId || null,
         roomAdmissionId: roomAdmissionId || null,
-        emergencyBedSlotId: emergencyBedSlotId || null,
+        emergencyAdmissionId: emergencyAdmissionId || null,
       },
       data: mappedData,
     });
   } catch (error) {
+    console.error('Error in getPatientLabTestsWithDetails:', error);
     res.status(500).json({
       success: false,
       message: 'Error fetching patient lab tests with details',
       error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
     });
   }
 };
@@ -1176,7 +1179,7 @@ exports.getPatientLabTestsWithDetailsById = async (req, res) => {
         plt."LabTestId",
         plt."AppointmentId",
         plt."RoomAdmissionId",
-        plt."EmergencyBedSlotId",
+        plt."EmergencyAdmissionId",
         plt."BillId",
         plt."Priority",
         plt."LabTestDone",
@@ -1391,9 +1394,9 @@ exports.getOPDIPDWiseCounts = async (req, res) => {
     let query = `
       SELECT
         COUNT(*) FILTER (WHERE plt."AppointmentId" IS NOT NULL) AS "OPDCount",
-        COUNT(*) FILTER (WHERE plt."EmergencyBedSlotId" IS NOT NULL) AS "EmergencyCount",
-        COUNT(*) FILTER (WHERE plt."AppointmentId" IS NOT NULL AND plt."EmergencyBedSlotId" IS NOT NULL) AS "BothCount",
-        COUNT(*) FILTER (WHERE plt."AppointmentId" IS NULL AND plt."EmergencyBedSlotId" IS NULL) AS "DirectCount",
+        COUNT(*) FILTER (WHERE plt."EmergencyAdmissionId" IS NOT NULL) AS "EmergencyCount",
+        COUNT(*) FILTER (WHERE plt."AppointmentId" IS NOT NULL AND plt."EmergencyAdmissionId" IS NOT NULL) AS "BothCount",
+        COUNT(*) FILTER (WHERE plt."AppointmentId" IS NULL AND plt."EmergencyAdmissionId" IS NULL) AS "DirectCount",
         COUNT(*) AS "TotalCount"
       FROM "PatientLabTest" plt
       WHERE 1=1
@@ -1462,7 +1465,7 @@ exports.getLabTestWiseCounts = async (req, res) => {
         COUNT(plt."PatientLabTestsId") FILTER (WHERE plt."TestStatus" = 'InProgress') AS "InProgressCount",
         COUNT(plt."PatientLabTestsId") FILTER (WHERE plt."TestStatus" = 'Completed') AS "CompletedCount",
         COUNT(plt."PatientLabTestsId") FILTER (WHERE plt."AppointmentId" IS NOT NULL) AS "OPDCount",
-        COUNT(plt."PatientLabTestsId") FILTER (WHERE plt."EmergencyBedSlotId" IS NOT NULL) AS "EmergencyCount"
+        COUNT(plt."PatientLabTestsId") FILTER (WHERE plt."EmergencyAdmissionId" IS NOT NULL) AS "EmergencyCount"
       FROM "LabTest" lt
       LEFT JOIN "PatientLabTest" plt ON lt."LabTestId" = plt."LabTestId"
       WHERE 1=1
@@ -1563,7 +1566,7 @@ exports.getDoctorWiseCounts = async (req, res) => {
         COUNT(DISTINCT plt."PatientLabTestsId") FILTER (WHERE plt."TestStatus" = 'InProgress') AS "InProgressCount",
         COUNT(DISTINCT plt."PatientLabTestsId") FILTER (WHERE plt."TestStatus" = 'Completed') AS "CompletedCount",
         COUNT(DISTINCT plt."PatientLabTestsId") FILTER (WHERE plt."AppointmentId" IS NOT NULL) AS "OPDCount",
-        COUNT(DISTINCT plt."PatientLabTestsId") FILTER (WHERE plt."EmergencyBedSlotId" IS NOT NULL) AS "EmergencyCount"
+        COUNT(DISTINCT plt."PatientLabTestsId") FILTER (WHERE plt."EmergencyAdmissionId" IS NOT NULL) AS "EmergencyCount"
       FROM "PatientLabTest" plt
       LEFT JOIN "PatientAppointment" pa ON plt."AppointmentId" = pa."PatientAppointmentId"
       LEFT JOIN "Users" appt_doctor ON pa."DoctorId" = appt_doctor."UserId"
@@ -1669,8 +1672,8 @@ const createPatientLabTestUploadMiddleware = () => {
           // Create folder name: patientNo_PatientName_Date
           const folderName = `${PatientNo_PatientName}_${currentDate}`;
           
-          // Create uploads directory if it doesn't exist
-          const uploadsDir = path.join(__dirname, '..', 'uploads');
+          // Create uploads directory if it doesn't exist (read from .env file)
+          const uploadsDir = process.env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
           if (!fs.existsSync(uploadsDir)) {
             fs.mkdirSync(uploadsDir, { recursive: true });
           }
@@ -1889,8 +1892,10 @@ exports.getPatientLabTestFolder = async (req, res) => {
       });
     }
 
-    // Get uploads directory
-    const uploadsDir = path.join(__dirname, '..', 'uploads');
+    // Get uploads directory from .env file, fallback to default
+    const uploadsDir = process.env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
+    // Get uploads URL prefix from .env file, fallback to default
+    const uploadsUrlPrefix = process.env.UPLOADS_URL_PREFIX || '/uploads';
     
     if (!fs.existsSync(uploadsDir)) {
       return res.status(200).json({
@@ -1932,14 +1937,16 @@ exports.getPatientLabTestFolder = async (req, res) => {
       const fileDetails = files.map(file => {
         const filePath = path.join(folderPath, file);
         const stats = fs.statSync(filePath);
+        const fullFileUrl = `${folderName}/${file}`;
         return {
           fileName: file,
           filePath: path.relative(path.join(__dirname, '..'), filePath),
-          fileUrl: `/uploads/${folderName}/${file}`,
+          fileUrl: `${uploadsUrlPrefix}/${folderName}/${file}`,
           size: stats.size,
           createdDate: stats.birthtime,
           modifiedDate: stats.mtime,
           isDirectory: stats.isDirectory(),
+          fullFileUrl: fullFileUrl,
         };
       });
 
@@ -1950,7 +1957,7 @@ exports.getPatientLabTestFolder = async (req, res) => {
         date: date,
         folderName: folderName,
         folderPath: path.relative(path.join(__dirname, '..'), folderPath),
-        folderUrl: `/uploads/${folderName}`,
+        folderUrl: `${uploadsUrlPrefix}/${folderName}`,
         filesCount: fileDetails.filter(f => !f.isDirectory).length,
         files: fileDetails.filter(f => !f.isDirectory),
       });
@@ -1994,7 +2001,7 @@ exports.getPatientLabTestFolder = async (req, res) => {
       return {
         folderName: folderName,
         folderPath: path.relative(path.join(__dirname, '..'), folderPath),
-        folderUrl: `/uploads/${folderName}`,
+        folderUrl: `${uploadsUrlPrefix}/${folderName}`,
         date: folderDate,
         createdDate: stats.birthtime,
         modifiedDate: stats.mtime,

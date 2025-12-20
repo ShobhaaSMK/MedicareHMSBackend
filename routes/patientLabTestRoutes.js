@@ -114,7 +114,7 @@ Query Parameters:
   - labTestId: Number | null,
   - appointmentId: Number | null,
   - roomAdmissionId: Number | null,
-  - emergencyBedSlotId: Number | null
+  - emergencyAdmissionId: Number | null
 Response: {
   success: Boolean,
   count: Number,
@@ -124,7 +124,7 @@ Response: {
     PatientId: String (UUID),
     LabTestId: Number,
     AppointmentId: Number | null,
-    EmergencyBedSlotId: Number | null,
+    EmergencyAdmissionId: Number | null,
     BillId: Number | null,
     Priority: String | null, // "Normal" | "Urgent"
     LabTestDone: String, // "Yes" | "No"
@@ -229,7 +229,7 @@ Response: {
     LabTestId: Number,
     AppointmentId: Number | null,
     RoomAdmissionId: Number | null,
-    EmergencyBedSlotId: Number | null,
+    EmergencyAdmissionId: Number | null,
     BillId: Number | null,
     Priority: String | null, // "Normal" | "Urgent"
     LabTestDone: String, // "Yes" | "No"
@@ -305,7 +305,7 @@ Response: {
     LabTestId: Number,
     AppointmentId: Number | null,
     RoomAdmissionId: Number | null,
-    EmergencyBedSlotId: Number | null,
+    EmergencyAdmissionId: Number | null,
     BillId: Number | null,
     Priority: String | null, // "Normal" | "Urgent"
     LabTestDone: String, // "Yes" | "No"
@@ -333,7 +333,7 @@ Request: {
   LabTestId: Number, (required)
   AppointmentId: Number | null,
   RoomAdmissionId: Number | null,
-  EmergencyBedSlotId: Number | null,
+  EmergencyAdmissionId: Number | null,
   BillId: Number | null,
   Priority: String | null,
   LabTestDone: String, // "Yes" | "No", defaults to "No"
@@ -353,7 +353,7 @@ Response: {
     LabTestId: Number,
     AppointmentId: Number | null,
     RoomAdmissionId: Number | null,
-    EmergencyBedSlotId: Number | null,
+    EmergencyAdmissionId: Number | null,
     BillId: Number | null,
     Priority: String | null, // "Normal" | "Urgent"
     LabTestDone: String, // "Yes" | "No"
@@ -404,7 +404,7 @@ Request: {
   LabTestId: Number,
   AppointmentId: Number | null,
   RoomAdmissionId: Number | null,
-  EmergencyBedSlotId: Number | null,
+  EmergencyAdmissionId: Number | null,
   BillId: Number | null,
   Priority: String | null,
   LabTestDone: String, // "Yes" | "No"
@@ -424,7 +424,7 @@ Response: {
     LabTestId: Number,
     AppointmentId: Number | null,
     RoomAdmissionId: Number | null,
-    EmergencyBedSlotId: Number | null,
+    EmergencyAdmissionId: Number | null,
     BillId: Number | null,
     Priority: String | null, // "Normal" | "Urgent"
     LabTestDone: String, // "Yes" | "No"
