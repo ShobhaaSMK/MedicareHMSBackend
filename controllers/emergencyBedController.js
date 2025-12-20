@@ -1,6 +1,6 @@
 const db = require('../db');
 
-const allowedStatus = ['Active', 'Inactive'];
+const allowedStatus = ['Active', 'Inactive', 'Occupied'];
 
 /**
  * Generate EmergencyBedNo in format ER-01, ER-02, etc.
@@ -154,7 +154,7 @@ const validateEmergencyBedPayload = (body, requireAll = true) => {
   }
   
   if (body.Status && !allowedStatus.includes(body.Status)) {
-    errors.push('Status must be Active or Inactive');
+    errors.push('Status must be Active, Inactive, or Occupied');
   }
   
   if (body.CreatedBy !== undefined && body.CreatedBy !== null && body.CreatedBy !== '') {

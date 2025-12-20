@@ -9,7 +9,7 @@ const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 const mapRoomAdmissionRow = (row) => ({
   RoomAdmissionId: row.RoomAdmissionId || row.roomadmissionid,
   PatientAppointmentId: row.PatientAppointmentId || row.patientappointmentid || null,
-  EmergencyBedSlotId: row.EmergencyBedSlotId || row.emergencybedslotid || null,
+  EmergencyAdmissionId: row.EmergencyAdmissionId || row.emergencyadmissionid || null,
   PatientType: row.PatientType || row.patienttype || null,
   AdmittingDoctorId: row.AdmittingDoctorId || row.admittingdoctorid,
   PatientId: row.PatientId || row.patientid,
@@ -248,60 +248,60 @@ exports.getRoomAdmissionsByPatientId = async (req, res) => {
 const validateRoomAdmissionPayload = (body, requireAll = true) => {
   const errors = [];
 
-  if (requireAll && body.PatientId === undefined) {
+  if (requireAll && (body.PatientId === undefined || body.PatientId === null || body.PatientId === '')) {
     errors.push('PatientId is required');
   }
-  if (body.PatientId !== undefined && body.PatientId !== null) {
+  if (body.PatientId !== undefined && body.PatientId !== null && body.PatientId !== '') {
     if (!uuidRegex.test(body.PatientId)) {
       errors.push('PatientId must be a valid UUID');
     }
   }
 
-  if (requireAll && body.AdmittingDoctorId === undefined) {
+  if (requireAll && (body.AdmittingDoctorId === undefined || body.AdmittingDoctorId === null || body.AdmittingDoctorId === '')) {
     errors.push('AdmittingDoctorId is required');
   }
-  if (body.AdmittingDoctorId !== undefined && body.AdmittingDoctorId !== null) {
+  if (body.AdmittingDoctorId !== undefined && body.AdmittingDoctorId !== null && body.AdmittingDoctorId !== '') {
     const admittingDoctorIdInt = parseInt(body.AdmittingDoctorId, 10);
     if (isNaN(admittingDoctorIdInt)) {
       errors.push('AdmittingDoctorId must be a valid integer');
     }
   }
 
-  if (requireAll && body.RoomBedsId === undefined) {
+  if (requireAll && (body.RoomBedsId === undefined || body.RoomBedsId === null || body.RoomBedsId === '')) {
     errors.push('RoomBedsId is required');
   }
-  if (body.RoomBedsId !== undefined && body.RoomBedsId !== null) {
+  if (body.RoomBedsId !== undefined && body.RoomBedsId !== null && body.RoomBedsId !== '') {
     const roomBedsIdInt = parseInt(body.RoomBedsId, 10);
     if (isNaN(roomBedsIdInt)) {
       errors.push('RoomBedsId must be a valid integer');
     }
   }
 
-  if (requireAll && body.RoomAllocationDate === undefined) {
+  if (requireAll && (!body.RoomAllocationDate || body.RoomAllocationDate === '')) {
     errors.push('RoomAllocationDate is required');
   }
-  if (body.RoomAllocationDate !== undefined && body.RoomAllocationDate !== null) {
+  if (body.RoomAllocationDate && body.RoomAllocationDate !== '') {
     const date = new Date(body.RoomAllocationDate);
     if (isNaN(date.getTime())) {
       errors.push('RoomAllocationDate must be a valid date');
     }
   }
 
-  if (body.PatientAppointmentId !== undefined && body.PatientAppointmentId !== null) {
+  if (body.PatientAppointmentId !== undefined && body.PatientAppointmentId !== null && body.PatientAppointmentId !== '') {
     const appointmentIdInt = parseInt(body.PatientAppointmentId, 10);
     if (isNaN(appointmentIdInt)) {
       errors.push('PatientAppointmentId must be a valid integer');
     }
   }
 
-  if (body.EmergencyBedSlotId !== undefined && body.EmergencyBedSlotId !== null) {
-    const emergencyBedSlotIdInt = parseInt(body.EmergencyBedSlotId, 10);
-    if (isNaN(emergencyBedSlotIdInt)) {
-      errors.push('EmergencyBedSlotId must be a valid integer');
+  if (body.EmergencyAdmissionId !== undefined && body.EmergencyAdmissionId !== null && body.EmergencyAdmissionId !== '') {
+    const emergencyAdmissionIdInt = parseInt(body.EmergencyAdmissionId, 10);
+    if (isNaN(emergencyAdmissionIdInt)) {
+      errors.push('EmergencyAdmissionId must be a valid integer');
     }
   }
 
-  if (body.RoomVacantDate !== undefined && body.RoomVacantDate !== null) {
+  if (body.RoomVacantDate !== undefined && body.RoomVacantDate !== null && body.RoomVacantDate !== '') {
     const date = new Date(body.RoomVacantDate);
     if (isNaN(date.getTime())) {
       errors.push('RoomVacantDate must be a valid date');
@@ -316,7 +316,7 @@ const validateRoomAdmissionPayload = (body, requireAll = true) => {
     errors.push('ShiftToAnotherRoom must be "Yes" or "No"');
   }
 
-  if (body.ShiftedTo !== undefined && body.ShiftedTo !== null) {
+  if (body.ShiftedTo !== undefined && body.ShiftedTo !== null && body.ShiftedTo !== '') {
     const shiftedToInt = parseInt(body.ShiftedTo, 10);
     if (isNaN(shiftedToInt)) {
       errors.push('ShiftedTo must be a valid integer');
@@ -327,7 +327,7 @@ const validateRoomAdmissionPayload = (body, requireAll = true) => {
     errors.push('ScheduleOT must be "Yes" or "No"');
   }
 
-  if (body.OTAdmissionId !== undefined && body.OTAdmissionId !== null) {
+  if (body.OTAdmissionId !== undefined && body.OTAdmissionId !== null && body.OTAdmissionId !== '') {
     const otAdmissionIdInt = parseInt(body.OTAdmissionId, 10);
     if (isNaN(otAdmissionIdInt)) {
       errors.push('OTAdmissionId must be a valid integer');
@@ -338,20 +338,20 @@ const validateRoomAdmissionPayload = (body, requireAll = true) => {
     errors.push('IsLinkedToICU must be "Yes" or "No"');
   }
 
-  if (body.ICUAdmissionId !== undefined && body.ICUAdmissionId !== null) {
+  if (body.ICUAdmissionId !== undefined && body.ICUAdmissionId !== null && body.ICUAdmissionId !== '') {
     if (!uuidRegex.test(body.ICUAdmissionId)) {
       errors.push('ICUAdmissionId must be a valid UUID');
     }
   }
 
-  if (body.BillId !== undefined && body.BillId !== null) {
+  if (body.BillId !== undefined && body.BillId !== null && body.BillId !== '') {
     const billIdInt = parseInt(body.BillId, 10);
     if (isNaN(billIdInt)) {
       errors.push('BillId must be a valid integer');
     }
   }
 
-  if (body.AllocatedBy !== undefined && body.AllocatedBy !== null) {
+  if (body.AllocatedBy !== undefined && body.AllocatedBy !== null && body.AllocatedBy !== '') {
     const allocatedByInt = parseInt(body.AllocatedBy, 10);
     if (isNaN(allocatedByInt)) {
       errors.push('AllocatedBy must be a valid integer');
@@ -371,35 +371,43 @@ const validateRoomAdmissionPayload = (body, requireAll = true) => {
 
 exports.createRoomAdmission = async (req, res) => {
   try {
+    // Log all incoming fields for debugging
+    console.log('=== INCOMING REQUEST BODY ===');
+    console.log('All req.body keys:', Object.keys(req.body));
+    console.log('PatientType in req.body:', req.body.PatientType, req.body.patientType, req.body.patient_type);
+    console.log('CaseSheet in req.body:', req.body.CaseSheet, req.body.caseSheet, req.body.case_sheet);
+    console.log('CaseSheetDetails in req.body:', req.body.CaseSheetDetails, req.body.caseSheetDetails, req.body.case_sheet_details);
+    console.log('Full req.body:', JSON.stringify(req.body, null, 2));
+    console.log('===========================');
+
     const errors = validateRoomAdmissionPayload(req.body, true);
     if (errors.length > 0) {
       return res.status(400).json({ success: false, message: errors.join(', ') });
     }
 
-    const {
-      PatientAppointmentId,
-      EmergencyBedSlotId,
-      PatientType,
-      AdmittingDoctorId,
-      PatientId,
-      RoomBedsId,
-      RoomAllocationDate,
-      RoomVacantDate,
-      AdmissionStatus = 'Active',
-      CaseSheetDetails,
-      CaseSheet,
-      ShiftToAnotherRoom = 'No',
-      ShiftedTo,
-      ShiftedToDetails,
-      ScheduleOT = 'No',
-      OTAdmissionId,
-      IsLinkedToICU = 'No',
-      ICUAdmissionId,
-      BillId,
-      AllocatedBy,
-      Status = 'Active',
-    } = req.body;
-
+    // Extract fields from req.body with case-insensitive fallback
+    const PatientAppointmentId = req.body.PatientAppointmentId || req.body.patientAppointmentId || req.body.patient_appointment_id;
+    const EmergencyAdmissionId = req.body.EmergencyAdmissionId || req.body.emergencyAdmissionId || req.body.emergency_admission_id;
+    const PatientType = req.body.PatientType || req.body.patientType || req.body.patient_type;
+    const AdmittingDoctorId = req.body.AdmittingDoctorId || req.body.admittingDoctorId || req.body.admitting_doctor_id;
+    const PatientId = req.body.PatientId || req.body.patientId || req.body.patient_id;
+    const RoomBedsId = req.body.RoomBedsId || req.body.roomBedsId || req.body.room_beds_id;
+    const RoomAllocationDate = req.body.RoomAllocationDate || req.body.roomAllocationDate || req.body.room_allocation_date;
+    const RoomVacantDate = req.body.RoomVacantDate || req.body.roomVacantDate || req.body.room_vacant_date;
+    const AdmissionStatus = req.body.AdmissionStatus || req.body.admissionStatus || req.body.admission_status || 'Active';
+    const CaseSheetDetails = req.body.CaseSheetDetails || req.body.caseSheetDetails || req.body.case_sheet_details;
+    const CaseSheet = req.body.CaseSheet || req.body.caseSheet || req.body.case_sheet;
+    const ShiftToAnotherRoom = req.body.ShiftToAnotherRoom || req.body.shiftToAnotherRoom || req.body.shift_to_another_room || 'No';
+    const ShiftedTo = req.body.ShiftedTo || req.body.shiftedTo || req.body.shifted_to;
+    const ShiftedToDetails = req.body.ShiftedToDetails || req.body.shiftedToDetails || req.body.shifted_to_details;
+    const ScheduleOT = req.body.ScheduleOT || req.body.scheduleOT || req.body.schedule_ot || 'No';
+    const OTAdmissionId = req.body.OTAdmissionId || req.body.otAdmissionId || req.body.ot_admission_id;
+    const IsLinkedToICU = req.body.IsLinkedToICU || req.body.isLinkedToICU || req.body.is_linked_to_icu || 'No';
+    const ICUAdmissionId = req.body.ICUAdmissionId || req.body.icuAdmissionId || req.body.icu_admission_id;
+    const BillId = req.body.BillId || req.body.billId || req.body.bill_id;
+    const AllocatedBy = req.body.AllocatedBy || req.body.allocatedBy || req.body.allocated_by;
+    const Status = req.body.Status || req.body.status || 'Active';
+ console.log("PatientType&&&&&&&&&&&&&&&&&&&&&&&&&", PatientType);
     // Validate PatientType if provided
     if (PatientType && !allowedPatientTypes.includes(PatientType)) {
       return res.status(400).json({
@@ -408,7 +416,7 @@ exports.createRoomAdmission = async (req, res) => {
       });
     }
 
-    // Business logic: If PatientType is 'Direct', PatientAppointmentId and EmergencyBedSlotId should be null
+    // Business logic: If PatientType is 'Direct', PatientAppointmentId and EmergencyAdmissionId should be null
     if (PatientType === 'Direct') {
       if (PatientAppointmentId !== undefined && PatientAppointmentId !== null && PatientAppointmentId !== '') {
         return res.status(400).json({
@@ -416,10 +424,10 @@ exports.createRoomAdmission = async (req, res) => {
           message: 'PatientAppointmentId should be null for Direct PatientType',
         });
       }
-      if (EmergencyBedSlotId !== undefined && EmergencyBedSlotId !== null && EmergencyBedSlotId !== '') {
+      if (EmergencyAdmissionId !== undefined && EmergencyAdmissionId !== null && EmergencyAdmissionId !== '') {
         return res.status(400).json({
           success: false,
-          message: 'EmergencyBedSlotId should be null for Direct PatientType',
+          message: 'EmergencyAdmissionId should be null for Direct PatientType',
         });
       }
     }
@@ -441,21 +449,29 @@ exports.createRoomAdmission = async (req, res) => {
       return res.status(400).json({ success: false, message: 'RoomBedsId does not exist' });
     }
 
-    if (PatientAppointmentId !== undefined && PatientAppointmentId !== null) {
-      const appointmentExists = await db.query('SELECT "PatientAppointmentId" FROM "PatientAppointment" WHERE "PatientAppointmentId" = $1', [parseInt(PatientAppointmentId, 10)]);
+    if (PatientAppointmentId !== undefined && PatientAppointmentId !== null && PatientAppointmentId !== '') {
+      const appointmentIdInt = parseInt(PatientAppointmentId, 10);
+      if (isNaN(appointmentIdInt)) {
+        return res.status(400).json({ success: false, message: 'PatientAppointmentId must be a valid integer' });
+      }
+      const appointmentExists = await db.query('SELECT "PatientAppointmentId" FROM "PatientAppointment" WHERE "PatientAppointmentId" = $1', [appointmentIdInt]);
       if (appointmentExists.rows.length === 0) {
         return res.status(400).json({ success: false, message: 'PatientAppointmentId does not exist' });
       }
     }
 
-    if (EmergencyBedSlotId !== undefined && EmergencyBedSlotId !== null) {
-      const emergencyBedSlotExists = await db.query('SELECT "EmergencyBedSlotId" FROM "EmergencyBedSlot" WHERE "EmergencyBedSlotId" = $1', [parseInt(EmergencyBedSlotId, 10)]);
-      if (emergencyBedSlotExists.rows.length === 0) {
-        return res.status(400).json({ success: false, message: 'EmergencyBedSlotId does not exist' });
+    if (EmergencyAdmissionId !== undefined && EmergencyAdmissionId !== null && EmergencyAdmissionId !== '') {
+      const emergencyAdmissionIdInt = parseInt(EmergencyAdmissionId, 10);
+      if (isNaN(emergencyAdmissionIdInt)) {
+        return res.status(400).json({ success: false, message: 'EmergencyAdmissionId must be a valid integer' });
+      }
+      const emergencyAdmissionExists = await db.query('SELECT "EmergencyAdmissionId" FROM "EmergencyAdmission" WHERE "EmergencyAdmissionId" = $1', [emergencyAdmissionIdInt]);
+      if (emergencyAdmissionExists.rows.length === 0) {
+        return res.status(400).json({ success: false, message: 'EmergencyAdmissionId does not exist' });
       }
     }
 
-    if (ShiftedTo !== undefined && ShiftedTo !== null) {
+    if (ShiftedTo !== undefined && ShiftedTo !== null && ShiftedTo !== '') {
       const shiftedToInt = parseInt(ShiftedTo, 10);
       if (isNaN(shiftedToInt)) {
         return res.status(400).json({ success: false, message: 'ShiftedTo must be a valid integer' });
@@ -466,63 +482,203 @@ exports.createRoomAdmission = async (req, res) => {
       }
     }
 
-    if (OTAdmissionId !== undefined && OTAdmissionId !== null) {
-      const otAdmissionExists = await db.query('SELECT "PatientOTAllocationId" FROM "PatientOTAllocation" WHERE "PatientOTAllocationId" = $1', [parseInt(OTAdmissionId, 10)]);
+    if (OTAdmissionId !== undefined && OTAdmissionId !== null && OTAdmissionId !== '') {
+      const otAdmissionIdInt = parseInt(OTAdmissionId, 10);
+      if (isNaN(otAdmissionIdInt)) {
+        return res.status(400).json({ success: false, message: 'OTAdmissionId must be a valid integer' });
+      }
+      const otAdmissionExists = await db.query('SELECT "PatientOTAllocationId" FROM "PatientOTAllocation" WHERE "PatientOTAllocationId" = $1', [otAdmissionIdInt]);
       if (otAdmissionExists.rows.length === 0) {
         return res.status(400).json({ success: false, message: 'OTAdmissionId does not exist' });
       }
     }
 
-    if (ICUAdmissionId !== undefined && ICUAdmissionId !== null) {
+    if (ICUAdmissionId !== undefined && ICUAdmissionId !== null && ICUAdmissionId !== '') {
+      if (!uuidRegex.test(ICUAdmissionId)) {
+        return res.status(400).json({ success: false, message: 'ICUAdmissionId must be a valid UUID' });
+      }
       const icuAdmissionExists = await db.query('SELECT "PatientICUAdmissionId" FROM "PatientICUAdmission" WHERE "PatientICUAdmissionId" = $1::uuid', [ICUAdmissionId]);
       if (icuAdmissionExists.rows.length === 0) {
         return res.status(400).json({ success: false, message: 'ICUAdmissionId does not exist' });
       }
     }
-
-    if (BillId !== undefined && BillId !== null) {
-      const billExists = await db.query('SELECT "BillId" FROM "Bills" WHERE "BillId" = $1', [parseInt(BillId, 10)]);
+console.log("ICUAdmissionId", ICUAdmissionId);
+    if (BillId !== undefined && BillId !== null && BillId !== '') {
+      const billIdInt = parseInt(BillId, 10);
+      if (isNaN(billIdInt)) {
+        return res.status(400).json({ success: false, message: 'BillId must be a valid integer' });
+      }
+      const billExists = await db.query('SELECT "BillId" FROM "Bills" WHERE "BillId" = $1', [billIdInt]);
       if (billExists.rows.length === 0) {
         return res.status(400).json({ success: false, message: 'BillId does not exist' });
       }
     }
 
-    if (AllocatedBy !== undefined && AllocatedBy !== null) {
-      const allocatedByExists = await db.query('SELECT "UserId" FROM "Users" WHERE "UserId" = $1', [parseInt(AllocatedBy, 10)]);
+    if (AllocatedBy !== undefined && AllocatedBy !== null && AllocatedBy !== '') {
+      const allocatedByInt = parseInt(AllocatedBy, 10);
+      if (isNaN(allocatedByInt)) {
+        return res.status(400).json({ success: false, message: 'AllocatedBy must be a valid integer' });
+      }
+      const allocatedByExists = await db.query('SELECT "UserId" FROM "Users" WHERE "UserId" = $1', [allocatedByInt]);
       if (allocatedByExists.rows.length === 0) {
         return res.status(400).json({ success: false, message: 'AllocatedBy User does not exist' });
       }
     }
 
-    // Prepare values for INSERT
+    // Prepare values for INSERT with proper type conversion and validation
+    // Helper function to safely parse integer
+    const safeParseInt = (value) => {
+      if (value === undefined || value === null || value === '') return null;
+      const parsed = parseInt(value, 10);
+      return isNaN(parsed) ? null : parsed;
+    };
+
+    // Validate RoomAllocationDate (required)
+    if (!RoomAllocationDate || RoomAllocationDate === '') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'RoomAllocationDate is required' 
+      });
+    }
+    const roomAllocationDateValue = new Date(RoomAllocationDate);
+    if (isNaN(roomAllocationDateValue.getTime())) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'RoomAllocationDate must be a valid date' 
+      });
+    }
+
+    // Validate RoomVacantDate if provided
+    let roomVacantDateValue = null;
+    if (RoomVacantDate && RoomVacantDate !== '') {
+      const dateValue = new Date(RoomVacantDate);
+      if (isNaN(dateValue.getTime())) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'RoomVacantDate must be a valid date' 
+        });
+      }
+      roomVacantDateValue = RoomVacantDate;
+    }
+
+    // Validate ICUAdmissionId if provided (must be UUID)
+    // If IsLinkedToICU is 'No', ICUAdmissionId should be null
+    let icuAdmissionIdValue = null;
+    if (IsLinkedToICU === 'Yes' && ICUAdmissionId && ICUAdmissionId !== '') {
+      if (!uuidRegex.test(ICUAdmissionId)) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'ICUAdmissionId must be a valid UUID' 
+        });
+      }
+      icuAdmissionIdValue = ICUAdmissionId;
+    } else if (IsLinkedToICU === 'No') {
+      // Explicitly set to null if not linked to ICU
+      icuAdmissionIdValue = null;
+    }
+
+    // Use already validated values
+    const admittingDoctorIdInt = parseInt(AdmittingDoctorId, 10);
+
+    // Log the raw values from req.body for debugging
+    console.log('Raw values from req.body:', {
+      PatientType: PatientType,
+      CaseSheet: CaseSheet,
+      CaseSheetDetails: CaseSheetDetails,
+      PatientTypeType: typeof PatientType,
+      CaseSheetType: typeof CaseSheet,
+      CaseSheetDetailsType: typeof CaseSheetDetails,
+    });
+
+    // Process PatientType - allow empty string to be saved as empty string, not null
+    let patientTypeValue = null;
+    if (PatientType !== undefined && PatientType !== null) {
+      if (PatientType === '') {
+        patientTypeValue = null; // Empty string becomes null
+      } else {
+        patientTypeValue = String(PatientType).trim();
+      }
+    }
+
+    // Process CaseSheetDetails - allow empty string
+    let caseSheetDetailsValue = null;
+    if (CaseSheetDetails !== undefined && CaseSheetDetails !== null) {
+      if (CaseSheetDetails === '') {
+        caseSheetDetailsValue = null; // Empty string becomes null
+      } else {
+        caseSheetDetailsValue = String(CaseSheetDetails).trim();
+      }
+    }
+
+    // Process CaseSheet - allow empty string
+    let caseSheetValue = null;
+    if (CaseSheet !== undefined && CaseSheet !== null) {
+      if (CaseSheet === '') {
+        caseSheetValue = null; // Empty string becomes null
+      } else {
+        caseSheetValue = String(CaseSheet).trim();
+      }
+    }
+
+    console.log('Processed values:', {
+      patientTypeValue,
+      caseSheetDetailsValue,
+      caseSheetValue,
+    });
+
     const insertValues = [
-      PatientAppointmentId || null,
-      EmergencyBedSlotId || null,
-      PatientType || null,
-      parseInt(AdmittingDoctorId, 10),
-      PatientId,
-      parseInt(RoomBedsId, 10),
+      // PatientAppointmentId - integer or null
+      safeParseInt(PatientAppointmentId),
+      // EmergencyAdmissionId - integer or null
+      safeParseInt(EmergencyAdmissionId),
+      // PatientType - string or null
+      patientTypeValue,
+      // AdmittingDoctorId - integer (required)
+      admittingDoctorIdInt,
+      // PatientId - UUID (required)
+      PatientId.trim(),
+      // RoomBedsId - integer (required) - already validated above
+      roomBedsIdInt,
+      // RoomAllocationDate - timestamp (required)
       RoomAllocationDate,
-      RoomVacantDate || null,
-      AdmissionStatus,
-      CaseSheetDetails || null,
-      CaseSheet || null,
-      ShiftToAnotherRoom,
-      ShiftedTo ? parseInt(ShiftedTo, 10) : null,
-      ShiftedToDetails || null,
-      ScheduleOT,
-      OTAdmissionId || null,
-      IsLinkedToICU,
-      ICUAdmissionId || null,
-      BillId || null,
-      AllocatedBy ? parseInt(AllocatedBy, 10) : null,
-      Status,
+      // RoomVacantDate - timestamp or null
+      roomVacantDateValue,
+      // AdmissionStatus - string
+      AdmissionStatus || 'Active',
+      // CaseSheetDetails - text or null
+      caseSheetDetailsValue,
+      // CaseSheet - text or null
+      caseSheetValue,
+      // ShiftToAnotherRoom - string
+      ShiftToAnotherRoom || 'No',
+      // ShiftedTo - integer or null
+      safeParseInt(ShiftedTo),
+      // ShiftedToDetails - text or null
+      (ShiftedToDetails && ShiftedToDetails !== '') ? ShiftedToDetails.trim() : null,
+      // ScheduleOT - string
+      ScheduleOT || 'No',
+      // OTAdmissionId - integer or null
+      safeParseInt(OTAdmissionId),
+      // IsLinkedToICU - string
+      IsLinkedToICU || 'No',
+      // ICUAdmissionId - UUID or null
+      icuAdmissionIdValue,
+      // BillId - integer or null
+      safeParseInt(BillId),
+      // AllocatedBy - integer or null
+      safeParseInt(AllocatedBy),
+      // Status - string
+      Status || 'Active',
     ];
 
-    // Log values for debugging
+    // Log values for debugging - specifically for the problematic fields
+    console.log('=== INSERT VALUES DEBUG ===');
+    console.log('PatientType (index 2):', insertValues[2], 'Type:', typeof insertValues[2]);
+    console.log('CaseSheetDetails (index 9):', insertValues[9], 'Type:', typeof insertValues[9]);
+    console.log('CaseSheet (index 10):', insertValues[10], 'Type:', typeof insertValues[10]);
     console.log('Creating RoomAdmission with values:', {
       PatientAppointmentId: insertValues[0],
-      EmergencyBedSlotId: insertValues[1],
+      EmergencyAdmissionId: insertValues[1],
       PatientType: insertValues[2],
       AdmittingDoctorId: insertValues[3],
       PatientId: insertValues[4],
@@ -530,20 +686,56 @@ exports.createRoomAdmission = async (req, res) => {
       RoomAllocationDate: insertValues[6],
       RoomVacantDate: insertValues[7],
       AdmissionStatus: insertValues[8],
+      CaseSheetDetails: insertValues[9],
+      CaseSheet: insertValues[10],
+      ShiftToAnotherRoom: insertValues[11],
+      ShiftedTo: insertValues[12],
+      ShiftedToDetails: insertValues[13],
+      ScheduleOT: insertValues[14],
+      OTAdmissionId: insertValues[15],
+      IsLinkedToICU: insertValues[16],
+      ICUAdmissionId: insertValues[17],
+      BillId: insertValues[18],
+      AllocatedBy: insertValues[19],
       Status: insertValues[20],
     });
+    console.log('=== END INSERT VALUES DEBUG ===');
+    console.log('All insert values:', insertValues);
+    console.log('Insert values types:', insertValues.map((v, i) => {
+      const fieldNames = [
+        'PatientAppointmentId', 'EmergencyAdmissionId', 'PatientType', 'AdmittingDoctorId', 'PatientId',
+        'RoomBedsId', 'RoomAllocationDate', 'RoomVacantDate', 'AdmissionStatus', 'CaseSheetDetails',
+        'CaseSheet', 'ShiftToAnotherRoom', 'ShiftedTo', 'ShiftedToDetails', 'ScheduleOT',
+        'OTAdmissionId', 'IsLinkedToICU', 'ICUAdmissionId', 'BillId', 'AllocatedBy', 'Status'
+      ];
+      return `${fieldNames[i]}: ${typeof v} (${v})`;
+    }));
 
     const insertQuery = `
       INSERT INTO "RoomAdmission"
-        ("PatientAppointmentId", "EmergencyBedSlotId", "PatientType", "AdmittingDoctorId", "PatientId", "RoomBedsId",
+        ("PatientAppointmentId", "EmergencyAdmissionId", "PatientType", "AdmittingDoctorId", "PatientId", "RoomBedsId",
          "RoomAllocationDate", "RoomVacantDate", "AdmissionStatus", "CaseSheetDetails", "CaseSheet",
          "ShiftToAnotherRoom", "ShiftedTo", "ShiftedToDetails", "ScheduleOT", "OTAdmissionId",
          "IsLinkedToICU", "ICUAdmissionId", "BillId", "AllocatedBy", "Status")
-      VALUES ($1, $2, $3, $4, $5::uuid, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::uuid, $18, $19, $20, $21)
+      VALUES ($1, $2, $3, $4, $5::uuid, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::uuid, $19, $20, $21)
       RETURNING *;
     `;
-
+    console.log('&&&&&&&&&&&&&&&&&&&&&&&&Insert query:', insertQuery);
+    console.log('SQL Column Order:', [
+      'PatientAppointmentId', 'EmergencyAdmissionId', 'PatientType', 'AdmittingDoctorId', 'PatientId', 'RoomBedsId',
+      'RoomAllocationDate', 'RoomVacantDate', 'AdmissionStatus', 'CaseSheetDetails', 'CaseSheet',
+      'ShiftToAnotherRoom', 'ShiftedTo', 'ShiftedToDetails', 'ScheduleOT', 'OTAdmissionId',
+      'IsLinkedToICU', 'ICUAdmissionId', 'BillId', 'AllocatedBy', 'Status'
+    ]);
+    
     const { rows } = await db.query(insertQuery, insertValues);
+
+    // Verify the inserted record has the correct values
+    console.log('=== VERIFICATION: Inserted Record ===');
+    console.log('PatientType in DB:', rows[0].PatientType || rows[0].patienttype);
+    console.log('CaseSheetDetails in DB:', rows[0].CaseSheetDetails || rows[0].casesheetdetails);
+    console.log('CaseSheet in DB:', rows[0].CaseSheet || rows[0].casesheet);
+    console.log('=====================================');
 
     res.status(201).json({
       success: true,
@@ -629,7 +821,7 @@ exports.updateRoomAdmission = async (req, res) => {
 
     const {
       PatientAppointmentId,
-      EmergencyBedSlotId,
+      EmergencyAdmissionId,
       PatientType,
       AdmittingDoctorId,
       PatientId,
@@ -661,7 +853,7 @@ exports.updateRoomAdmission = async (req, res) => {
       }
     }
 
-    // Business logic: If PatientType is being updated to 'Direct', PatientAppointmentId and EmergencyBedSlotId should be null
+    // Business logic: If PatientType is being updated to 'Direct', PatientAppointmentId and EmergencyAdmissionId should be null
     if (PatientType === 'Direct') {
       if (PatientAppointmentId !== undefined && PatientAppointmentId !== null && PatientAppointmentId !== '') {
         return res.status(400).json({
@@ -669,10 +861,10 @@ exports.updateRoomAdmission = async (req, res) => {
           message: 'PatientAppointmentId should be null for Direct PatientType',
         });
       }
-      if (EmergencyBedSlotId !== undefined && EmergencyBedSlotId !== null && EmergencyBedSlotId !== '') {
+      if (EmergencyAdmissionId !== undefined && EmergencyAdmissionId !== null && EmergencyAdmissionId !== '') {
         return res.status(400).json({
           success: false,
-          message: 'EmergencyBedSlotId should be null for Direct PatientType',
+          message: 'EmergencyAdmissionId should be null for Direct PatientType',
         });
       }
     }
@@ -718,10 +910,14 @@ exports.updateRoomAdmission = async (req, res) => {
       }
     }
 
-    if (EmergencyBedSlotId !== undefined && EmergencyBedSlotId !== null) {
-      const emergencyBedSlotExists = await db.query('SELECT "EmergencyBedSlotId" FROM "EmergencyBedSlot" WHERE "EmergencyBedSlotId" = $1', [parseInt(EmergencyBedSlotId, 10)]);
-      if (emergencyBedSlotExists.rows.length === 0) {
-        return res.status(400).json({ success: false, message: 'EmergencyBedSlotId does not exist' });
+    if (EmergencyAdmissionId !== undefined && EmergencyAdmissionId !== null && EmergencyAdmissionId !== '') {
+      const emergencyAdmissionIdInt = parseInt(EmergencyAdmissionId, 10);
+      if (isNaN(emergencyAdmissionIdInt)) {
+        return res.status(400).json({ success: false, message: 'EmergencyAdmissionId must be a valid integer' });
+      }
+      const emergencyAdmissionExists = await db.query('SELECT "EmergencyAdmissionId" FROM "EmergencyAdmission" WHERE "EmergencyAdmissionId" = $1', [emergencyAdmissionIdInt]);
+      if (emergencyAdmissionExists.rows.length === 0) {
+        return res.status(400).json({ success: false, message: 'EmergencyAdmissionId does not exist' });
       }
     }
 
@@ -768,9 +964,22 @@ exports.updateRoomAdmission = async (req, res) => {
       updates.push(`"PatientAppointmentId" = $${paramIndex++}`);
       params.push(PatientAppointmentId || null);
     }
-    if (EmergencyBedSlotId !== undefined) {
-      updates.push(`"EmergencyBedSlotId" = $${paramIndex++}`);
-      params.push(EmergencyBedSlotId || null);
+    if (EmergencyAdmissionId !== undefined) {
+      if (EmergencyAdmissionId !== null && EmergencyAdmissionId !== '') {
+        const emergencyAdmissionIdInt = parseInt(EmergencyAdmissionId, 10);
+        if (isNaN(emergencyAdmissionIdInt)) {
+          return res.status(400).json({ success: false, message: 'EmergencyAdmissionId must be a valid integer' });
+        }
+        const emergencyAdmissionExists = await db.query('SELECT "EmergencyAdmissionId" FROM "EmergencyAdmission" WHERE "EmergencyAdmissionId" = $1', [emergencyAdmissionIdInt]);
+        if (emergencyAdmissionExists.rows.length === 0) {
+          return res.status(400).json({ success: false, message: 'EmergencyAdmissionId does not exist' });
+        }
+        updates.push(`"EmergencyAdmissionId" = $${paramIndex++}`);
+        params.push(emergencyAdmissionIdInt);
+      } else {
+        updates.push(`"EmergencyAdmissionId" = $${paramIndex++}`);
+        params.push(null);
+      }
     }
     if (PatientType !== undefined) {
       updates.push(`"PatientType" = $${paramIndex++}`);
@@ -1013,30 +1222,24 @@ exports.getRoomAdmissionsData = async (req, res) => {
     
     let query = `
       SELECT 
-        ra."RoomAdmissionId",
+        ra.*,
         rb."BedNo",
+        rb."RoomNo",
+        rb."RoomType",
         p."PatientName",
+        p."PatientNo",
         p."Age",
         p."Gender",
-        rb."RoomType",
         ra."RoomAllocationDate" AS "AdmissionDate",
         u."UserName" AS "AdmittedBy",
         ra."CaseSheetDetails" AS "Diagnosis",
-        ra."AdmissionStatus",
-        ra."Status",
-        ra."ScheduleOT",
         d."UserName" as "AdmittingDoctorName",
-        ra."PatientId" as "PatientId",
-        p."PatientNo" as "PatientNo",
-        ra."AdmittingDoctorId" as "AdmittingDoctorId",
-        ra."PatientType" as "PatientType",
-        ra."EmergencyBedSlotId" as "EmergencyBedSlotId",
         latest_appt."PatientAppointmentId" as "PatientAppointmentId",
         latest_appt."AppointmentDate" as "AppointmentDate",
         latest_appt."TokenNo" as "AppointmentTokenNo",
-        latest_emergency."EmergencyAdmissionId" as "EmergencyAdmissionId",
+        latest_emergency."EmergencyAdmissionId" as "LatestEmergencyAdmissionId",
         latest_emergency."EmergencyAdmissionDate" as "EmergencyAdmissionDate",
-        latest_emergency."EmergencyBedId" as "EmergencyAdmissionBedId",
+        latest_emergency."EmergencyBedId" as "EmergencyBedId",
         latest_emergency."EmergencyStatus" as "EmergencyStatus",
         latest_emergency."EmergencyBedNo" as "EmergencyBedNo"
       FROM "RoomAdmission" ra
@@ -1086,8 +1289,8 @@ exports.getRoomAdmissionsData = async (req, res) => {
     if (!status && !admissionStatus) {
       conditions.push(`ra."Status" = $${params.length + 1}`);
       params.push('Active');
-      conditions.push(`ra."AdmissionStatus" != $${params.length + 1}`);
-      params.push('Discharged');
+      //conditions.push(`ra."AdmissionStatus" != $${params.length + 1}`);
+      //params.push('Discharged');
     }
     
     if (conditions.length > 0) {
@@ -1098,13 +1301,39 @@ exports.getRoomAdmissionsData = async (req, res) => {
     console.log("query****************", query);
     const { rows } = await db.query(query, params);
     
-    // Format data with separate Age and Gender fields
+    // Format data with all required fields
     const formattedData = rows.map(row => {
       const age = row.Age || row.age || null;
       const gender = row.Gender || row.gender || null;
+      const mappedRow = mapRoomAdmissionRow(row);
       
       return {
-        roomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
+        // All required RoomAdmission fields
+        RoomAdmissionId: mappedRow.RoomAdmissionId,
+        PatientAppointmentId: mappedRow.PatientAppointmentId,
+        EmergencyAdmissionId: mappedRow.EmergencyAdmissionId,
+        PatientType: mappedRow.PatientType,
+        AdmittingDoctorId: mappedRow.AdmittingDoctorId,
+        PatientId: mappedRow.PatientId,
+        RoomBedsId: mappedRow.RoomBedsId,
+        RoomAllocationDate: mappedRow.RoomAllocationDate,
+        RoomVacantDate: mappedRow.RoomVacantDate,
+        AdmissionStatus: mappedRow.AdmissionStatus,
+        CaseSheetDetails: mappedRow.CaseSheetDetails,
+        CaseSheet: mappedRow.CaseSheet,
+        ShiftToAnotherRoom: mappedRow.ShiftToAnotherRoom,
+        ShiftedTo: mappedRow.ShiftedTo,
+        ShiftedToDetails: mappedRow.ShiftedToDetails,
+        ScheduleOT: mappedRow.ScheduleOT,
+        OTAdmissionId: mappedRow.OTAdmissionId,
+        IsLinkedToICU: mappedRow.IsLinkedToICU,
+        ICUAdmissionId: mappedRow.ICUAdmissionId,
+        BillId: mappedRow.BillId,
+        AllocatedBy: mappedRow.AllocatedBy,
+        AllocatedAt: mappedRow.AllocatedAt,
+        Status: mappedRow.Status,
+        // Additional display fields
+        roomAdmissionId: mappedRow.RoomAdmissionId,
         bedNo: row.BedNo || row.bedno || null,
         patientName: row.PatientName || row.patientname || null,
         age: age !== null ? parseInt(age, 10) : null,
@@ -1114,17 +1343,12 @@ exports.getRoomAdmissionsData = async (req, res) => {
         admittedBy: row.AdmittedBy || row.admittedby || null,
         admittingDoctorName: row.AdmittingDoctorName || row.admittingdoctorname || null,
         diagnosis: row.Diagnosis || row.diagnosis || null,
-        admissionStatus: row.AdmissionStatus || row.admissionstatus || null,
-        status: row.Status || row.status || null,
-        scheduleOT: row.ScheduleOT || row.scheduleot || null,
-        patientType: row.PatientType || row.patienttype || null,
-        patientAppointmentId: row.PatientAppointmentId || row.patientappointmentid || null,
+        patientNo: row.PatientNo || row.patientno || null,
         appointmentDate: row.AppointmentDate || row.appointmentdate || null,
         appointmentTokenNo: row.AppointmentTokenNo || row.appointmenttokenno || null,
-        emergencyBedSlotId: row.EmergencyBedSlotId || row.emergencybedslotid || null,
-        emergencyAdmissionId: row.EmergencyAdmissionId || row.emergencyadmissionid || null,
+        latestEmergencyAdmissionId: row.LatestEmergencyAdmissionId || row.latestemergencyadmissionid || null,
         emergencyAdmissionDate: row.EmergencyAdmissionDate || row.emergencyadmissiondate || null,
-        emergencyAdmissionBedId: row.EmergencyAdmissionBedId || row.emergencyadmissionbedid || null,
+        emergencyBedId: row.EmergencyBedId || row.emergencybedid || null,
         emergencyStatus: row.EmergencyStatus || row.emergencystatus || null,
         emergencyBedNo: row.EmergencyBedNo || row.emergencybedno || null
       };
@@ -1164,26 +1388,23 @@ exports.getRoomAdmissionsDataById = async (req, res) => {
     
     const query = `
       SELECT 
-        ra."RoomAdmissionId",
+        ra.*,
         rb."BedNo",
+        rb."RoomNo",
+        rb."RoomType",
         p."PatientName",
+        p."PatientNo",
         p."Age",
         p."Gender",
-        rb."RoomType",
-        ra."RoomAllocationDate" AS "AdmissionDate",
-        u."UserName" AS "AdmittedBy",
-        ra."CaseSheetDetails" AS "Diagnosis",
-        ra."AdmissionStatus",
-        ra."Status",
-        ra."ScheduleOT",
-        p."PatientNo",
-        d."UserName" as "AdmittingDoctorName",
-        ra."PatientId" as "PatientId"
+        d."UserName" AS "AdmittingDoctorName",
+        u."UserName" AS "AllocatedByName",
+        pa."TokenNo" AS "AppointmentTokenNo"
       FROM "RoomAdmission" ra
       LEFT JOIN "PatientRegistration" p ON ra."PatientId" = p."PatientId"
       LEFT JOIN "RoomBeds" rb ON ra."RoomBedsId" = rb."RoomBedsId"
       LEFT JOIN "Users" u ON ra."AllocatedBy" = u."UserId"
       LEFT JOIN "Users" d ON ra."AdmittingDoctorId" = d."UserId"
+      LEFT JOIN "PatientAppointment" pa ON ra."PatientAppointmentId" = pa."PatientAppointmentId"
       WHERE ra."RoomAdmissionId" = $1
     `;
     
@@ -1192,30 +1413,54 @@ exports.getRoomAdmissionsDataById = async (req, res) => {
     if (rows.length === 0) {
       return res.status(404).json({
         success: false,
-        message: `Room admission with ID ${roomAdmissionId} not found`
+        message: 'Room admission not found'
       });
     }
     
     const row = rows[0];
+    const mappedRow = mapRoomAdmissionRow(row);
     const age = row.Age || row.age || null;
     const gender = row.Gender || row.gender || null;
     
     const formattedData = {
-      roomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
+      // All required RoomAdmission fields
+      RoomAdmissionId: mappedRow.RoomAdmissionId,
+      PatientAppointmentId: mappedRow.PatientAppointmentId,
+      EmergencyAdmissionId: mappedRow.EmergencyAdmissionId,
+      PatientType: mappedRow.PatientType,
+      AdmittingDoctorId: mappedRow.AdmittingDoctorId,
+      PatientId: mappedRow.PatientId,
+      RoomBedsId: mappedRow.RoomBedsId,
+      RoomAllocationDate: mappedRow.RoomAllocationDate,
+      RoomVacantDate: mappedRow.RoomVacantDate,
+      AdmissionStatus: mappedRow.AdmissionStatus,
+      CaseSheetDetails: mappedRow.CaseSheetDetails,
+      CaseSheet: mappedRow.CaseSheet,
+      ShiftToAnotherRoom: mappedRow.ShiftToAnotherRoom,
+      ShiftedTo: mappedRow.ShiftedTo,
+      ShiftedToDetails: mappedRow.ShiftedToDetails,
+      ScheduleOT: mappedRow.ScheduleOT,
+      OTAdmissionId: mappedRow.OTAdmissionId,
+      IsLinkedToICU: mappedRow.IsLinkedToICU,
+      ICUAdmissionId: mappedRow.ICUAdmissionId,
+      BillId: mappedRow.BillId,
+      AllocatedBy: mappedRow.AllocatedBy,
+      AllocatedAt: mappedRow.AllocatedAt,
+      Status: mappedRow.Status,
+      // Additional display fields (for backward compatibility)
+      roomAdmissionId: mappedRow.RoomAdmissionId,
       bedNo: row.BedNo || row.bedno || null,
+      roomNo: row.RoomNo || row.roomno || null,
+      roomType: row.RoomType || row.roomtype || null,
       patientName: row.PatientName || row.patientname || null,
+      patientNo: row.PatientNo || row.patientno || null,
       age: age !== null ? parseInt(age, 10) : null,
       gender: gender || null,
-      roomType: row.RoomType || row.roomtype || null,
-      admissionDate: row.AdmissionDate || row.admissiondate || null,
-      admittedBy: row.AdmittedBy || row.admittedby || null,
-      diagnosis: row.Diagnosis || row.diagnosis || null,
-      admissionStatus: row.AdmissionStatus || row.admissionstatus || null,
-      status: row.Status || row.status || null,
-      scheduleOT: row.ScheduleOT || row.scheduleot || null,
-      patientNo: row.PatientNo || row.patientno || null,
+      admissionDate: mappedRow.RoomAllocationDate,
+      admittedBy: row.AllocatedByName || row.allocatedbyname || null,
       admittingDoctorName: row.AdmittingDoctorName || row.admittingdoctorname || null,
-      patientId: row.PatientId || row.patientid || null,
+      diagnosis: mappedRow.CaseSheetDetails,
+      appointmentTokenNo: row.AppointmentTokenNo || row.appointmenttokenno || null,
     };
     
     res.status(200).json({

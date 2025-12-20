@@ -445,8 +445,10 @@ Response: {
     PatientICUAdmissionId: String (UUID),
     PatientId: String (UUID),
     PatientAppointmentId: Number | null,
-    EmergencyBedSlotId: Number | null,
+    EmergencyAdmissionId: Number | null,
+    EmergencyBedId: Number | null,
     RoomAdmissionId: Number | null,
+    PatientType: String | null, // "OPD" | "IPD" | "Emergency" | "Direct"
     ICUId: Number,
     ICUPatientStatus: String, // "Serious" | "Available" | "Critical" | "Stable"
     ICUAdmissionStatus: String, // "Occupied" | "Discharged", defaults to "Occupied"
@@ -480,8 +482,10 @@ Response: {
     PatientICUAdmissionId: String (UUID),
     PatientId: String (UUID),
     PatientAppointmentId: Number | null,
-    EmergencyBedSlotId: Number | null,
+    EmergencyAdmissionId: Number | null,
+    EmergencyBedId: Number | null,
     RoomAdmissionId: Number | null,
+    PatientType: String | null, // "OPD" | "IPD" | "Emergency" | "Direct"
     ICUId: Number,
     ICUPatientStatus: String, // "Serious" | "Available" | "Critical" | "Stable"
     ICUAdmissionStatus: String, // "Occupied" | "Discharged"
@@ -510,8 +514,10 @@ router.get('/:id', patientICUAdmissionController.getPatientICUAdmissionById);
 Request: {
   PatientId: String (UUID), (required)
   PatientAppointmentId: Number | null,
-  EmergencyBedSlotId: Number | null,
+  EmergencyAdmissionId: Number | null,
+  EmergencyBedId: Number | null,
   RoomAdmissionId: Number | null,
+  PatientType: String | null, // "OPD" | "IPD" | "Emergency" | "Direct"
   ICUId: Number, (required)
   ICUPatientStatus: String, (required) // "Serious" | "Available" | "Critical" | "Stable"
   ICUAdmissionStatus: String, // "Occupied" | "Discharged", defaults to "Occupied"
@@ -533,8 +539,10 @@ Response: {
     PatientICUAdmissionId: String (UUID),
     PatientId: String (UUID),
     PatientAppointmentId: Number | null,
-    EmergencyBedSlotId: Number | null,
+    EmergencyAdmissionId: Number | null,
+    EmergencyBedId: Number | null,
     RoomAdmissionId: Number | null,
+    PatientType: String | null, // "OPD" | "IPD" | "Emergency" | "Direct"
     ICUId: Number,
     ICUPatientStatus: String, // "Serious" | "Available" | "Critical" | "Stable"
     ICUAdmissionStatus: String, // "Occupied" | "Discharged"
@@ -565,7 +573,10 @@ Path Parameters:
 Request: {
   PatientId: String (UUID),
   PatientAppointmentId: Number | null,
-  EmergencyBedSlotId: Number | null,
+  EmergencyAdmissionId: Number | null,
+  EmergencyBedId: Number | null,
+  RoomAdmissionId: Number | null,
+  PatientType: String | null, // "OPD" | "IPD" | "Emergency" | "Direct"
   ICUId: Number,
   ICUPatientStatus: String, // "Serious" | "Available" | "Critical" | "Stable"
   ICUAdmissionStatus: String, // "Occupied" | "Discharged"
@@ -587,8 +598,10 @@ Response: {
     PatientICUAdmissionId: String (UUID),
     PatientId: String (UUID),
     PatientAppointmentId: Number | null,
-    EmergencyBedSlotId: Number | null,
+    EmergencyAdmissionId: Number | null,
+    EmergencyBedId: Number | null,
     RoomAdmissionId: Number | null,
+    PatientType: String | null, // "OPD" | "IPD" | "Emergency" | "Direct"
     ICUId: Number,
     ICUPatientStatus: String, // "Serious" | "Available" | "Critical" | "Stable"
     ICUAdmissionStatus: String, // "Occupied" | "Discharged"

@@ -16,7 +16,7 @@ Response: {
   data: Array<{
     RoomAdmissionId: Number,
     PatientAppointmentId: Number | null,
-    EmergencyBedSlotId: Number | null,
+    EmergencyAdmissionId: Number | null,
     AdmittingDoctorId: Number,
     PatientId: String (UUID),
     RoomBedsId: Number,
@@ -116,8 +116,8 @@ Response: {
     patientAppointmentId: Number | null, // Latest PatientAppointmentId based on AppointmentDate
     appointmentDate: Date | null, // Latest AppointmentDate
     appointmentTokenNo: Number | null, // Latest Appointment TokenNo
-    emergencyBedSlotId: Number | null, // EmergencyBedSlotId from RoomAdmission
-    emergencyAdmissionId: Number | null, // Latest EmergencyAdmissionId based on EmergencyAdmissionDate
+    emergencyAdmissionId: Number | null, // EmergencyAdmissionId from RoomAdmission
+    latestEmergencyAdmissionId: Number | null, // Latest EmergencyAdmissionId based on EmergencyAdmissionDate
     emergencyAdmissionDate: Date | null, // Latest EmergencyAdmissionDate
     emergencyAdmissionBedId: Number | null, // EmergencyBedId from latest EmergencyAdmission
     emergencyStatus: String | null, // Latest EmergencyStatus from EmergencyAdmission
@@ -162,7 +162,7 @@ Response: {
   data: Array<{
     RoomAdmissionId: Number,
     PatientAppointmentId: Number | null,
-    EmergencyBedSlotId: Number | null,
+    EmergencyAdmissionId: Number | null,
     AdmittingDoctorId: Number,
     PatientId: String (UUID),
     RoomBedsId: Number,
@@ -201,7 +201,7 @@ Response: {
   data: {
     RoomAdmissionId: Number,
     PatientAppointmentId: Number | null,
-    EmergencyBedSlotId: Number | null,
+    EmergencyAdmissionId: Number | null,
     AdmittingDoctorId: Number,
     PatientId: String (UUID),
     RoomBedsId: Number,
@@ -265,7 +265,7 @@ Response: {
   data: {
     RoomAdmissionId: Number,
     PatientAppointmentId: Number | null,
-    EmergencyBedSlotId: Number | null,
+    EmergencyAdmissionId: Number | null,
     AdmittingDoctorId: Number,
     PatientId: String (UUID),
     RoomBedsId: Number,
@@ -299,8 +299,8 @@ router.get('/:id', roomAdmissionController.getRoomAdmissionById);
 /* POST /api/room-admissions
 Request: {
   PatientAppointmentId: Number | null,
-  EmergencyBedSlotId: Number | null,
-  PatientType: String | null, // "OPD" | "Emergency" | "Direct" - Required if PatientAppointmentId and EmergencyBedSlotId are both null
+  EmergencyAdmissionId: Number | null,
+  PatientType: String | null, // "OPD" | "Emergency" | "Direct" - Required if PatientAppointmentId and EmergencyAdmissionId are both null
   AdmittingDoctorId: Number, (required)
   PatientId: String (UUID), (required)
   RoomBedsId: Number, (required)
@@ -326,7 +326,7 @@ Response: {
   data: {
     RoomAdmissionId: Number,
     PatientAppointmentId: Number | null,
-    EmergencyBedSlotId: Number | null,
+    EmergencyAdmissionId: Number | null,
     PatientType: String | null, // "OPD" | "Emergency" | "Direct"
     AdmittingDoctorId: Number,
     PatientId: String (UUID),
@@ -363,7 +363,7 @@ Path Parameters:
   - id: Number, (required)
 Request: {
   PatientAppointmentId: Number | null,
-  EmergencyBedSlotId: Number | null,
+  EmergencyAdmissionId: Number | null,
   PatientType: String | null, // "OPD" | "Emergency" | "Direct"
   AdmittingDoctorId: Number,
   PatientId: String (UUID),
@@ -390,7 +390,7 @@ Response: {
   data: {
     RoomAdmissionId: Number,
     PatientAppointmentId: Number | null,
-    EmergencyBedSlotId: Number | null,
+    EmergencyAdmissionId: Number | null,
     PatientType: String | null, // "OPD" | "Emergency" | "Direct"
     AdmittingDoctorId: Number,
     PatientId: String (UUID),

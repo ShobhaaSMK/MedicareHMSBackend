@@ -59,7 +59,7 @@ Request: {
   EmergencyRoomNameNo: String (optional), // character varying 100
   EmergencyRoomDescription: String (optional),
   ChargesPerDay: Number (optional),
-  Status: String (optional), // "Active" | "Inactive", defaults to "Active"
+  Status: String (optional), // "Active" | "Inactive" | "Occupied" | "Occupied", defaults to "Active"
   CreatedBy: Number (optional)
 }
 Response: {
@@ -84,7 +84,7 @@ Request: {
   EmergencyRoomNameNo: String (optional), // character varying 100
   EmergencyRoomDescription: String (optional),
   ChargesPerDay: Number (optional),
-  Status: String (optional), // "Active" | "Inactive"
+  Status: String (optional), // "Active" | "Inactive" | "Occupied"
   CreatedBy: Number (optional)
 }
 Response: {

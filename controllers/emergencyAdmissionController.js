@@ -33,28 +33,40 @@ const mapEmergencyAdmissionRow = (row) => ({
   DoctorName: row.DoctorName || row.doctorname || null,
   EmergencyBedNo: row.EmergencyBedNo || row.emergencybedno || null,
   CreatedByName: row.CreatedByName || row.createdbyname || null,
-  EmergencyAdmissionId_EmergencyAdmissionDate: row.EmergencyAdmissionId_EmergencyAdmissionDate || row.emergencyadmissionid_emergencyadmissiondate || null,
-  EmergencyBedId_AllocationFromDate: row.EmergencyBedId_AllocationFromDate || row.emergencybedid_allocationfromdate || null,
+  EmergencyAdmissionId_EmergencyBedNo_EmergencyAdmissionDate: row.EmergencyAdmissionId_EmergencyBedNo_EmergencyAdmissionDate || row.emergencyadmissionid_emergencybedno_emergencyadmissiondate || null,
 });
 
 exports.getAllEmergencyAdmissions = async (req, res) => {
   try {
     const { status, emergencyStatus, patientId, doctorId, emergencyBedId } = req.query;
-    let query = 'SELECT * FROM "EmergencyAdmission"';
+    let query = `
+      SELECT 
+        ea.*,
+        p."PatientName", p."PatientNo",
+        d."UserName" AS "DoctorName",
+        e."EmergencyBedNo",
+        u."UserName" AS "CreatedByName",
+        CONCAT(ea."EmergencyAdmissionId", '_', COALESCE(e."EmergencyBedNo", ''), '_', ea."EmergencyAdmissionDate"::text) AS "EmergencyAdmissionId_EmergencyBedNo_EmergencyAdmissionDate"
+      FROM "EmergencyAdmission" ea
+      LEFT JOIN "PatientRegistration" p ON ea."PatientId" = p."PatientId"
+      LEFT JOIN "Users" d ON ea."DoctorId" = d."UserId"
+      LEFT JOIN "EmergencyBed" e ON ea."EmergencyBedId" = e."EmergencyBedId"
+      LEFT JOIN "Users" u ON ea."AdmissionCreatedBy" = u."UserId"
+    `;
     const params = [];
     const conditions = [];
 
     if (status) {
-      conditions.push(`"Status" = $${params.length + 1}`);
+      conditions.push(`ea."Status" = $${params.length + 1}`);
       params.push(status);
     }
     if (emergencyStatus) {
-      conditions.push(`"EmergencyStatus" = $${params.length + 1}`);
+      conditions.push(`ea."EmergencyStatus" = $${params.length + 1}`);
       params.push(emergencyStatus);
     }
     if (patientId) {
       if (uuidRegex.test(patientId)) {
-        conditions.push(`"PatientId" = $${params.length + 1}::uuid`);
+        conditions.push(`ea."PatientId" = $${params.length + 1}::uuid`);
         params.push(patientId);
       } else {
         return res.status(400).json({
@@ -66,14 +78,14 @@ exports.getAllEmergencyAdmissions = async (req, res) => {
     if (doctorId) {
       const doctorIdInt = parseInt(doctorId, 10);
       if (!isNaN(doctorIdInt)) {
-        conditions.push(`"DoctorId" = $${params.length + 1}`);
+        conditions.push(`ea."DoctorId" = $${params.length + 1}`);
         params.push(doctorIdInt);
       }
     }
     if (emergencyBedId) {
       const emergencyBedIdInt = parseInt(emergencyBedId, 10);
       if (!isNaN(emergencyBedIdInt)) {
-        conditions.push(`"EmergencyBedId" = $${params.length + 1}`);
+        conditions.push(`ea."EmergencyBedId" = $${params.length + 1}`);
         params.push(emergencyBedIdInt);
       }
     }
@@ -81,7 +93,7 @@ exports.getAllEmergencyAdmissions = async (req, res) => {
     if (conditions.length > 0) {
       query += ' WHERE ' + conditions.join(' AND ');
     }
-    query += ' ORDER BY "EmergencyAdmissionDate" DESC, "AdmissionCreatedAt" DESC';
+    query += ' ORDER BY ea."EmergencyAdmissionDate" DESC, ea."AdmissionCreatedAt" DESC';
 
     const { rows } = await db.query(query, params);
     res.status(200).json({
@@ -110,7 +122,19 @@ exports.getEmergencyAdmissionById = async (req, res) => {
       });
     }
     const { rows } = await db.query(
-      'SELECT * FROM "EmergencyAdmission" WHERE "EmergencyAdmissionId" = $1',
+      `SELECT 
+        ea.*,
+        p."PatientName", p."PatientNo",
+        d."UserName" AS "DoctorName",
+        e."EmergencyBedNo",
+        u."UserName" AS "CreatedByName",
+        CONCAT(ea."EmergencyAdmissionId", '_', COALESCE(e."EmergencyBedNo", ''), '_', ea."EmergencyAdmissionDate"::text) AS "EmergencyAdmissionId_EmergencyBedNo_EmergencyAdmissionDate"
+      FROM "EmergencyAdmission" ea
+      LEFT JOIN "PatientRegistration" p ON ea."PatientId" = p."PatientId"
+      LEFT JOIN "Users" d ON ea."DoctorId" = d."UserId"
+      LEFT JOIN "EmergencyBed" e ON ea."EmergencyBedId" = e."EmergencyBedId"
+      LEFT JOIN "Users" u ON ea."AdmissionCreatedBy" = u."UserId"
+      WHERE ea."EmergencyAdmissionId" = $1`,
       [emergencyAdmissionId]
     );
     if (rows.length === 0) {
@@ -141,9 +165,19 @@ exports.getEmergencyAdmissionByDate = async (req, res) => {
     // Join with PatientOTAllocation to check OTAllocationDate
     // Fetch EmergencyAdmission records where the patient has an OT allocation on the specified date
     const query = `
-      SELECT DISTINCT ea.*
+      SELECT DISTINCT 
+        ea.*,
+        p."PatientName", p."PatientNo",
+        d."UserName" AS "DoctorName",
+        e."EmergencyBedNo",
+        u."UserName" AS "CreatedByName",
+        CONCAT(ea."EmergencyAdmissionId", '_', COALESCE(e."EmergencyBedNo", ''), '_', ea."EmergencyAdmissionDate"::text) AS "EmergencyAdmissionId_EmergencyBedNo_EmergencyAdmissionDate"
       FROM "EmergencyAdmission" ea
       INNER JOIN "PatientOTAllocation" pota ON ea."PatientId" = pota."PatientId"
+      LEFT JOIN "PatientRegistration" p ON ea."PatientId" = p."PatientId"
+      LEFT JOIN "Users" d ON ea."DoctorId" = d."UserId"
+      LEFT JOIN "EmergencyBed" e ON ea."EmergencyBedId" = e."EmergencyBedId"
+      LEFT JOIN "Users" u ON ea."AdmissionCreatedBy" = u."UserId"
       WHERE pota."OTAllocationDate" = $1::date
       ORDER BY ea."EmergencyAdmissionDate" DESC, ea."AdmissionCreatedAt" DESC
     `;
@@ -180,9 +214,20 @@ exports.getEmergencyAdmissionByStatus = async (req, res) => {
 
     // Fetch EmergencyAdmission records filtered by EmergencyStatus
     const query = `
-      SELECT * FROM "EmergencyAdmission"
-      WHERE "EmergencyStatus" = $1
-      ORDER BY "EmergencyAdmissionDate" DESC, "AdmissionCreatedAt" DESC
+      SELECT 
+        ea.*,
+        p."PatientName", p."PatientNo",
+        d."UserName" AS "DoctorName",
+        e."EmergencyBedNo",
+        u."UserName" AS "CreatedByName",
+        CONCAT(ea."EmergencyAdmissionId", '_', COALESCE(e."EmergencyBedNo", ''), '_', ea."EmergencyAdmissionDate"::text) AS "EmergencyAdmissionId_EmergencyBedNo_EmergencyAdmissionDate"
+      FROM "EmergencyAdmission" ea
+      LEFT JOIN "PatientRegistration" p ON ea."PatientId" = p."PatientId"
+      LEFT JOIN "Users" d ON ea."DoctorId" = d."UserId"
+      LEFT JOIN "EmergencyBed" e ON ea."EmergencyBedId" = e."EmergencyBedId"
+      LEFT JOIN "Users" u ON ea."AdmissionCreatedBy" = u."UserId"
+      WHERE ea."EmergencyStatus" = $1
+      ORDER BY ea."EmergencyAdmissionDate" DESC, ea."AdmissionCreatedAt" DESC
     `;
 
     const { rows } = await db.query(query, [status.trim()]);
@@ -223,8 +268,7 @@ exports.getEmergencyAdmissionsByPatientId = async (req, res) => {
         d."UserName" AS "DoctorName",
         e."EmergencyBedNo",
         u."UserName" AS "CreatedByName",
-        CONCAT(ea."EmergencyAdmissionId"::text, '_', ea."EmergencyAdmissionDate"::text) AS "EmergencyAdmissionId_EmergencyAdmissionDate",
-        CONCAT(COALESCE(ea."EmergencyBedId"::text, ''), '_', COALESCE(ea."AllocationFromDate"::text, '')) AS "EmergencyBedId_AllocationFromDate"
+        CONCAT(ea."EmergencyAdmissionId", '_', e."EmergencyBedNo", '_', ea."EmergencyAdmissionDate"::text) AS "EmergencyAdmissionId_EmergencyBedNo_EmergencyAdmissionDate"
       FROM "EmergencyAdmission" ea
       LEFT JOIN "PatientRegistration" p ON ea."PatientId" = p."PatientId"
       LEFT JOIN "Users" d ON ea."DoctorId" = d."UserId"
@@ -467,14 +511,6 @@ exports.createEmergencyAdmission = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Invalid DoctorId, PatientId, or EmergencyBedId. Please ensure they exist.',
-        error: error.message,
-      });
-    }
-    if (error.code === '42703') {
-      // Column does not exist
-      return res.status(500).json({
-        success: false,
-        message: 'Database schema error: Priority column may not exist. Please run the migration: node migrations/add_priority_to_emergency_admission.js',
         error: error.message,
       });
     }

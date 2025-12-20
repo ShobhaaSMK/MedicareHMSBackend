@@ -171,7 +171,7 @@ CREATE TABLE IF NOT EXISTS "EmergencyBed" (
     "EmergencyRoomNameNo" VARCHAR(100),
     "EmergencyRoomDescription" TEXT,
     "ChargesPerDay" DECIMAL(10, 2),
-    "Status" VARCHAR(50) DEFAULT 'Active',
+    "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive', 'Occupied')),
     "CreatedBy" INTEGER,
     "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
@@ -266,7 +266,10 @@ CREATE TABLE IF NOT EXISTS "PatientICUAdmission" (
     "PatientICUAdmissionId" UUID PRIMARY KEY,
     "PatientId" UUID NOT NULL,
     "PatientAppointmentId" INTEGER,
-    "EmergencyBedSlotId" INTEGER,
+    "EmergencyAdmissionId" INTEGER,
+    "EmergencyBedId" INTEGER,
+    "RoomAdmissionId" INTEGER,
+    "PatientType" VARCHAR(50) CHECK ("PatientType" IN ('OPD', 'IPD', 'Emergency', 'Direct')),
     "ICUId" INTEGER NOT NULL,
     "ICUPatientStatus" VARCHAR(50),
     "ICUAdmissionStatus" VARCHAR(50) DEFAULT 'Occupied' CHECK ("ICUAdmissionStatus" IN ('Occupied', 'Discharged')),
@@ -283,7 +286,9 @@ CREATE TABLE IF NOT EXISTS "PatientICUAdmission" (
     "AttendingDoctorId" INTEGER,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("PatientAppointmentId") REFERENCES "PatientAppointment"("PatientAppointmentId") ON DELETE SET NULL,
-    FOREIGN KEY ("EmergencyBedSlotId") REFERENCES "EmergencyBedSlot"("EmergencyBedSlotId") ON DELETE SET NULL,
+    FOREIGN KEY ("EmergencyAdmissionId") REFERENCES "EmergencyAdmission"("EmergencyAdmissionId") ON DELETE SET NULL,
+    FOREIGN KEY ("EmergencyBedId") REFERENCES "EmergencyBed"("EmergencyBedId") ON DELETE SET NULL,
+    FOREIGN KEY ("RoomAdmissionId") REFERENCES "RoomAdmission"("RoomAdmissionId") ON DELETE SET NULL,
     FOREIGN KEY ("ICUId") REFERENCES "ICU"("ICUId") ON DELETE RESTRICT,
     FOREIGN KEY ("ICUAllocationCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL,
     FOREIGN KEY ("AttendingDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL
@@ -293,7 +298,7 @@ CREATE TABLE IF NOT EXISTS "PatientICUAdmission" (
 CREATE TABLE IF NOT EXISTS "RoomAdmission" (
     "RoomAdmissionId" SERIAL PRIMARY KEY,
     "PatientAppointmentId" INTEGER,
-    "EmergencyBedSlotId" INTEGER,
+    "EmergencyAdmissionId" INTEGER,
     "PatientType" VARCHAR(50) CHECK ("PatientType" IN ('OPD', 'Emergency', 'Direct')),
     "AdmittingDoctorId" INTEGER NOT NULL,
     "PatientId" UUID NOT NULL,
@@ -315,7 +320,7 @@ CREATE TABLE IF NOT EXISTS "RoomAdmission" (
     "AllocatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
     FOREIGN KEY ("PatientAppointmentId") REFERENCES "PatientAppointment"("PatientAppointmentId") ON DELETE SET NULL,
-    FOREIGN KEY ("EmergencyBedSlotId") REFERENCES "EmergencyBedSlot"("EmergencyBedSlotId") ON DELETE SET NULL,
+    FOREIGN KEY ("EmergencyAdmissionId") REFERENCES "EmergencyAdmission"("EmergencyAdmissionId") ON DELETE SET NULL,
     FOREIGN KEY ("AdmittingDoctorId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("RoomBedsId") REFERENCES "RoomBeds"("RoomBedsId") ON DELETE RESTRICT,
@@ -395,9 +400,7 @@ CREATE TABLE IF NOT EXISTS "PatientLabTest" (
     FOREIGN KEY ("LabTestId") REFERENCES "LabTest"("LabTestId") ON DELETE RESTRICT,
     FOREIGN KEY ("AppointmentId") REFERENCES "PatientAppointment"("PatientAppointmentId") ON DELETE SET NULL,
     FOREIGN KEY ("EmergencyBedSlotId") REFERENCES "EmergencyBedSlot"("EmergencyBedSlotId") ON DELETE SET NULL,
-    FOREIGN KEY ("BillId") REFERENCES "Bills"("BillId") ON DELETE SET NULL,
-    FOREIGN KEY ("OrderedByDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL,
-    FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    FOREIGN KEY ("BillId") REFERENCES "Bills"("BillId") ON DELETE SET NULL
 );
 
 -- Add missing columns to PatientLabTest if table exists but columns don't
@@ -441,23 +444,47 @@ BEGIN
             AND column_name = 'OrderedByDoctorId'
         ) THEN
             ALTER TABLE "PatientLabTest" ADD COLUMN "OrderedByDoctorId" INTEGER;
-            
-            -- Add foreign key constraint if Users table exists
-            IF EXISTS (
-                SELECT 1 FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                AND table_name = 'Users'
-            ) AND NOT EXISTS (
-                SELECT 1 FROM pg_constraint 
-                WHERE conname = 'PatientLabTest_OrderedByDoctorId_fkey'
-            ) THEN
-                ALTER TABLE "PatientLabTest" 
-                ADD CONSTRAINT "PatientLabTest_OrderedByDoctorId_fkey" 
-                FOREIGN KEY ("OrderedByDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL;
-            END IF;
+            RAISE NOTICE 'Added OrderedByDoctorId column to PatientLabTest';
         END IF;
         
-        -- Ensure CreatedBy foreign key constraint exists (for existing tables)
+        -- Ensure OrderedByDoctorId foreign key constraint exists (for new or existing tables)
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = 'PatientLabTest' 
+            AND column_name = 'OrderedByDoctorId'
+        ) AND EXISTS (
+            SELECT 1 FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = 'Users'
+        ) AND NOT EXISTS (
+            SELECT 1 FROM pg_constraint 
+            WHERE conname = 'PatientLabTest_OrderedByDoctorId_fkey'
+        ) THEN
+            -- Clean up any invalid foreign key references before adding constraint
+            -- Only if column is INTEGER type
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_schema = 'public' 
+                AND table_name = 'PatientLabTest' 
+                AND column_name = 'OrderedByDoctorId'
+                AND data_type = 'integer'
+            ) THEN
+                UPDATE "PatientLabTest" 
+                SET "OrderedByDoctorId" = NULL 
+                WHERE "OrderedByDoctorId" IS NOT NULL 
+                AND NOT EXISTS (
+                    SELECT 1 FROM "Users" WHERE "UserId" = "PatientLabTest"."OrderedByDoctorId"
+                );
+            END IF;
+            
+            ALTER TABLE "PatientLabTest" 
+            ADD CONSTRAINT "PatientLabTest_OrderedByDoctorId_fkey" 
+            FOREIGN KEY ("OrderedByDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL;
+            RAISE NOTICE 'Added PatientLabTest_OrderedByDoctorId_fkey constraint';
+        END IF;
+        
+        -- Ensure CreatedBy foreign key constraint exists (for new or existing tables)
         IF EXISTS (
             SELECT 1 FROM information_schema.columns 
             WHERE table_schema = 'public' 
@@ -471,9 +498,31 @@ BEGIN
             SELECT 1 FROM pg_constraint 
             WHERE conname = 'PatientLabTest_CreatedBy_fkey'
         ) THEN
-            ALTER TABLE "PatientLabTest" 
-            ADD CONSTRAINT "PatientLabTest_CreatedBy_fkey" 
-            FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL;
+            -- Check if CreatedBy is INTEGER type, if not, it needs to be converted first
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns 
+                WHERE table_schema = 'public' 
+                AND table_name = 'PatientLabTest' 
+                AND column_name = 'CreatedBy'
+                AND data_type = 'integer'
+            ) THEN
+                -- Clean up any invalid foreign key references before adding constraint
+                UPDATE "PatientLabTest" 
+                SET "CreatedBy" = NULL 
+                WHERE "CreatedBy" IS NOT NULL 
+                AND NOT EXISTS (
+                    SELECT 1 FROM "Users" WHERE "UserId" = "PatientLabTest"."CreatedBy"
+                );
+                
+                ALTER TABLE "PatientLabTest" 
+                ADD CONSTRAINT "PatientLabTest_CreatedBy_fkey" 
+                FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL;
+                RAISE NOTICE 'Added PatientLabTest_CreatedBy_fkey constraint';
+            ELSE
+                -- CreatedBy is not INTEGER, skip constraint creation
+                -- User should run the migration change_createdby_to_integer_patient_lab_test.sql first
+                RAISE NOTICE 'CreatedBy column is not INTEGER type. Please run migration change_createdby_to_integer_patient_lab_test.sql first.';
+            END IF;
         END IF;
     END IF;
 END $$;

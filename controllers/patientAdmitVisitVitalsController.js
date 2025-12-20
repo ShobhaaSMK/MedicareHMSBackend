@@ -169,24 +169,24 @@ exports.getPatientAdmitVisitVitalsByRoomAdmissionId = async (req, res) => {
 const validatePatientAdmitVisitVitalsPayload = (body, requireAll = true) => {
   const errors = [];
 
-  if (body.RoomAdmissionId !== undefined && body.RoomAdmissionId !== null) {
+  if (body.RoomAdmissionId !== undefined && body.RoomAdmissionId !== null && body.RoomAdmissionId !== '') {
     const roomAdmissionIdInt = parseInt(body.RoomAdmissionId, 10);
     if (isNaN(roomAdmissionIdInt)) {
       errors.push('RoomAdmissionId must be a valid integer');
     }
   }
 
-  if (requireAll && body.PatientId === undefined) {
+  if (requireAll && (body.PatientId === undefined || body.PatientId === null || body.PatientId === '')) {
     errors.push('PatientId is required');
   }
-  if (body.PatientId !== undefined && body.PatientId !== null) {
+  if (body.PatientId !== undefined && body.PatientId !== null && body.PatientId !== '') {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(body.PatientId)) {
       errors.push('PatientId must be a valid UUID');
     }
   }
 
-  if (body.NurseId !== undefined && body.NurseId !== null) {
+  if (body.NurseId !== undefined && body.NurseId !== null && body.NurseId !== '') {
     const nurseIdInt = parseInt(body.NurseId, 10);
     if (isNaN(nurseIdInt)) {
       errors.push('NurseId must be a valid integer');
@@ -201,10 +201,10 @@ const validatePatientAdmitVisitVitalsPayload = (body, requireAll = true) => {
     }
   }
 
-  if (requireAll && !body.RecordedDateTime) {
+  if (requireAll && (!body.RecordedDateTime || body.RecordedDateTime === '')) {
     errors.push('RecordedDateTime is required');
   }
-  if (body.RecordedDateTime && !/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?/.test(body.RecordedDateTime)) {
+  if (body.RecordedDateTime && body.RecordedDateTime !== '' && !/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?/.test(body.RecordedDateTime)) {
     errors.push('RecordedDateTime must be in ISO format (YYYY-MM-DD HH:MM:SS or YYYY-MM-DDTHH:MM:SS)');
   }
 
@@ -301,8 +301,12 @@ exports.createPatientAdmitVisitVitals = async (req, res) => {
     }
 
     // Validate foreign key existence
-    if (RoomAdmissionId !== undefined && RoomAdmissionId !== null) {
-      const roomAdmissionExists = await db.query('SELECT "RoomAdmissionId" FROM "RoomAdmission" WHERE "RoomAdmissionId" = $1', [parseInt(RoomAdmissionId, 10)]);
+    if (RoomAdmissionId !== undefined && RoomAdmissionId !== null && RoomAdmissionId !== '') {
+      const roomAdmissionIdInt = parseInt(RoomAdmissionId, 10);
+      if (isNaN(roomAdmissionIdInt)) {
+        return res.status(400).json({ success: false, message: 'RoomAdmissionId must be a valid integer' });
+      }
+      const roomAdmissionExists = await db.query('SELECT "RoomAdmissionId" FROM "RoomAdmission" WHERE "RoomAdmissionId" = $1', [roomAdmissionIdInt]);
       if (roomAdmissionExists.rows.length === 0) {
         return res.status(400).json({ success: false, message: 'RoomAdmissionId does not exist' });
       }
@@ -349,26 +353,30 @@ exports.createPatientAdmitVisitVitals = async (req, res) => {
       RETURNING *;
     `;
 
-    const { rows } = await db.query(insertQuery, [
+    const insertParams = [
       patientAdmitVisitVitalsId,
-      RoomAdmissionId ? parseInt(RoomAdmissionId, 10) : null,
+      (RoomAdmissionId !== undefined && RoomAdmissionId !== null && RoomAdmissionId !== '') ? parseInt(RoomAdmissionId, 10) : null,
       PatientId,
       nurseIdValue,
-      PatientStatus || null,
+      (PatientStatus && PatientStatus !== '') ? PatientStatus : null,
       RecordedDateTime,
-      VisitRemarks || null,
-      DailyOrHourlyVitals || null,
-      HeartRate ? parseInt(HeartRate, 10) : null,
-      BloodPressure || null,
-      Temperature ? parseInt(Temperature, 10) : null,
-      O2Saturation ? parseInt(O2Saturation, 10) : null,
-      RespiratoryRate ? parseInt(RespiratoryRate, 10) : null,
-      PulseRate ? parseInt(PulseRate, 10) : null,
-      VitalsStatus || null,
-      VitalsRemarks || null,
+      (VisitRemarks && VisitRemarks !== '') ? VisitRemarks : null,
+      (DailyOrHourlyVitals && DailyOrHourlyVitals !== '') ? DailyOrHourlyVitals : null,
+      (HeartRate !== undefined && HeartRate !== null && HeartRate !== '') ? parseInt(HeartRate, 10) : null,
+      (BloodPressure && BloodPressure !== '') ? BloodPressure : null,
+      (Temperature !== undefined && Temperature !== null && Temperature !== '') ? parseInt(Temperature, 10) : null,
+      (O2Saturation !== undefined && O2Saturation !== null && O2Saturation !== '') ? parseInt(O2Saturation, 10) : null,
+      (RespiratoryRate !== undefined && RespiratoryRate !== null && RespiratoryRate !== '') ? parseInt(RespiratoryRate, 10) : null,
+      (PulseRate !== undefined && PulseRate !== null && PulseRate !== '') ? parseInt(PulseRate, 10) : null,
+      (VitalsStatus && VitalsStatus !== '') ? VitalsStatus : null,
+      (VitalsRemarks && VitalsRemarks !== '') ? VitalsRemarks : null,
       createdByValue,
       Status,
-    ]);
+    ];
+    
+    console.log('Inserting PatientAdmitVisitVitals with params:', insertParams);
+    
+    const { rows } = await db.query(insertQuery, insertParams);
 
     res.status(201).json({
       success: true,
@@ -376,18 +384,60 @@ exports.createPatientAdmitVisitVitals = async (req, res) => {
       data: mapPatientAdmitVisitVitalsRow(rows[0]),
     });
   } catch (error) {
+    console.error('Error creating patient admit visit vitals:', error);
+    console.error('Error code:', error.code);
+    console.error('Error detail:', error.detail);
+    console.error('Error constraint:', error.constraint);
+    console.error('Request body:', req.body);
+    
     if (error.code === '23503') {
       // Foreign key constraint violation
       return res.status(400).json({
         success: false,
-        message: 'Invalid RoomAdmissionId or PatientId. Please ensure they exist.',
+        message: 'Invalid foreign key reference. Please verify RoomAdmissionId, PatientId, NurseId, or VitalsCreatedBy exist.',
         error: error.message,
+        detail: error.detail,
+        constraint: error.constraint,
       });
     }
+    if (error.code === '23502') {
+      // Not null constraint violation
+      return res.status(400).json({
+        success: false,
+        message: 'Required field is missing. Please check that PatientId and RecordedDateTime are provided.',
+        error: error.message,
+        detail: error.detail,
+        column: error.column,
+      });
+    }
+    if (error.code === '23514') {
+      // Check constraint violation
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid value provided. Please check allowed values for PatientStatus, DailyOrHourlyVitals, VitalsStatus, or Status.',
+        error: error.message,
+        detail: error.detail,
+        constraint: error.constraint,
+      });
+    }
+    if (error.code === '22P02' || error.code === '42804') {
+      // Invalid data type
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid data type. Please check that all field values match their expected types (UUID, integer, timestamp, etc.).',
+        error: error.message,
+        detail: error.detail,
+      });
+    }
+    
     res.status(500).json({
       success: false,
       message: 'Error creating patient admit visit vitals',
       error: error.message,
+      errorCode: error.code,
+      detail: error.detail,
+      constraint: error.constraint,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
     });
   }
 };
