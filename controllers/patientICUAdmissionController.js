@@ -1218,23 +1218,43 @@ exports.getICUBedsDetailsMgmt = async (req, res) => {
   try {
     // Query to get all ICU beds with their corresponding admission details from PatientICUAdmission table
     // This shows all active ICU beds and all their admission records
+    // Note: Explicitly select ICUId from icu table to avoid conflict with pica.ICUId
     const query = `
       SELECT 
-        -- ICU Bed Details
-        icu."ICUId",
-        icu."ICUBedNo",
-        icu."ICUType",
-        icu."ICURoomNameNo",
-        icu."ICUDescription",
-        icu."IsVentilatorAttached",
-        icu."ICUStartTimeofDay",
-        icu."ICUEndTimeofDay",
+        -- ICU Bed Details (explicitly select to ensure ICUId is preserved)
+        icu."ICUId" AS "ICUId",
+        icu."ICUBedNo" AS "ICUBedNo",
+        icu."ICUType" AS "ICUType",
+        icu."ICURoomNameNo" AS "ICURoomNameNo",
+        icu."ICUDescription" AS "ICUDescription",
+        icu."IsVentilatorAttached" AS "IsVentilatorAttached",
+        icu."ICUStartTimeofDay" AS "ICUStartTimeofDay",
+        icu."ICUEndTimeofDay" AS "ICUEndTimeofDay",
         icu."Status" AS "ICUStatus",
         icu."CreatedBy" AS "ICUCreatedBy",
         icu."CreatedAt" AS "ICUCreatedAt",
-        -- PatientICUAdmission Details (using * to get all columns)
-        pica.*,
+        -- PatientICUAdmission Details (explicitly select to avoid column conflicts)
+        pica."PatientICUAdmissionId",
+        pica."PatientId" AS "AdmissionPatientId",
+        pica."PatientAppointmentId",
+        pica."EmergencyAdmissionId",
+        pica."EmergencyBedId",
+        pica."RoomAdmissionId",
+        pica."PatientType",
+        pica."ICUId" AS "AdmissionICUId",
+        pica."ICUPatientStatus",
+        pica."ICUAdmissionStatus",
+        pica."ICUAllocationFromDate",
+        pica."ICUAllocationToDate",
+        pica."NumberOfDays",
+        pica."Diagnosis",
+        pica."TreatementDetails",
+        pica."PatientCondition",
+        pica."ICUAllocationCreatedBy",
+        pica."ICUAllocationCreatedAt",
         pica."Status" AS "AdmissionStatus",
+        pica."OnVentilator",
+        pica."AttendingDoctorId",
         -- Patient Details
         p."PatientName",
         p."PatientNo",
@@ -1258,12 +1278,47 @@ exports.getICUBedsDetailsMgmt = async (req, res) => {
 
     const { rows } = await db.query(query);
 
+    console.log(`[getICUBedsDetailsMgmt] Query returned ${rows.length} rows`);
+    if (rows.length > 0) {
+      console.log(`[getICUBedsDetailsMgmt] First row sample:`, {
+        ICUId: rows[0].ICUId,
+        icuid: rows[0].icuid,
+        ICUBedNo: rows[0].ICUBedNo,
+        icubedno: rows[0].icubedno,
+        keys: Object.keys(rows[0])
+      });
+    }
+
     // Group by ICU bed and organize admissions
     const bedsMap = new Map();
 
-    rows.forEach(row => {
-      const icuId = row.ICUId || row.icuid;
+    rows.forEach((row, index) => {
+      // Get ICUId - handle both uppercase and lowercase column names
+      // Try multiple possible column name variations
+      let icuId = null;
+      if (row.ICUId !== undefined && row.ICUId !== null) {
+        icuId = row.ICUId;
+      } else if (row.icuid !== undefined && row.icuid !== null) {
+        icuId = row.icuid;
+      } else {
+        // Try to find ICUId in any case variation
+        const keys = Object.keys(row);
+        const icuIdKey = keys.find(k => k.toLowerCase() === 'icuid');
+        if (icuIdKey && row[icuIdKey] !== undefined && row[icuIdKey] !== null) {
+          icuId = row[icuIdKey];
+        }
+      }
       
+      // Skip rows with null/undefined ICUId as they are invalid
+      if (icuId === null || icuId === undefined) {
+        console.warn(`[getICUBedsDetailsMgmt] Warning: Skipping row ${index} with null/undefined ICUId:`, {
+          ICUBedNo: row.ICUBedNo || row.icubedno,
+          hasPatientICUAdmissionId: !!(row.PatientICUAdmissionId || row.patienticuadmissionid),
+          availableKeys: Object.keys(row).filter(k => k.toLowerCase().includes('icu'))
+        });
+        return;
+      }
+
       if (!bedsMap.has(icuId)) {
         bedsMap.set(icuId, {
           // ICU Bed Details
@@ -1285,12 +1340,13 @@ exports.getICUBedsDetailsMgmt = async (req, res) => {
       // Add admission details if exists
       if (row.PatientICUAdmissionId || row.patienticuadmissionid) {
         const bed = bedsMap.get(icuId);
-        bed.admissions.push({
+        if (bed) {
+          bed.admissions.push({
           patientICUAdmissionId: row.PatientICUAdmissionId || row.patienticuadmissionid || null,
-          patientId: row.PatientId || row.patientid || null,
+          patientId: row.AdmissionPatientId || row.admissionpatientid || row.PatientId || row.patientid || null,
           patientAppointmentId: row.PatientAppointmentId || row.patientappointmentid || null,
           emergencyAdmissionId: row.EmergencyAdmissionId || row.emergencyadmissionid || null,
-      emergencyBedId: row.EmergencyBedId || row.emergencybedid || null,
+          emergencyBedId: row.EmergencyBedId || row.emergencybedid || null,
           roomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
           icuPatientStatus: row.ICUPatientStatus || row.icupatientstatus || null,
           icuAdmissionStatus: row.ICUAdmissionStatus || row.icuadmissionstatus || null,
@@ -1316,12 +1372,33 @@ exports.getICUBedsDetailsMgmt = async (req, res) => {
           appointmentTime: row.AppointmentTime || row.appointmenttime || null,
           // Created By
           createdByName: row.CreatedByName || row.createdbyname || null
-        });
+          });
+        }
       }
     });
 
     // Convert map to array
     const formattedData = Array.from(bedsMap.values());
+
+    console.log(`[getICUBedsDetailsMgmt] Grouped into ${formattedData.length} ICU beds`);
+
+    // If no rows were returned, check if there are any ICU beds at all
+    if (rows.length === 0) {
+      const checkQuery = `SELECT COUNT(*) as count FROM "ICU" WHERE "Status" = 'Active'`;
+      const checkResult = await db.query(checkQuery);
+      const activeICUBedsCount = parseInt(checkResult.rows[0].count, 10);
+      
+      if (activeICUBedsCount === 0) {
+        return res.status(200).json({
+          success: true,
+          message: 'No active ICU beds found in the system',
+          count: 0,
+          data: []
+        });
+      } else {
+        console.warn(`[getICUBedsDetailsMgmt] Query returned 0 rows but there are ${activeICUBedsCount} active ICU beds in database`);
+      }
+    }
 
     res.status(200).json({
       success: true,

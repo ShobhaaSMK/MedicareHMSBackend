@@ -8,6 +8,7 @@ const mapPatientAdmitDoctorVisitsRow = (row) => ({
   RoomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
   PatientId: row.PatientId || row.patientid,
   DoctorId: row.DoctorId || row.doctorid,
+  DoctorName: row.DoctorName || row.doctorname || null,
   DoctorVisitedDateTime: row.DoctorVisitedDateTime || row.doctorvisiteddatetime,
   VisitsRemarks: row.VisitsRemarks || row.visitsremarks,
   PatientCondition: row.PatientCondition || row.patientcondition,
@@ -109,10 +110,13 @@ exports.getPatientAdmitDoctorVisitsByRoomAdmissionId = async (req, res) => {
     }
     
     const query = `
-      SELECT * 
-      FROM "PatientAdmitDoctorVisits" 
-      WHERE "RoomAdmissionId" = $1
-      ORDER BY "DoctorVisitedDateTime" DESC
+      SELECT 
+        padv.*,
+        u."UserName" AS "DoctorName"
+      FROM "PatientAdmitDoctorVisits" padv
+      LEFT JOIN "Users" u ON padv."DoctorId" = u."UserId"
+      WHERE padv."RoomAdmissionId" = $1
+      ORDER BY padv."DoctorVisitedDateTime" DESC
     `;
     
     const { rows } = await db.query(query, [roomAdmissionId]);

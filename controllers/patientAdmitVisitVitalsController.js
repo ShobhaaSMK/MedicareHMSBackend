@@ -4,12 +4,14 @@ const { randomUUID } = require('crypto');
 const allowedStatus = ['Active', 'Inactive'];
 const allowedDailyOrHourlyVitals = ['Daily', 'Hourly'];
 const allowedPatientStatus = ['Stable', 'Notstable'];
+const allowedVitalsStatus = ['Stable', 'Critical', 'Improving', 'Normal'];
 
 const mapPatientAdmitVisitVitalsRow = (row) => ({
   PatientAdmitVisitVitalsId: row.PatientAdmitVisitVitalsId || row.patientadmitvisitvitalsid,
   RoomAdmissionId: row.RoomAdmissionId || row.roomadmissionid,
   PatientId: row.PatientId || row.patientid,
   NurseId: row.NurseId || row.nurseid,
+  NurseName: row.NurseName || row.nursename || null,
   PatientStatus: row.PatientStatus || row.patientstatus,
   RecordedDateTime: row.RecordedDateTime || row.recordeddatetime,
   VisitRemarks: row.VisitRemarks || row.visitremarks,
@@ -113,7 +115,14 @@ exports.getPatientAdmitVisitVitalsById = async (req, res) => {
   try {
     const { id } = req.params;
     const { rows } = await db.query(
-      'SELECT * FROM "PatientAdmitVisitVitals" WHERE "PatientAdmitVisitVitalsId" = $1::uuid',
+      `
+      SELECT 
+        pavv.*,
+        u."UserName" AS "NurseName"
+      FROM "PatientAdmitVisitVitals" pavv
+      LEFT JOIN "Users" u ON pavv."NurseId" = u."UserId"
+      WHERE pavv."PatientAdmitVisitVitalsId" = $1::uuid
+      `,
       [id]
     );
     if (rows.length === 0) {
@@ -244,8 +253,12 @@ const validatePatientAdmitVisitVitalsPayload = (body, requireAll = true) => {
     errors.push('PulseRate must be a non-negative number');
   }
 
-  if (body.VitalsStatus !== undefined && body.VitalsStatus !== null && typeof body.VitalsStatus !== 'string') {
-    errors.push('VitalsStatus must be a string');
+  if (body.VitalsStatus !== undefined && body.VitalsStatus !== null) {
+    if (typeof body.VitalsStatus !== 'string') {
+      errors.push('VitalsStatus must be a string');
+    } else if (!allowedVitalsStatus.includes(body.VitalsStatus)) {
+      errors.push('VitalsStatus must be one of: Stable, Critical, Improving, or Normal');
+    }
   }
 
   if (body.VitalsRemarks !== undefined && body.VitalsRemarks !== null && typeof body.VitalsRemarks !== 'string') {
