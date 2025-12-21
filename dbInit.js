@@ -36,6 +36,71 @@ function scanControllersForTablesAndColumns() {
       }
     }
     
+    // Extract columns from INSERT statements: INSERT INTO "Table" ("Col1", "Col2", ...)
+    const insertPattern = /INSERT\s+INTO\s+"(\w+)"\s*\(([^)]+)\)/gi;
+    let insertMatch;
+    while ((insertMatch = insertPattern.exec(content)) !== null) {
+      const tableName = insertMatch[1];
+      const columnsStr = insertMatch[2];
+      tablesUsed.add(tableName);
+      
+      // Extract column names from the column list
+      const columnNames = columnsStr.match(/"(\w+)"/g);
+      if (columnNames) {
+        if (!columnsByTable[tableName]) {
+          columnsByTable[tableName] = new Set();
+        }
+        columnNames.forEach(col => {
+          const colName = col.replace(/"/g, '');
+          columnsByTable[tableName].add(colName);
+        });
+      }
+    }
+    
+    // Extract columns from UPDATE statements: UPDATE "Table" SET "Col1" = ..., "Col2" = ...
+    const updatePattern = /UPDATE\s+"(\w+)"\s+SET\s+([^WHERE]+?)(?:\s+WHERE|\s*$)/gi;
+    let updateMatch;
+    while ((updateMatch = updatePattern.exec(content)) !== null) {
+      const tableName = updateMatch[1];
+      const setClause = updateMatch[2];
+      tablesUsed.add(tableName);
+      
+      // Extract column names from SET clause
+      const setColumns = setClause.match(/"(\w+)"\s*=/g);
+      if (setColumns) {
+        if (!columnsByTable[tableName]) {
+          columnsByTable[tableName] = new Set();
+        }
+        setColumns.forEach(col => {
+          const colName = col.match(/"(\w+)"/)[1];
+          columnsByTable[tableName].add(colName);
+        });
+      }
+    }
+    
+    // Extract columns from SELECT statements: SELECT "Col1", "Col2", ... FROM "Table"
+    const selectPattern = /SELECT\s+([^FROM]+?)\s+FROM\s+"(\w+)"/gi;
+    let selectMatch;
+    while ((selectMatch = selectPattern.exec(content)) !== null) {
+      const tableName = selectMatch[2];
+      const selectClause = selectMatch[1];
+      tablesUsed.add(tableName);
+      
+      // Extract column names (handle both "Column" and table."Column" formats)
+      const selectColumns = selectClause.match(/(?:"\w+"\.)?"(\w+)"/g);
+      if (selectColumns) {
+        if (!columnsByTable[tableName]) {
+          columnsByTable[tableName] = new Set();
+        }
+        selectColumns.forEach(col => {
+          const colMatch = col.match(/"(\w+)"/);
+          if (colMatch) {
+            columnsByTable[tableName].add(colMatch[1]);
+          }
+        });
+      }
+    }
+    
     // Extract columns from map functions
     // Pattern: const mapXxxRow = (row) => ({ ColumnName: row.ColumnName || row.columnname, ... })
     const mapFunctionPattern = /const\s+map\w+Row\s*=\s*\([^)]*\)\s*=>\s*\{([\s\S]*?)\};/g;
@@ -191,10 +256,132 @@ async function initializeDatabase() {
 }
 
 /**
+ * Infer column type from column name and usage patterns
+ */
+function inferColumnType(columnName, tableName) {
+  // UUID columns
+  if (columnName === 'PatientId' || columnName.endsWith('Id') && (columnName.includes('Patient') || columnName.includes('Role'))) {
+    if (columnName === 'PatientId' || columnName === 'RoleId') {
+      return 'UUID';
+    }
+  }
+  
+  // Integer ID columns (most common)
+  if (columnName.endsWith('Id') && columnName !== 'PatientId' && columnName !== 'RoleId' && columnName !== 'BillId') {
+    return 'INTEGER';
+  }
+  
+  // Date/Time columns
+  if (columnName.includes('Date') || columnName.includes('DateTime') || columnName.includes('At') || columnName.includes('Time')) {
+    return 'TIMESTAMP';
+  }
+  
+  // Decimal/Numeric columns
+  if (columnName.includes('Amount') || columnName.includes('Charge') || columnName.includes('Rate') || 
+      columnName.includes('Price') || columnName.includes('Cost') || columnName.includes('Fee')) {
+    return 'DECIMAL(10, 2)';
+  }
+  
+  // Status columns
+  if (columnName.includes('Status')) {
+    return 'VARCHAR(50)';
+  }
+  
+  // Text columns
+  if (columnName.includes('Remarks') || columnName.includes('Details') || columnName.includes('Description') || 
+      columnName.includes('Notes') || columnName.includes('CaseSheet') || columnName.includes('Document')) {
+    return 'TEXT';
+  }
+  
+  // Phone/Number columns
+  if (columnName.includes('Phone') || columnName.includes('No') && !columnName.includes('Number')) {
+    return 'VARCHAR(50)';
+  }
+  
+  // Email columns
+  if (columnName.includes('Email')) {
+    return 'VARCHAR(255)';
+  }
+  
+  // Name columns
+  if (columnName.includes('Name')) {
+    return 'VARCHAR(255)';
+  }
+  
+  // Boolean-like columns (Yes/No)
+  if (columnName.includes('Is') || columnName.includes('Has') || columnName.includes('Transfer') || 
+      columnName.includes('Schedule') || columnName.includes('Linked')) {
+    return 'VARCHAR(10)';
+  }
+  
+  // Default to VARCHAR(255)
+  return 'VARCHAR(255)';
+}
+
+/**
+ * Create a basic table structure for a missing table
+ */
+async function createBasicTable(client, tableName, columns) {
+  try {
+    // Determine primary key column
+    let primaryKey = null;
+    if (columns.includes(`${tableName}Id`)) {
+      primaryKey = `${tableName}Id`;
+    } else if (tableName === 'PatientRegistration' && columns.includes('PatientId')) {
+      primaryKey = 'PatientId';
+    } else if (tableName === 'Roles' && columns.includes('RoleId')) {
+      primaryKey = 'RoleId';
+    }
+    
+    // Build column definitions
+    const columnDefs = [];
+    
+    // Add primary key
+    if (primaryKey) {
+      const pkType = primaryKey === 'PatientId' || primaryKey === 'RoleId' ? 'UUID DEFAULT gen_random_uuid()' : 'SERIAL';
+      columnDefs.push(`"${primaryKey}" ${pkType} PRIMARY KEY`);
+    }
+    
+    // Add other columns
+    columns.forEach(col => {
+      if (col === primaryKey) return; // Skip primary key, already added
+      
+      const colType = inferColumnType(col, tableName);
+      columnDefs.push(`"${col}" ${colType}`);
+    });
+    
+    // Add common columns if not present
+    if (!columns.includes('Status')) {
+      columnDefs.push('"Status" VARCHAR(50) DEFAULT \'Active\'');
+    }
+    if (!columns.includes('CreatedAt')) {
+      columnDefs.push('"CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP');
+    }
+    
+    const createTableSQL = `CREATE TABLE IF NOT EXISTS "${tableName}" (${columnDefs.join(', ')})`;
+    await client.query(createTableSQL);
+    console.log(`  ✓ Created table "${tableName}" with ${columnDefs.length} columns`);
+    return true;
+  } catch (error) {
+    console.warn(`  ⚠ Could not create table "${tableName}": ${error.message.substring(0, 100)}`);
+    return false;
+  }
+}
+
+/**
  * Ensure all required tables and columns exist
  * This function checks for missing tables/columns and creates/adds them automatically
+ * Can be disabled by setting AUTO_CREATE_MISSING_TABLES=false in environment
  */
 async function ensureAllTablesAndColumns(pool) {
+  // Check if auto-creation is enabled (default: true)
+  const autoCreate = process.env.AUTO_CREATE_MISSING_TABLES !== 'false';
+  
+  if (!autoCreate) {
+    console.log('\n⚠ Auto-creation of missing tables/columns is disabled (AUTO_CREATE_MISSING_TABLES=false)');
+    return;
+  }
+  
   console.log('\n=== Verifying all tables and columns exist ===');
   
   const client = await pool.connect();
@@ -235,38 +422,53 @@ async function ensureAllTablesAndColumns(pool) {
     const existingTables = tablesCheck.rows.map(r => r.table_name);
     const missingTables = requiredTables.filter(t => !existingTables.includes(t));
     
+    // Create missing tables
+    let createdTables = 0;
     if (missingTables.length > 0) {
       console.log(`⚠ Missing tables detected: ${missingTables.join(', ')}`);
-      console.log('These should be created by init_tables.sql. Please check the SQL file.');
+      console.log('  Creating missing tables...');
+      
+      for (const tableName of missingTables) {
+        const columns = scannedColumns[tableName] || [];
+        if (await createBasicTable(client, tableName, columns)) {
+          createdTables++;
+          existingTables.push(tableName); // Add to existing list for column checks
+        }
+      }
+      
+      if (createdTables > 0) {
+        console.log(`  ✓ Created ${createdTables} missing table(s)`);
+      }
     } else {
       console.log(`✓ All ${requiredTables.length} required tables exist`);
     }
     
     // Build column checks from both static list and dynamically scanned columns
     // Static list for known columns that might be missing (legacy support)
+    // Using improved type inference for consistency
     const staticColumnChecks = [
-      { table: 'PatientLabTest', column: 'RoomAdmissionId', type: 'INTEGER' },
-      { table: 'PatientLabTest', column: 'OrderedByDoctorId', type: 'INTEGER' },
-      { table: 'PatientLabTest', column: 'Priority', type: 'VARCHAR(50)' },
-      { table: 'PatientOTAllocation', column: 'RoomAdmissionId', type: 'INTEGER' },
-      { table: 'PatientOTAllocation', column: 'NurseId', type: 'INTEGER' },
-      { table: 'PatientAdmitNurseVisits', column: 'RoomAdmissionId', type: 'INTEGER' },
-      { table: 'PatientAdmitDoctorVisits', column: 'RoomAdmissionId', type: 'INTEGER' },
-      { table: 'PatientAdmitVisitVitals', column: 'RoomAdmissionId', type: 'INTEGER' },
-      { table: 'PatientAdmitVisitVitals', column: 'NurseId', type: 'INTEGER' },
-      { table: 'PatientAdmitVisitVitals', column: 'PatientStatus', type: 'VARCHAR(50)' },
-      { table: 'PatientAdmitVisitVitals', column: 'VisitRemarks', type: 'TEXT' },
-      { table: 'PatientAdmitVisitVitals', column: 'VitalsStatus', type: 'VARCHAR(50)' },
-      { table: 'PatientICUAdmission', column: 'RoomAdmissionId', type: 'INTEGER' },
+      { table: 'PatientLabTest', column: 'RoomAdmissionId', type: inferColumnType('RoomAdmissionId', 'PatientLabTest') },
+      { table: 'PatientLabTest', column: 'OrderedByDoctorId', type: inferColumnType('OrderedByDoctorId', 'PatientLabTest') },
+      { table: 'PatientLabTest', column: 'Priority', type: inferColumnType('Priority', 'PatientLabTest') },
+      { table: 'PatientOTAllocation', column: 'RoomAdmissionId', type: inferColumnType('RoomAdmissionId', 'PatientOTAllocation') },
+      { table: 'PatientOTAllocation', column: 'NurseId', type: inferColumnType('NurseId', 'PatientOTAllocation') },
+      { table: 'PatientAdmitNurseVisits', column: 'RoomAdmissionId', type: inferColumnType('RoomAdmissionId', 'PatientAdmitNurseVisits') },
+      { table: 'PatientAdmitDoctorVisits', column: 'RoomAdmissionId', type: inferColumnType('RoomAdmissionId', 'PatientAdmitDoctorVisits') },
+      { table: 'PatientAdmitVisitVitals', column: 'RoomAdmissionId', type: inferColumnType('RoomAdmissionId', 'PatientAdmitVisitVitals') },
+      { table: 'PatientAdmitVisitVitals', column: 'NurseId', type: inferColumnType('NurseId', 'PatientAdmitVisitVitals') },
+      { table: 'PatientAdmitVisitVitals', column: 'PatientStatus', type: inferColumnType('PatientStatus', 'PatientAdmitVisitVitals') },
+      { table: 'PatientAdmitVisitVitals', column: 'VisitRemarks', type: inferColumnType('VisitRemarks', 'PatientAdmitVisitVitals') },
+      { table: 'PatientAdmitVisitVitals', column: 'VitalsStatus', type: inferColumnType('VitalsStatus', 'PatientAdmitVisitVitals') },
+      { table: 'PatientICUAdmission', column: 'RoomAdmissionId', type: inferColumnType('RoomAdmissionId', 'PatientICUAdmission') },
       { table: 'PatientICUAdmission', column: 'OnVentilator', type: 'VARCHAR(10) DEFAULT \'No\'' },
       { table: 'PatientICUAdmission', column: 'ICUAdmissionStatus', type: 'VARCHAR(50) DEFAULT \'Occupied\'' },
-      { table: 'ICUVisitVitals', column: 'VitalsStatus', type: 'VARCHAR(50)' },
-      { table: 'ICUVisitVitals', column: 'NurseId', type: 'INTEGER' },
-      { table: 'EmergencyAdmissionVitals', column: 'NurseId', type: 'INTEGER' },
-      { table: 'EmergencyAdmissionVitals', column: 'VitalsStatus', type: 'VARCHAR(50)' },
-      { table: 'EmergencyBed', column: 'EmergencyRoomNameNo', type: 'VARCHAR(100)' },
-      { table: 'EmergencyBed', column: 'ChargesPerDay', type: 'DECIMAL(10, 2)' },
-      { table: 'PatientOTAllocationSlots', column: 'OTAllocationDate', type: 'DATE' },
+      { table: 'ICUVisitVitals', column: 'VitalsStatus', type: inferColumnType('VitalsStatus', 'ICUVisitVitals') },
+      { table: 'ICUVisitVitals', column: 'NurseId', type: inferColumnType('NurseId', 'ICUVisitVitals') },
+      { table: 'EmergencyAdmissionVitals', column: 'NurseId', type: inferColumnType('NurseId', 'EmergencyAdmissionVitals') },
+      { table: 'EmergencyAdmissionVitals', column: 'VitalsStatus', type: inferColumnType('VitalsStatus', 'EmergencyAdmissionVitals') },
+      { table: 'EmergencyBed', column: 'EmergencyRoomNameNo', type: inferColumnType('EmergencyRoomNameNo', 'EmergencyBed') },
+      { table: 'EmergencyBed', column: 'ChargesPerDay', type: inferColumnType('ChargesPerDay', 'EmergencyBed') },
+      { table: 'PatientOTAllocationSlots', column: 'OTAllocationDate', type: inferColumnType('OTAllocationDate', 'PatientOTAllocationSlots') },
     ];
     
     // Convert scanned columns to column checks format
@@ -274,24 +476,8 @@ async function ensureAllTablesAndColumns(pool) {
     const dynamicColumnChecks = [];
     Object.entries(scannedColumns).forEach(([table, columns]) => {
       columns.forEach(column => {
-        // Infer column type from column name patterns
-        let columnType = 'VARCHAR(255)'; // Default
-        if (column.endsWith('Id') && !column.startsWith('PatientId') && column !== 'BillId') {
-          columnType = 'INTEGER';
-        } else if (column.includes('Date') || column.includes('DateTime') || column.includes('At')) {
-          columnType = 'TIMESTAMP';
-        } else if (column.includes('Amount') || column.includes('Charge') || column.includes('Rate') || column.includes('Price')) {
-          columnType = 'DECIMAL(10, 2)';
-        } else if (column.includes('Status')) {
-          columnType = 'VARCHAR(50)';
-        } else if (column.includes('Remarks') || column.includes('Details') || column.includes('Description')) {
-          columnType = 'TEXT';
-        } else if (column.includes('Phone') || column.includes('No')) {
-          columnType = 'VARCHAR(50)';
-        } else if (column.includes('Email')) {
-          columnType = 'VARCHAR(255)';
-        }
-        
+        // Use improved type inference
+        const columnType = inferColumnType(column, table);
         dynamicColumnChecks.push({ table, column, type: columnType });
       });
     });
@@ -333,8 +519,17 @@ async function ensureAllTablesAndColumns(pool) {
       
       if (columnCheck.rows.length === 0) {
         try {
+          // Handle UUID type - need to ensure extension exists
+          if (type === 'UUID') {
+            try {
+              await client.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
+            } catch (extError) {
+              // Extension might already exist or not have permission, continue
+            }
+          }
+          
           await client.query(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${type}`);
-          console.log(`  ✓ Added column ${table}.${column}`);
+          console.log(`  ✓ Added column ${table}.${column} (${type})`);
           addedColumns++;
           
           // Add CHECK constraints for specific columns if needed
@@ -370,9 +565,13 @@ async function ensureAllTablesAndColumns(pool) {
     }
     
     if (addedColumns > 0) {
-      console.log(`\n✓ Added ${addedColumns} missing columns`);
+      console.log(`\n✓ Added ${addedColumns} missing column(s)`);
     } else {
       console.log(`✓ All required columns exist`);
+    }
+    
+    if (createdTables > 0 || addedColumns > 0) {
+      console.log('\n💡 Tip: To disable auto-creation of missing tables/columns, set AUTO_CREATE_MISSING_TABLES=false in your .env file');
     }
     
   } catch (error) {

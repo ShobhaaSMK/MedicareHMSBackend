@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const authRoutes = require('./routes/authRoutes');
 const roleRoutes = require('./routes/roleRoutes');
 const userRoutes = require('./routes/userRoutes');
@@ -29,12 +30,17 @@ const surgeryProcedureRoutes = require('./routes/surgeryProcedureRoutes');
 const auditLogRoutes = require('./routes/auditLogRoutes');
 const reportsRoutes = require('./routes/reportsRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const uploadRoutes = require('./routes/uploadRoutes');
 const db = require('./db');
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+// Serve static files from uploads directory
+const uploadsDir = process.env.UPLOADS_DIR || path.join(__dirname, 'uploads');
+app.use('/uploads', express.static(uploadsDir));
 
 app.get('/health', async (req, res) => {
   try {
@@ -74,6 +80,7 @@ app.use('/api/surgery-procedures', surgeryProcedureRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/upload', uploadRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Route not found' });

@@ -1,4 +1,6 @@
 const db = require('../db');
+const path = require('path');
+const fs = require('fs');
 
 const allowedStatus = ['Active', 'Inactive'];
 const allowedOperationStatus = ['Scheduled', 'In Progress', 'Completed', 'Cancelled', 'Postponed'];
@@ -47,6 +49,132 @@ const convertToDisplayDate = (dateStr) => {
   }
   // Already in DD-MM-YYYY format
   return dateStr;
+};
+
+/**
+ * Parse OTDocuments field - handles both JSON array string and comma-separated string
+ * @param {string} otDocuments - OTDocuments field value
+ * @returns {Array<string>} Array of URLs
+ */
+const parseOTDocuments = (otDocuments) => {
+  if (!otDocuments) return [];
+  
+  // Try to parse as JSON first
+  try {
+    const parsed = JSON.parse(otDocuments);
+    if (Array.isArray(parsed)) {
+      return parsed.filter(url => url && typeof url === 'string');
+    }
+  } catch (e) {
+    // Not JSON, try comma-separated
+  }
+  
+  // Handle comma-separated string
+  if (typeof otDocuments === 'string') {
+    return otDocuments.split(',').map(url => url.trim()).filter(url => url.length > 0);
+  }
+  
+  return [];
+};
+
+/**
+ * Extract file path from URL
+ * Example: http://localhost:4000/uploads/ot-documents/P2025_12_0001/file.pdf
+ * Returns: ot-documents/P2025_12_0001/file.pdf
+ * @param {string} url - Full URL of the file
+ * @returns {string|null} Relative file path or null if invalid
+ */
+const extractFilePathFromUrl = (url) => {
+  if (!url || typeof url !== 'string') return null;
+  
+  try {
+    // Extract path after /uploads/
+    const uploadsIndex = url.indexOf('/uploads/');
+    if (uploadsIndex === -1) return null;
+    
+    const relativePath = url.substring(uploadsIndex + '/uploads/'.length);
+    return relativePath;
+  } catch (e) {
+    return null;
+  }
+};
+
+/**
+ * Delete file from filesystem
+ * @param {string} filePath - Relative path from uploads directory (e.g., "ot-documents/P2025_12_0001/file.pdf")
+ * @returns {boolean} True if deleted, false otherwise
+ */
+const deleteFileFromPath = (filePath) => {
+  if (!filePath) return false;
+  
+  try {
+    const uploadsDir = process.env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads');
+    const fullPath = path.join(uploadsDir, filePath);
+    
+    // Security: Prevent directory traversal
+    const normalizedPath = path.normalize(fullPath);
+    const normalizedUploadsDir = path.normalize(uploadsDir);
+    if (!normalizedPath.startsWith(normalizedUploadsDir)) {
+      console.error(`⚠ Security: Attempted to delete file outside uploads directory: ${filePath}`);
+      return false;
+    }
+    
+    if (fs.existsSync(fullPath)) {
+      fs.unlinkSync(fullPath);
+      console.log(`✓ Deleted file: ${fullPath}`);
+      return true;
+    } else {
+      console.log(`⚠ File not found (may have been already deleted): ${fullPath}`);
+      return false;
+    }
+  } catch (error) {
+    console.error(`✗ Error deleting file ${filePath}:`, error.message);
+    return false;
+  }
+};
+
+/**
+ * Delete files that are in old OTDocuments but not in new OTDocuments
+ * @param {string} oldOTDocuments - Old OTDocuments value
+ * @param {string} newOTDocuments - New OTDocuments value
+ * @returns {number} Number of files deleted
+ */
+const deleteRemovedFiles = (oldOTDocuments, newOTDocuments) => {
+  if (!oldOTDocuments) return 0;
+  
+  const oldUrls = parseOTDocuments(oldOTDocuments);
+  const newUrls = parseOTDocuments(newOTDocuments);
+  
+  if (oldUrls.length === 0) return 0;
+  
+  // Find URLs that are in old but not in new
+  const urlsToDelete = oldUrls.filter(url => !newUrls.includes(url));
+  
+  if (urlsToDelete.length === 0) {
+    console.log('  No files to delete (all URLs are still present)');
+    return 0;
+  }
+  
+  console.log(`  Found ${urlsToDelete.length} file(s) to delete:`, urlsToDelete.map(url => {
+    const filePath = extractFilePathFromUrl(url);
+    return filePath ? path.basename(filePath) : url;
+  }).join(', '));
+  
+  let deletedCount = 0;
+  urlsToDelete.forEach(url => {
+    const filePath = extractFilePathFromUrl(url);
+    if (filePath && deleteFileFromPath(filePath)) {
+      deletedCount++;
+    } else {
+      console.log(`  ⚠ Could not extract path or delete file: ${url}`);
+    }
+  });
+  
+  if (deletedCount > 0) {
+    console.log(`  ✓ Deleted ${deletedCount} file(s) from filesystem\n`);
+  }
+  
+  return deletedCount;
 };
 
 const mapPatientOTAllocationRow = (row) => ({
@@ -1117,6 +1245,80 @@ exports.updatePatientOTAllocation = async (req, res) => {
       params.push(Status);
     }
 
+    // Get current allocation data for comparison (OperationStatus and OTDocuments)
+    const currentAllocationData = await db.query(
+      'SELECT "OperationStatus", "OTDocuments" FROM "PatientOTAllocation" WHERE "PatientOTAllocationId" = $1',
+      [otAllocationId]
+    );
+    
+    if (currentAllocationData.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Patient OT allocation not found' });
+    }
+    
+    const currentOperationStatus = currentAllocationData.rows[0].OperationStatus || currentAllocationData.rows[0].operationstatus;
+    const currentOTDocuments = currentAllocationData.rows[0].OTDocuments || currentAllocationData.rows[0].otdocuments;
+    
+    // Handle file deletion when OTDocuments is updated
+    if (OTDocuments !== undefined) {
+      console.log(`\n📄 Updating OTDocuments for allocation ${otAllocationId}:`);
+      const oldOTDocuments = currentOTDocuments;
+      const newOTDocuments = OTDocuments;
+      
+      // Delete files that are in old but not in new
+      const deletedCount = deleteRemovedFiles(oldOTDocuments, newOTDocuments);
+      
+      if (deletedCount > 0) {
+        console.log(`  ✓ Cleanup complete: ${deletedCount} file(s) deleted from filesystem`);
+      } else if (oldOTDocuments) {
+        console.log(`  ℹ No files to delete (all existing files are still in the new list)`);
+      }
+    }
+    
+    const finalOperationStatus = OperationStatus !== undefined ? OperationStatus : currentOperationStatus;
+    const isBeingCancelledOrPostponed = (OperationStatus === 'Cancelled' || OperationStatus === 'Postponed') &&
+                                        currentOperationStatus !== 'Cancelled' && 
+                                        currentOperationStatus !== 'Postponed';
+    
+    // Get current slots before update to detect which ones are being removed
+    // This is needed for both cancellation/postponement and regular slot updates
+    let currentSlotIds = [];
+    let currentSlotsWithDetails = [];
+    
+    // Fetch current slots if:
+    // 1. We're cancelling/postponing (to log what's being released), OR
+    // 2. We're updating slots (to detect which ones are being removed)
+    if (isBeingCancelledOrPostponed || normalizedOTSlotIds !== null) {
+      const currentSlotsQuery = await db.query(`
+        SELECT pas."OTSlotId", os."OTSlotNo", os."SlotStartTime", os."SlotEndTime"
+        FROM "PatientOTAllocationSlots" pas
+        INNER JOIN "OTSlot" os ON pas."OTSlotId" = os."OTSlotId"
+        WHERE pas."PatientOTAllocationId" = $1
+      `, [otAllocationId]);
+      
+      currentSlotIds = currentSlotsQuery.rows.map(s => parseInt(s.OTSlotId || s.otslotid, 10));
+      currentSlotsWithDetails = currentSlotsQuery.rows.map(s => ({
+        slotId: parseInt(s.OTSlotId || s.otslotid, 10),
+        slotNo: s.OTSlotNo || s.otslotno,
+        startTime: s.SlotStartTime || s.slotstarttime,
+        endTime: s.SlotEndTime || s.slotendtime
+      }));
+    }
+    
+    // If status is being set to Cancelled or Postponed, release all slots
+    if (isBeingCancelledOrPostponed) {
+      console.log(`\n⚠ OperationStatus is being set to "${OperationStatus}" - releasing all slots for allocation ${otAllocationId}`);
+      
+      if (currentSlotsWithDetails.length > 0) {
+        console.log(`  Found ${currentSlotsWithDetails.length} slot(s) to release:`, 
+          currentSlotsWithDetails.map(s => `OTSlot ${s.slotNo} (ID: ${s.slotId})`).join(', '));
+      } else {
+        console.log(`  No slots found to release`);
+      }
+      
+      // Force OTSlotIds to empty array to release slots
+      normalizedOTSlotIds = [];
+    }
+
     // Use transaction to ensure atomicity
     const client = await db.pool.connect();
     try {
@@ -1139,17 +1341,59 @@ exports.updatePatientOTAllocation = async (req, res) => {
         }
       }
 
-      // Update junction table if OTSlotIds are provided
-      if (normalizedOTSlotIds !== null) {
+      // Update junction table if OTSlotIds are provided OR if status is Cancelled/Postponed
+      if (normalizedOTSlotIds !== null || isBeingCancelledOrPostponed) {
+        // Identify which slots are being removed (not in new list but in current list)
+        const newSlotIds = normalizedOTSlotIds !== null 
+          ? normalizedOTSlotIds.map(id => parseInt(id, 10))
+          : [];
+        const removedSlotIds = currentSlotIds.filter(id => !newSlotIds.includes(id));
+        const addedSlotIds = newSlotIds.filter(id => !currentSlotIds.includes(id));
+        
+        // Log slot changes if any
+        if (removedSlotIds.length > 0 || addedSlotIds.length > 0) {
+          console.log(`\n📋 Updating slots for allocation ${otAllocationId}:`);
+          if (removedSlotIds.length > 0) {
+            const removedSlotsInfo = currentSlotsWithDetails
+              .filter(s => removedSlotIds.includes(s.slotId))
+              .map(s => `OTSlot ${s.slotNo} (ID: ${s.slotId})`)
+              .join(', ');
+            console.log(`  ➖ Removing ${removedSlotIds.length} slot(s): ${removedSlotsInfo}`);
+          }
+          if (addedSlotIds.length > 0) {
+            console.log(`  ➕ Adding ${addedSlotIds.length} slot(s): ${addedSlotIds.join(', ')}`);
+          }
+        }
+        
         // Delete existing slots
-        await client.query(
-          'DELETE FROM "PatientOTAllocationSlots" WHERE "PatientOTAllocationId" = $1',
+        const deletedSlots = await client.query(
+          'DELETE FROM "PatientOTAllocationSlots" WHERE "PatientOTAllocationId" = $1 RETURNING "OTSlotId"',
           [otAllocationId]
         );
         
-        // Insert new slots
-        // Use OTAllocationDate for all slots
-        if (normalizedOTSlotIds.length > 0) {
+        // Log released slots
+        if (isBeingCancelledOrPostponed) {
+          if (deletedSlots.rows.length > 0) {
+            const releasedSlotIds = deletedSlots.rows.map(r => r.OTSlotId || r.otslotid).join(', ');
+            console.log(`  ✓ Released ${deletedSlots.rows.length} slot(s) from allocation ${otAllocationId} (Slot IDs: ${releasedSlotIds})`);
+            console.log(`  Slots are now available for other allocations\n`);
+          } else {
+            console.log(`  ✓ No slots to release (allocation had no slots assigned)\n`);
+          }
+        } else if (removedSlotIds.length > 0) {
+          // Log slots released during normal update
+          const releasedSlotIds = removedSlotIds.join(', ');
+          const removedSlotsInfo = currentSlotsWithDetails
+            .filter(s => removedSlotIds.includes(s.slotId))
+            .map(s => `OTSlot ${s.slotNo} (ID: ${s.slotId})`)
+            .join(', ');
+          console.log(`  ✓ Released ${removedSlotIds.length} slot(s) to free pool: ${removedSlotsInfo}`);
+          console.log(`  These slots are now available for other allocations\n`);
+        }
+        
+        // Insert new slots only if provided and not empty
+        // If status is Cancelled/Postponed, normalizedOTSlotIds will be empty array, so no slots inserted
+        if (normalizedOTSlotIds !== null && normalizedOTSlotIds.length > 0) {
           const slotInsertQuery = `
             INSERT INTO "PatientOTAllocationSlots" ("PatientOTAllocationId", "OTSlotId", "OTAllocationDate")
             VALUES ($1, $2, $3)
@@ -1158,6 +1402,9 @@ exports.updatePatientOTAllocation = async (req, res) => {
           for (const slotId of normalizedOTSlotIds) {
             // Use OTAllocationDate for all slots
             await client.query(slotInsertQuery, [otAllocationId, parseInt(slotId, 10), otAllocationDateDB]);
+          }
+          if (addedSlotIds.length > 0) {
+            console.log(`  ✓ Added ${addedSlotIds.length} slot(s) to allocation ${otAllocationId}\n`);
           }
         }
       }
