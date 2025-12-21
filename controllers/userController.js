@@ -455,6 +455,191 @@ exports.deleteUser = async (req, res) => {
 };
 
 /**
+ * Get comprehensive doctor data by UserId (Staff ID)
+ * Returns doctor information along with statistics about appointments, patients, lab tests, visits, etc.
+ */
+exports.getDoctorDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Validate that id is an integer
+    const userId = parseInt(id, 10);
+    if (isNaN(userId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid UserId. Must be an integer.' 
+      });
+    }
+
+    // Get basic doctor information
+    const doctorQuery = `
+      SELECT u.*, r."RoleName", d."DepartmentName", d."DepartmentCategory", d."SpecialisationDetails"
+      FROM "Users" u
+      LEFT JOIN "Roles" r ON u."RoleId" = r."RoleId"
+      LEFT JOIN "DoctorDepartment" d ON u."DoctorDepartmentId" = d."DoctorDepartmentId"
+      WHERE u."UserId" = $1
+    `;
+    
+    const { rows: doctorRows } = await db.query(doctorQuery, [userId]);
+    
+    if (doctorRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+
+    const doctor = mapUserRow(doctorRows[0]);
+
+    // Get appointment statistics
+    const appointmentStatsQuery = `
+      SELECT 
+        COUNT(*) AS "TotalAppointments",
+        COUNT(*) FILTER (WHERE "AppointmentStatus" = 'Waiting') AS "WaitingAppointments",
+        COUNT(*) FILTER (WHERE "AppointmentStatus" = 'Consulting') AS "ConsultingAppointments",
+        COUNT(*) FILTER (WHERE "AppointmentStatus" = 'Completed') AS "CompletedAppointments",
+        COUNT(DISTINCT "PatientId") AS "UniquePatients",
+        COUNT(*) FILTER (WHERE "AppointmentDate" = CURRENT_DATE) AS "TodayAppointments"
+      FROM "PatientAppointment"
+      WHERE "DoctorId" = $1 AND "Status" = 'Active'
+    `;
+    const { rows: appointmentStats } = await db.query(appointmentStatsQuery, [userId]);
+
+    // Get lab test statistics
+    const labTestStatsQuery = `
+      SELECT 
+        COUNT(DISTINCT plt."PatientLabTestsId") AS "TotalLabTests",
+        COUNT(DISTINCT plt."PatientLabTestsId") FILTER (WHERE plt."TestStatus" = 'Pending') AS "PendingLabTests",
+        COUNT(DISTINCT plt."PatientLabTestsId") FILTER (WHERE plt."TestStatus" = 'InProgress') AS "InProgressLabTests",
+        COUNT(DISTINCT plt."PatientLabTestsId") FILTER (WHERE plt."TestStatus" = 'Completed') AS "CompletedLabTests"
+      FROM "PatientLabTest" plt
+      LEFT JOIN "PatientAppointment" pa ON plt."AppointmentId" = pa."PatientAppointmentId"
+      WHERE (pa."DoctorId" = $1 OR plt."OrderedByDoctorId" = $1) AND plt."Status" = 'Active'
+    `;
+    const { rows: labTestStats } = await db.query(labTestStatsQuery, [userId]);
+
+    // Get ICU visit statistics
+    const icuVisitStatsQuery = `
+      SELECT 
+        COUNT(*) AS "TotalICUVisits",
+        COUNT(*) FILTER (WHERE "DoctorVisitedDateTime" >= CURRENT_DATE) AS "TodayICUVisits"
+      FROM "ICUDoctorVisits"
+      WHERE "DoctorId" = $1
+    `;
+    const { rows: icuVisitStats } = await db.query(icuVisitStatsQuery, [userId]);
+
+    // Get room admission statistics (as admitting doctor)
+    const roomAdmissionStatsQuery = `
+      SELECT 
+        COUNT(*) AS "TotalRoomAdmissions",
+        COUNT(*) FILTER (WHERE "AdmissionStatus" = 'Admitted') AS "ActiveAdmissions",
+        COUNT(*) FILTER (WHERE "AdmissionStatus" = 'Discharged') AS "DischargedAdmissions"
+      FROM "RoomAdmission"
+      WHERE "AdmittingDoctorId" = $1 AND "Status" = 'Active'
+    `;
+    const { rows: roomAdmissionStats } = await db.query(roomAdmissionStatsQuery, [userId]);
+
+    // Get patient admit doctor visits statistics
+    const patientAdmitVisitStatsQuery = `
+      SELECT 
+        COUNT(*) AS "TotalPatientAdmitVisits",
+        COUNT(*) FILTER (WHERE "DoctorVisitedDateTime" >= CURRENT_DATE) AS "TodayPatientAdmitVisits"
+      FROM "PatientAdmitDoctorVisits"
+      WHERE "DoctorId" = $1
+    `;
+    const { rows: patientAdmitVisitStats } = await db.query(patientAdmitVisitStatsQuery, [userId]);
+
+    // Get OT allocation statistics
+    const otStatsQuery = `
+      SELECT 
+        COUNT(*) AS "TotalOTAllocations",
+        COUNT(*) FILTER (WHERE "OperationStatus" = 'Scheduled') AS "ScheduledOT",
+        COUNT(*) FILTER (WHERE "OperationStatus" = 'InProgress') AS "InProgressOT",
+        COUNT(*) FILTER (WHERE "OperationStatus" = 'Completed') AS "CompletedOT"
+      FROM "PatientOTAllocation"
+      WHERE ("LeadSurgeonId" = $1 OR "AssistantDoctorId" = $1 OR "AnaesthetistId" = $1) AND "Status" = 'Active'
+    `;
+    const { rows: otStats } = await db.query(otStatsQuery, [userId]);
+
+    // Get emergency admission statistics
+    const emergencyStatsQuery = `
+      SELECT 
+        COUNT(*) AS "TotalEmergencyAdmissions",
+        COUNT(*) FILTER (WHERE "EmergencyStatus" = 'Admitted') AS "ActiveEmergencyAdmissions"
+      FROM "EmergencyAdmission"
+      WHERE "DoctorId" = $1 AND "Status" = 'Active'
+    `;
+    const { rows: emergencyStats } = await db.query(emergencyStatsQuery, [userId]);
+
+    // Get ICU admission statistics (as attending doctor)
+    const icuAdmissionStatsQuery = `
+      SELECT 
+        COUNT(*) AS "TotalICUAdmissions",
+        COUNT(*) FILTER (WHERE "ICUAdmissionStatus" = 'Occupied') AS "ActiveICUAdmissions"
+      FROM "PatientICUAdmission"
+      WHERE "AttendingDoctorId" = $1 AND "Status" = 'Active'
+    `;
+    const { rows: icuAdmissionStats } = await db.query(icuAdmissionStatsQuery, [userId]);
+
+    // Compile all statistics
+    const statistics = {
+      appointments: {
+        total: parseInt(appointmentStats[0]?.TotalAppointments || 0, 10),
+        waiting: parseInt(appointmentStats[0]?.WaitingAppointments || 0, 10),
+        consulting: parseInt(appointmentStats[0]?.ConsultingAppointments || 0, 10),
+        completed: parseInt(appointmentStats[0]?.CompletedAppointments || 0, 10),
+        today: parseInt(appointmentStats[0]?.TodayAppointments || 0, 10),
+        uniquePatients: parseInt(appointmentStats[0]?.UniquePatients || 0, 10),
+      },
+      labTests: {
+        total: parseInt(labTestStats[0]?.TotalLabTests || 0, 10),
+        pending: parseInt(labTestStats[0]?.PendingLabTests || 0, 10),
+        inProgress: parseInt(labTestStats[0]?.InProgressLabTests || 0, 10),
+        completed: parseInt(labTestStats[0]?.CompletedLabTests || 0, 10),
+      },
+      icuVisits: {
+        total: parseInt(icuVisitStats[0]?.TotalICUVisits || 0, 10),
+        today: parseInt(icuVisitStats[0]?.TodayICUVisits || 0, 10),
+      },
+      roomAdmissions: {
+        total: parseInt(roomAdmissionStats[0]?.TotalRoomAdmissions || 0, 10),
+        active: parseInt(roomAdmissionStats[0]?.ActiveAdmissions || 0, 10),
+        discharged: parseInt(roomAdmissionStats[0]?.DischargedAdmissions || 0, 10),
+      },
+      patientAdmitVisits: {
+        total: parseInt(patientAdmitVisitStats[0]?.TotalPatientAdmitVisits || 0, 10),
+        today: parseInt(patientAdmitVisitStats[0]?.TodayPatientAdmitVisits || 0, 10),
+      },
+      otAllocations: {
+        total: parseInt(otStats[0]?.TotalOTAllocations || 0, 10),
+        scheduled: parseInt(otStats[0]?.ScheduledOT || 0, 10),
+        inProgress: parseInt(otStats[0]?.InProgressOT || 0, 10),
+        completed: parseInt(otStats[0]?.CompletedOT || 0, 10),
+      },
+      emergencyAdmissions: {
+        total: parseInt(emergencyStats[0]?.TotalEmergencyAdmissions || 0, 10),
+        active: parseInt(emergencyStats[0]?.ActiveEmergencyAdmissions || 0, 10),
+      },
+      icuAdmissions: {
+        total: parseInt(icuAdmissionStats[0]?.TotalICUAdmissions || 0, 10),
+        active: parseInt(icuAdmissionStats[0]?.ActiveICUAdmissions || 0, 10),
+      },
+    };
+
+    res.status(200).json({
+      success: true,
+      data: {
+        doctor,
+        statistics,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching doctor details',
+      error: error.message,
+    });
+  }
+};
+
+/**
  * Get role-wise user count from Users table
  * Returns count of users per role
  * Optional query parameters:

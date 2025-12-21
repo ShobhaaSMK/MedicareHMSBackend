@@ -53,6 +53,79 @@ Response: {
 } */
 router.get('/', userController.getAllUsers);
 
+/* GET /api/users/:id/doctor-details
+Params: id (Number) - UserId/Staff ID
+Response: {
+  success: Boolean,
+  data: {
+    doctor: {
+      UserId: Number,
+      RoleId: String (UUID),
+      UserName: String,
+      PhoneNo: String | null,
+      EmailId: String | null,
+      DoctorDepartmentId: String (UUID) | null,
+      DoctorQualification: String | null,
+      DoctorType: String | null,
+      DoctorOPDCharge: Number | null,
+      DoctorSurgeryCharge: Number | null,
+      OPDConsultation: String | null,
+      IPDVisit: String | null,
+      OTHandle: String | null,
+      ICUVisits: String | null,
+      Status: String,
+      CreatedBy: Number | null,
+      CreatedAt: Date,
+      RoleName: String | null,
+      DepartmentName: String | null
+    },
+    statistics: {
+      appointments: {
+        total: Number,
+        waiting: Number,
+        consulting: Number,
+        completed: Number,
+        today: Number,
+        uniquePatients: Number
+      },
+      labTests: {
+        total: Number,
+        pending: Number,
+        inProgress: Number,
+        completed: Number
+      },
+      icuVisits: {
+        total: Number,
+        today: Number
+      },
+      roomAdmissions: {
+        total: Number,
+        active: Number,
+        discharged: Number
+      },
+      patientAdmitVisits: {
+        total: Number,
+        today: Number
+      },
+      otAllocations: {
+        total: Number,
+        scheduled: Number,
+        inProgress: Number,
+        completed: Number
+      },
+      emergencyAdmissions: {
+        total: Number,
+        active: Number
+      },
+      icuAdmissions: {
+        total: Number,
+        active: Number
+      }
+    }
+  }
+} */
+router.get('/:id/doctor-details', userController.getDoctorDetails);
+
 /* GET /api/users/:id
 Params: id (Number)
 Response: {

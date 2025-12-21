@@ -1,6 +1,6 @@
 const db = require('../db');
 
-const allowedStatus = ['Active', 'Inactive', 'Occupied'];
+const allowedStatus = ['Active', 'Inactive', 'Occupied', 'Unoccupied'];
 
 /**
  * Generate EmergencyBedNo in format ER-01, ER-02, etc.
@@ -154,7 +154,7 @@ const validateEmergencyBedPayload = (body, requireAll = true) => {
   }
   
   if (body.Status && !allowedStatus.includes(body.Status)) {
-    errors.push('Status must be Active, Inactive, or Occupied');
+    errors.push('Status must be Active, Inactive, Occupied, or Unoccupied');
   }
   
   if (body.CreatedBy !== undefined && body.CreatedBy !== null && body.CreatedBy !== '') {
@@ -178,7 +178,7 @@ exports.createEmergencyBed = async (req, res) => {
       EmergencyRoomNameNo,
       EmergencyRoomDescription,
       ChargesPerDay,
-      Status = 'Active',
+      Status = 'Unoccupied',
       CreatedBy,
     } = req.body;
 
@@ -293,6 +293,106 @@ exports.updateEmergencyBed = async (req, res) => {
       CreatedBy,
     } = req.body;
 
+    // DEBUG: Log PUT request details
+    console.log('\n=== DEBUG: EmergencyBed UPDATE Request ===');
+    console.log('PUT /api/emergency-beds/' + emergencyBedId);
+    console.log('Request Body:', JSON.stringify(req.body, null, 2));
+    console.log('EmergencyBedId:', emergencyBedId);
+
+    // DEBUG: Get all occupied beds (by status and by admission)
+    const allOccupiedBedsByStatus = await db.query(`
+      SELECT "EmergencyBedId", "EmergencyBedNo", "Status"
+      FROM "EmergencyBed"
+      WHERE "Status" = 'Occupied'
+      ORDER BY "EmergencyBedId"
+    `);
+    
+    const allOccupiedBedsByAdmission = await db.query(`
+      SELECT 
+        eb."EmergencyBedId",
+        eb."EmergencyBedNo",
+        eb."Status" AS "BedStatus",
+        ea."EmergencyAdmissionId",
+        ea."PatientId",
+        ea."EmergencyStatus",
+        ea."Status" AS "AdmissionStatus",
+        ea."TransferTo"
+      FROM "EmergencyBed" eb
+      INNER JOIN "EmergencyAdmission" ea ON eb."EmergencyBedId" = ea."EmergencyBedId"
+      WHERE ea."Status" = 'Active'
+        AND ea."EmergencyStatus" = 'Admitted'
+        AND (ea."TransferTo" IS NULL OR ea."TransferTo" = '')
+      ORDER BY eb."EmergencyBedId"
+    `);
+
+    console.log('\n--- All Beds with Status = "Occupied" ---');
+    console.log(JSON.stringify(allOccupiedBedsByStatus.rows, null, 2));
+    
+    console.log('\n--- All Beds Occupied by Active Admissions ---');
+    console.log(JSON.stringify(allOccupiedBedsByAdmission.rows, null, 2));
+
+    // Check if the bed is currently occupied by an active admission
+    const occupiedCheck = await db.query(`
+      SELECT 
+        "EmergencyAdmissionId", 
+        "PatientId", 
+        "EmergencyStatus",
+        "Status" AS "AdmissionStatus",
+        "TransferTo"
+      FROM "EmergencyAdmission"
+      WHERE "EmergencyBedId" = $1
+        AND "Status" = 'Active'
+        AND "EmergencyStatus" = 'Admitted'
+        AND ("TransferTo" IS NULL OR "TransferTo" = '')
+    `, [emergencyBedId]);
+
+    console.log('\n--- Occupancy Check for Bed ID ' + emergencyBedId + ' ---');
+    console.log('Query Results:', JSON.stringify(occupiedCheck.rows, null, 2));
+    console.log('Number of matching admissions:', occupiedCheck.rows.length);
+
+    // Also check if bed status itself is "Occupied"
+    const bedStatusCheck = await db.query(`
+      SELECT "EmergencyBedId", "EmergencyBedNo", "Status"
+      FROM "EmergencyBed"
+      WHERE "EmergencyBedId" = $1
+    `, [emergencyBedId]);
+
+    if (bedStatusCheck.rows.length > 0) {
+      const bedStatus = bedStatusCheck.rows[0].Status || bedStatusCheck.rows[0].status;
+      console.log('Current Bed Status:', bedStatus);
+      
+      // If bed status is "Occupied", also block the update
+      if (bedStatus === 'Occupied') {
+        console.log('⚠ BLOCKED: Bed status is "Occupied"');
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot update emergency bed. The bed status is currently "Occupied". Please discharge or transfer the patient first, or change the bed status manually.',
+          error: 'Bed is occupied',
+          debug: {
+            bedId: emergencyBedId,
+            bedNo: bedStatusCheck.rows[0].EmergencyBedNo || bedStatusCheck.rows[0].emergencybedno,
+            currentStatus: bedStatus,
+            activeAdmissions: occupiedCheck.rows
+          }
+        });
+      }
+    }
+
+    if (occupiedCheck.rows.length > 0) {
+      console.log('⚠ BLOCKED: Active admission found for this bed');
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot update emergency bed. The bed is currently occupied by an active patient admission. Please discharge or transfer the patient first.',
+        error: 'Bed is occupied',
+        debug: {
+          bedId: emergencyBedId,
+          activeAdmissions: occupiedCheck.rows
+        }
+      });
+    }
+
+    console.log('✓ Bed is not occupied, proceeding with update...\n');
+
     // Validate CreatedBy if provided - must be a valid integer
     let createdByValue = null;
     if (CreatedBy !== undefined && CreatedBy !== null && CreatedBy !== '') {
@@ -345,6 +445,10 @@ exports.updateEmergencyBed = async (req, res) => {
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Emergency bed not found' });
     }
+
+    console.log('✓ Update completed successfully');
+    console.log('Updated Bed Data:', JSON.stringify(mapEmergencyBedRow(rows[0]), null, 2));
+    console.log('=== END DEBUG ===\n');
 
     res.status(200).json({
       success: true,

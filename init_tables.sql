@@ -171,7 +171,7 @@ CREATE TABLE IF NOT EXISTS "EmergencyBed" (
     "EmergencyRoomNameNo" VARCHAR(100),
     "EmergencyRoomDescription" TEXT,
     "ChargesPerDay" DECIMAL(10, 2),
-    "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive', 'Occupied')),
+    "Status" VARCHAR(50) DEFAULT 'Unoccupied' CHECK ("Status" IN ('Active', 'Inactive', 'Occupied', 'Unoccupied')),
     "CreatedBy" INTEGER,
     "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
