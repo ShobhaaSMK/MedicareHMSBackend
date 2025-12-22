@@ -196,11 +196,67 @@ curl -X DELETE "http://localhost:4000/api/upload/ot-documents/P2025_12_0001/docu
 ### Appointments
 
 #### `/api/patient-appointments`
-- `GET /` - List appointments (filters: `?status`, `?patientId`, `?doctorId`, `?date`)
-- `GET /:id` - Get appointment by ID
-- `POST /` - Create appointment
-- `PUT /:id` - Update appointment
-- `DELETE /:id` - Delete appointment
+
+**List All Appointments**
+- `GET /` - List all appointments with optional filters
+  - Query parameters:
+    - `status` - Filter by status (`Active`, `Inactive`)
+    - `appointmentStatus` - Filter by appointment status (`Waiting`, `Consulting`, `Completed`)
+    - `patientId` - Filter by patient UUID
+    - `doctorId` - Filter by doctor ID
+    - `appointmentDate` - Filter by date (YYYY-MM-DD)
+
+**Example:**
+```bash
+# Get all active appointments
+curl "http://localhost:4000/api/patient-appointments?status=Active"
+
+# Get waiting appointments for a doctor
+curl "http://localhost:4000/api/patient-appointments?doctorId=2&appointmentStatus=Waiting"
+
+# Get appointments for a specific date
+curl "http://localhost:4000/api/patient-appointments?appointmentDate=2024-12-15"
+```
+
+**Get Appointment by ID**
+- `GET /:id` - Get single appointment by PatientAppointmentId
+
+**Example:**
+```bash
+curl http://localhost:4000/api/patient-appointments/123
+```
+
+**Get Appointments by Patient**
+- `GET /patient/:patientId` - Get all appointments for a specific patient
+  - Query parameters: `?status`, `?appointmentStatus`
+
+**Example:**
+```bash
+curl "http://localhost:4000/api/patient-appointments/patient/a7f88a65-68d1-419e-a8e8-64e079f863e0?status=Active"
+```
+
+**Create Appointment**
+- `POST /` - Create new appointment
+  - **Required fields:**
+    - `PatientId` - UUID string
+    - `DoctorId` - Number
+    - `AppointmentDate` - String (YYYY-MM-DD format)
+    - `AppointmentTime` - String (HH:MM or HH:MM:SS format)
+  - **Optional fields:**
+    - `AppointmentStatus` - `Waiting` (default), `Consulting`, `Completed`
+    - `ConsultationCharge` - Number
+    - `Diagnosis` - String
+    - `FollowUpDetails` - String
+    - `PrescriptionsUrl` - String
+    - `ToBeAdmitted` - `Yes` or `No` (default: `No`)
+    - `ReferToAnotherDoctor` - `Yes` or `No` (default: `No`)
+    - `ReferredDoctorId` - Number (required if `ReferToAnotherDoctor` is `Yes`)
+    - `TransferToIPDOTICU` - `Yes` or `No` (default: `No`)
+    - `TransferTo` - `IPD Room Admission`, `ICU`, or `OT`
+    - `TransferDetails` - String
+    - `BillId` - Number
+    - `Status` - `Active` (default) or `Inactive`
+    - `CreatedBy` - Number
 
 **Example - Create Appointment:**
 ```bash
@@ -209,11 +265,158 @@ curl -X POST http://localhost:4000/api/patient-appointments \
   -d '{
     "PatientId": "a7f88a65-68d1-419e-a8e8-64e079f863e0",
     "DoctorId": 2,
-    "AppointmentDate": "15-12-2024",
+    "AppointmentDate": "2024-12-15",
     "AppointmentTime": "10:00:00",
-    "Status": "Scheduled"
+    "AppointmentStatus": "Waiting",
+    "ConsultationCharge": 500,
+    "Status": "Active"
   }'
 ```
+
+**Note:** `TokenNo` is automatically generated in format `T-0001`, `T-0002`, etc.
+
+**Update Appointment**
+- `PUT /:id` - Update appointment (all fields optional except ID)
+
+**Example:**
+```bash
+curl -X PUT http://localhost:4000/api/patient-appointments/123 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "AppointmentStatus": "Consulting",
+    "Diagnosis": "Fever and cold",
+    "PrescriptionsUrl": "http://example.com/prescription.pdf"
+  }'
+```
+
+**Delete Appointment**
+- `DELETE /:id` - Delete appointment
+
+**Example:**
+```bash
+curl -X DELETE http://localhost:4000/api/patient-appointments/123
+```
+
+#### Appointment Statistics
+
+**Get Today's Active Appointments Count**
+- `GET /count/today-active` - Get count of active appointments for today
+
+**Example:**
+```bash
+curl http://localhost:4000/api/patient-appointments/count/today-active
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "date": "2024-12-15",
+  "count": 25,
+  "message": "Today's active appointments count retrieved successfully"
+}
+```
+
+**Get Active Appointments Count by Date**
+- `GET /count/active?date=YYYY-MM-DD` - Get count of active appointments for a specific date (defaults to today if date not provided)
+
+**Example:**
+```bash
+curl "http://localhost:4000/api/patient-appointments/count/active?date=2024-12-15"
+```
+
+**Get Doctor-Wise Patient Count**
+- `GET /count/doctor-wise` - Get patient count grouped by doctor
+  - Query parameters:
+    - `status` - Filter by appointment status (optional)
+    - `appointmentDate` - Filter by date (YYYY-MM-DD, optional)
+
+**Example:**
+```bash
+curl "http://localhost:4000/api/patient-appointments/count/doctor-wise?appointmentDate=2024-12-15"
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "count": 5,
+  "totalPatients": 25,
+  "totalAppointments": 30,
+  "filters": {
+    "status": null,
+    "appointmentDate": "2024-12-15"
+  },
+  "data": [
+    {
+      "DoctorId": 2,
+      "DoctorName": "Dr. John Doe",
+      "DoctorEmail": "john@example.com",
+      "PatientCount": 10,
+      "TotalAppointments": 12
+    }
+  ]
+}
+```
+
+**Get Appointment Counts by Status**
+- `GET /count/status` - Get counts grouped by appointment status
+  - Query parameters:
+    - `appointmentDate` - Filter by date (YYYY-MM-DD, optional)
+    - `doctorId` - Filter by doctor ID (optional)
+
+**Example:**
+```bash
+curl "http://localhost:4000/api/patient-appointments/count/status?appointmentDate=2024-12-15&doctorId=2"
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "filters": {
+    "appointmentDate": "2024-12-15",
+    "doctorId": 2
+  },
+  "counts": {
+    "TotalActiveAppointments": 25,
+    "WaitingCount": 10,
+    "ConsultingCount": 5,
+    "CompletedCount": 10
+  }
+}
+```
+
+**Get Active Waiting or Consulting Count**
+- `GET /count/active-waiting-consulting` - Get count of active appointments with status `Waiting` or `Consulting`
+
+**Example:**
+```bash
+curl http://localhost:4000/api/patient-appointments/count/active-waiting-consulting
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Active waiting or consulting appointments count retrieved successfully",
+  "count": 15,
+  "data": {
+    "count": 15,
+    "status": "Active",
+    "appointmentStatus": ["Waiting", "Consulting"]
+  }
+}
+```
+
+#### Appointment Status Values
+
+- **AppointmentStatus:** `Waiting`, `Consulting`, `Completed`
+- **Status:** `Active`, `Inactive`
+- **ToBeAdmitted:** `Yes`, `No`
+- **ReferToAnotherDoctor:** `Yes`, `No`
+- **TransferToIPDOTICU:** `Yes`, `No`
+- **TransferTo:** `IPD Room Admission`, `ICU`, `OT`
 
 ---
 
