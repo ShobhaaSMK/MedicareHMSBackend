@@ -112,7 +112,6 @@ const mapPatientICUAdmissionRow = (row) => ({
   PatientId: row.PatientId || row.patientid,
   PatientAppointmentId: row.PatientAppointmentId || row.patientappointmentid || null,
   EmergencyAdmissionId: row.EmergencyAdmissionId || row.emergencyadmissionid || null,
-  EmergencyBedId: row.EmergencyBedId || row.emergencybedid || null,
   RoomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
   PatientType: row.PatientType || row.patienttype || null,
   ICUId: row.ICUId || row.icuid,
@@ -273,13 +272,6 @@ const validatePatientICUAdmissionPayload = (body, requireAll = true) => {
     }
   }
 
-  if (body.EmergencyBedId !== undefined && body.EmergencyBedId !== null) {
-    const emergencyBedIdInt = parseInt(body.EmergencyBedId, 10);
-    if (isNaN(emergencyBedIdInt)) {
-      errors.push('EmergencyBedId must be a valid integer');
-    }
-  }
-
   if (body.RoomAdmissionId !== undefined && body.RoomAdmissionId !== null) {
     const roomAdmissionIdInt = parseInt(body.RoomAdmissionId, 10);
     if (isNaN(roomAdmissionIdInt)) {
@@ -371,7 +363,6 @@ exports.createPatientICUAdmission = async (req, res) => {
       PatientId,
       PatientAppointmentId,
       EmergencyAdmissionId,
-      EmergencyBedId,
       RoomAdmissionId,
       PatientType,
       ICUId,
@@ -414,13 +405,6 @@ exports.createPatientICUAdmission = async (req, res) => {
       const emergencyAdmissionExists = await db.query('SELECT "EmergencyAdmissionId" FROM "EmergencyAdmission" WHERE "EmergencyAdmissionId" = $1', [parseInt(EmergencyAdmissionId, 10)]);
       if (emergencyAdmissionExists.rows.length === 0) {
         return res.status(400).json({ success: false, message: 'EmergencyAdmissionId does not exist' });
-      }
-    }
-
-    if (EmergencyBedId !== undefined && EmergencyBedId !== null) {
-      const emergencyBedExists = await db.query('SELECT "EmergencyBedId" FROM "EmergencyBed" WHERE "EmergencyBedId" = $1', [parseInt(EmergencyBedId, 10)]);
-      if (emergencyBedExists.rows.length === 0) {
-        return res.status(400).json({ success: false, message: 'EmergencyBedId does not exist' });
       }
     }
 
@@ -538,10 +522,10 @@ exports.createPatientICUAdmission = async (req, res) => {
 
     const insertQuery = `
       INSERT INTO "PatientICUAdmission"
-        ("PatientICUAdmissionId", "PatientId", "PatientAppointmentId", "EmergencyAdmissionId", "EmergencyBedId", "RoomAdmissionId", "PatientType", "ICUId",
+        ("PatientICUAdmissionId", "PatientId", "PatientAppointmentId", "EmergencyAdmissionId", "RoomAdmissionId", "PatientType", "ICUId",
          "ICUPatientStatus", "ICUAdmissionStatus", "ICUAllocationFromDate", "ICUAllocationToDate", "NumberOfDays",
          "Diagnosis", "TreatementDetails", "PatientCondition", "ICUAllocationCreatedBy", "Status", "OnVentilator", "AttendingDoctorId")
-      VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+      VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       RETURNING *;
     `;
 
@@ -550,7 +534,6 @@ exports.createPatientICUAdmission = async (req, res) => {
       PatientId, // UUID, not parsed as integer
       PatientAppointmentId ? parseInt(PatientAppointmentId, 10) : null,
       EmergencyAdmissionId ? parseInt(EmergencyAdmissionId, 10) : null,
-      EmergencyBedId ? parseInt(EmergencyBedId, 10) : null,
       RoomAdmissionId ? parseInt(RoomAdmissionId, 10) : null,
       (PatientType && PatientType !== '') ? PatientType.trim() : null,
       parseInt(ICUId, 10),
@@ -602,7 +585,6 @@ exports.updatePatientICUAdmission = async (req, res) => {
       PatientId,
       PatientAppointmentId,
       EmergencyAdmissionId,
-      EmergencyBedId,
       RoomAdmissionId,
       PatientType,
       ICUId,
@@ -640,13 +622,6 @@ exports.updatePatientICUAdmission = async (req, res) => {
       const emergencyAdmissionExists = await db.query('SELECT "EmergencyAdmissionId" FROM "EmergencyAdmission" WHERE "EmergencyAdmissionId" = $1', [parseInt(EmergencyAdmissionId, 10)]);
       if (emergencyAdmissionExists.rows.length === 0) {
         return res.status(400).json({ success: false, message: 'EmergencyAdmissionId does not exist' });
-      }
-    }
-
-    if (EmergencyBedId !== undefined && EmergencyBedId !== null) {
-      const emergencyBedExists = await db.query('SELECT "EmergencyBedId" FROM "EmergencyBed" WHERE "EmergencyBedId" = $1', [parseInt(EmergencyBedId, 10)]);
-      if (emergencyBedExists.rows.length === 0) {
-        return res.status(400).json({ success: false, message: 'EmergencyBedId does not exist' });
       }
     }
 
@@ -703,10 +678,6 @@ exports.updatePatientICUAdmission = async (req, res) => {
     if (EmergencyAdmissionId !== undefined) {
       updates.push(`"EmergencyAdmissionId" = $${paramIndex++}`);
       params.push(EmergencyAdmissionId !== null ? parseInt(EmergencyAdmissionId, 10) : null);
-    }
-    if (EmergencyBedId !== undefined) {
-      updates.push(`"EmergencyBedId" = $${paramIndex++}`);
-      params.push(EmergencyBedId !== null ? parseInt(EmergencyBedId, 10) : null);
     }
     if (RoomAdmissionId !== undefined) {
       updates.push(`"RoomAdmissionId" = $${paramIndex++}`);
@@ -1169,7 +1140,6 @@ exports.getICUAdmissionsforICUMgmt = async (req, res) => {
       patientId: row.PatientId || row.patientid || null,
       patientAppointmentId: row.PatientAppointmentId || row.patientappointmentid || null,
       emergencyAdmissionId: row.EmergencyAdmissionId || row.emergencyadmissionid || null,
-      emergencyBedId: row.EmergencyBedId || row.emergencybedid || null,
       roomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
       icuPatientStatus: row.ICUPatientStatus || row.icupatientstatus || null,
       icuAdmissionStatus: row.ICUAdmissionStatus || row.icuadmissionstatus || null,
@@ -1218,30 +1188,27 @@ exports.getICUBedsDetailsMgmt = async (req, res) => {
   try {
     // Query to get all ICU beds with their corresponding admission details from PatientICUAdmission table
     // This shows all active ICU beds and all their admission records
-    // Note: Explicitly select ICUId from icu table to avoid conflict with pica.ICUId
     const query = `
       SELECT 
-        -- ICU Bed Details (explicitly select to ensure ICUId is preserved)
-        icu."ICUId" AS "ICUId",
-        icu."ICUBedNo" AS "ICUBedNo",
-        icu."ICUType" AS "ICUType",
-        icu."ICURoomNameNo" AS "ICURoomNameNo",
-        icu."ICUDescription" AS "ICUDescription",
-        icu."IsVentilatorAttached" AS "IsVentilatorAttached",
-        icu."ICUStartTimeofDay" AS "ICUStartTimeofDay",
-        icu."ICUEndTimeofDay" AS "ICUEndTimeofDay",
+        -- ICU Bed Details (must come after pica.* to ensure ICUId is preserved)
+        icu."ICUId",
+        icu."ICUBedNo",
+        icu."ICUType",
+        icu."ICURoomNameNo",
+        icu."ICUDescription",
+        icu."IsVentilatorAttached",
+        icu."ICUStartTimeofDay",
+        icu."ICUEndTimeofDay",
         icu."Status" AS "ICUStatus",
         icu."CreatedBy" AS "ICUCreatedBy",
         icu."CreatedAt" AS "ICUCreatedAt",
-        -- PatientICUAdmission Details (explicitly select to avoid column conflicts)
+        -- PatientICUAdmission Details (explicitly select to avoid ICUId conflict)
         pica."PatientICUAdmissionId",
-        pica."PatientId" AS "AdmissionPatientId",
+        pica."PatientId",
         pica."PatientAppointmentId",
         pica."EmergencyAdmissionId",
-        pica."EmergencyBedId",
         pica."RoomAdmissionId",
         pica."PatientType",
-        pica."ICUId" AS "AdmissionICUId",
         pica."ICUPatientStatus",
         pica."ICUAdmissionStatus",
         pica."ICUAllocationFromDate",
@@ -1255,6 +1222,7 @@ exports.getICUBedsDetailsMgmt = async (req, res) => {
         pica."Status" AS "AdmissionStatus",
         pica."OnVentilator",
         pica."AttendingDoctorId",
+        pica."ICUPatientStatus",  
         -- Patient Details
         p."PatientName",
         p."PatientNo",
@@ -1266,12 +1234,15 @@ exports.getICUBedsDetailsMgmt = async (req, res) => {
         pa."AppointmentDate",
         pa."AppointmentTime",
         -- Created By User Details
-        u."UserName" AS "CreatedByName"
+        u."UserName" AS "CreatedByName",
+        -- Attending Doctor Details
+        attendingDoctor."UserName" AS "AttendingDoctorName"
       FROM "ICU" icu
       LEFT JOIN "PatientICUAdmission" pica ON icu."ICUId" = pica."ICUId"
       LEFT JOIN "PatientRegistration" p ON pica."PatientId" = p."PatientId"
       LEFT JOIN "PatientAppointment" pa ON pica."PatientAppointmentId" = pa."PatientAppointmentId"
       LEFT JOIN "Users" u ON pica."ICUAllocationCreatedBy" = u."UserId"
+      LEFT JOIN "Users" attendingDoctor ON pica."AttendingDoctorId" = attendingDoctor."UserId"
       WHERE icu."Status" = 'Active'
       ORDER BY icu."ICUBedNo" ASC, pica."ICUAllocationFromDate" DESC NULLS LAST
     `;
@@ -1343,11 +1314,11 @@ exports.getICUBedsDetailsMgmt = async (req, res) => {
         if (bed) {
           bed.admissions.push({
           patientICUAdmissionId: row.PatientICUAdmissionId || row.patienticuadmissionid || null,
-          patientId: row.AdmissionPatientId || row.admissionpatientid || row.PatientId || row.patientid || null,
+          patientId: row.PatientId || row.patientid || null,
           patientAppointmentId: row.PatientAppointmentId || row.patientappointmentid || null,
           emergencyAdmissionId: row.EmergencyAdmissionId || row.emergencyadmissionid || null,
-          emergencyBedId: row.EmergencyBedId || row.emergencybedid || null,
           roomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
+          patientType: row.PatientType || row.patienttype || null,
           icuPatientStatus: row.ICUPatientStatus || row.icupatientstatus || null,
           icuAdmissionStatus: row.ICUAdmissionStatus || row.icuadmissionstatus || null,
           icuAllocationFromDate: row.ICUAllocationFromDate || row.icuallocationfromdate || null,
@@ -1360,6 +1331,7 @@ exports.getICUBedsDetailsMgmt = async (req, res) => {
           icuAllocationCreatedAt: row.ICUAllocationCreatedAt || row.icuallocationcreatedat || null,
           admissionStatus: row.AdmissionStatus || row.admissionstatus || null,
           onVentilator: row.OnVentilator || row.onventilator || null,
+          patientStatus: row.ICUPatientStatus || row.icupatientstatus || null,
           // Patient Details
           patientName: row.PatientName || row.patientname || null,
           patientNo: row.PatientNo || row.patientno || null,
@@ -1371,7 +1343,10 @@ exports.getICUBedsDetailsMgmt = async (req, res) => {
           appointmentDate: row.AppointmentDate || row.appointmentdate || null,
           appointmentTime: row.AppointmentTime || row.appointmenttime || null,
           // Created By
-          createdByName: row.CreatedByName || row.createdbyname || null
+          createdByName: row.CreatedByName || row.createdbyname || null,
+          // Attending Doctor
+          attendingDoctorId: row.AttendingDoctorId || row.attendingdoctorid || null,
+          attendingDoctorName: row.AttendingDoctorName || row.attendingdoctorname || null
           });
         }
       }
@@ -1504,7 +1479,6 @@ exports.getICUBedsDetailsMgmtByICUId = async (req, res) => {
           patientId: row.PatientId || row.patientid || null,
           patientAppointmentId: row.PatientAppointmentId || row.patientappointmentid || null,
           emergencyAdmissionId: row.EmergencyAdmissionId || row.emergencyadmissionid || null,
-      emergencyBedId: row.EmergencyBedId || row.emergencybedid || null,
           roomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
           icuPatientStatus: row.ICUPatientStatus || row.icupatientstatus || null,
           icuAdmissionStatus: row.ICUAdmissionStatus || row.icuadmissionstatus || null,
@@ -1631,7 +1605,6 @@ exports.getICUBedsDetailsMgmtByICUId = async (req, res) => {
         pica."PatientId",
         pica."PatientAppointmentId",
         pica."EmergencyAdmissionId",
-        pica."EmergencyBedId",
         pica."RoomAdmissionId",
         pica."ICUPatientStatus",
         pica."ICUAdmissionStatus",
@@ -1692,7 +1665,6 @@ exports.getICUBedsDetailsMgmtByICUId = async (req, res) => {
           patientId: row.PatientId || null,
           patientAppointmentId: row.PatientAppointmentId || null,
           emergencyAdmissionId: row.EmergencyAdmissionId || null,
-          emergencyBedId: row.EmergencyBedId || null,
           roomAdmissionId: row.RoomAdmissionId || null,
           icuPatientStatus: row.ICUPatientStatus || null,
           icuAdmissionStatus: row.ICUAdmissionStatus || null,
@@ -1834,7 +1806,6 @@ exports.getICUBedsDetailsMgmtByICUBedId = async (req, res) => {
           patientId: row.PatientId || row.patientid || null,
           patientAppointmentId: row.PatientAppointmentId || row.patientappointmentid || null,
           emergencyAdmissionId: row.EmergencyAdmissionId || row.emergencyadmissionid || null,
-      emergencyBedId: row.EmergencyBedId || row.emergencybedid || null,
           roomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
           icuPatientStatus: row.ICUPatientStatus || row.icupatientstatus || null,
           icuAdmissionStatus: row.ICUAdmissionStatus || row.icuadmissionstatus || null,
@@ -1987,7 +1958,6 @@ exports.getICUAdmissionsforICUMgmtByPatientICUAdmissionId = async (req, res) => 
         patientId: row.PatientId || row.patientid || null,
         patientAppointmentId: row.PatientAppointmentId || row.patientappointmentid || null,
         emergencyAdmissionId: row.EmergencyAdmissionId || row.emergencyadmissionid || null,
-      emergencyBedId: row.EmergencyBedId || row.emergencybedid || null,
         roomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
         icuId: row.AdmissionICUId || row.admissionicuid || null,
         icuPatientStatus: row.ICUPatientStatus || row.icupatientstatus || null,
