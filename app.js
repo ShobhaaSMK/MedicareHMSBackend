@@ -26,6 +26,8 @@ const patientAdmitDoctorVisitsRoutes = require('./routes/patientAdmitDoctorVisit
 const patientOTAllocationRoutes = require('./routes/patientOTAllocationRoutes');
 const billEntityRoutes = require('./routes/billEntityRoutes');
 const billsRoutes = require('./routes/billsRoutes');
+const patientBillsRoutes = require('./routes/patientBillsRoutes');
+const billItemsRoutes = require('./routes/billItemsRoutes');
 const surgeryProcedureRoutes = require('./routes/surgeryProcedureRoutes');
 const auditLogRoutes = require('./routes/auditLogRoutes');
 const reportsRoutes = require('./routes/reportsRoutes');
@@ -76,6 +78,8 @@ app.use('/api/patient-admit-doctor-visits', patientAdmitDoctorVisitsRoutes);
 app.use('/api/patient-ot-allocations', patientOTAllocationRoutes);
 app.use('/api/bill-entities', billEntityRoutes);
 app.use('/api/bills', billsRoutes);
+app.use('/api/patient-bills', patientBillsRoutes);
+app.use('/api/bill-items', billItemsRoutes);
 app.use('/api/surgery-procedures', surgeryProcedureRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
 app.use('/api/reports', reportsRoutes);

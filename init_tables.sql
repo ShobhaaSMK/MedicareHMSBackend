@@ -164,6 +164,64 @@ CREATE INDEX IF NOT EXISTS idx_bills_paidstatus ON "Bills"("PaidStatus");
 CREATE INDEX IF NOT EXISTS idx_bills_status ON "Bills"("Status");
 CREATE INDEX IF NOT EXISTS idx_bills_generatedby ON "Bills"("BillGeneratedBy");
 
+-- PatientBills table
+CREATE TABLE IF NOT EXISTS "PatientBills" (
+    "BillId" UUID PRIMARY KEY,
+    "BillNo" VARCHAR(50) NOT NULL UNIQUE,
+    "PatientId" UUID,
+    "BillType" VARCHAR(50) CHECK ("BillType" IN ('OPD', 'IPD', 'Emergency', 'LabTest', 'Pharmacy')),
+    "DepartmentId" INTEGER,
+    "DoctorId" INTEGER,
+    "BillDateTime" TIMESTAMP NOT NULL,
+    "TotalAmount" DECIMAL(10, 2) NOT NULL,
+    "PaidStatus" VARCHAR(50) CHECK ("PaidStatus" IN ('Pending', 'Partial', 'Paid')) DEFAULT 'Pending',
+    "PaidAmount" DECIMAL(10, 2) DEFAULT 0,
+    "PartialPaidAmount" DECIMAL(10, 2) DEFAULT 0,
+    "Balance" DECIMAL(10, 2),
+    "ModeOfPayment" VARCHAR(50) CHECK ("ModeOfPayment" IN ('Cash', 'Credit Card', 'Debit Card', 'UPI', 'NetBanking', 'Insurance', 'Cheque', 'Wallet(Paytm/PhonePe)', 'Scheme')),
+    "InsuranceReferenceNo" VARCHAR(100),
+    "InsuranceBillAmount" DECIMAL(10, 2),
+    "SchemeReferenceNo" VARCHAR(100),
+    "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
+    "BillGeneratedBy" INTEGER,
+    "BillGeneratedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE SET NULL,
+    FOREIGN KEY ("DepartmentId") REFERENCES "DoctorDepartment"("DoctorDepartmentId") ON DELETE SET NULL,
+    FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL,
+    FOREIGN KEY ("BillGeneratedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_patientbills_billno ON "PatientBills"("BillNo");
+CREATE INDEX IF NOT EXISTS idx_patientbills_patientid ON "PatientBills"("PatientId");
+CREATE INDEX IF NOT EXISTS idx_patientbills_billtype ON "PatientBills"("BillType");
+CREATE INDEX IF NOT EXISTS idx_patientbills_departmentid ON "PatientBills"("DepartmentId");
+CREATE INDEX IF NOT EXISTS idx_patientbills_doctorid ON "PatientBills"("DoctorId");
+CREATE INDEX IF NOT EXISTS idx_patientbills_billdatetime ON "PatientBills"("BillDateTime");
+CREATE INDEX IF NOT EXISTS idx_patientbills_paidstatus ON "PatientBills"("PaidStatus");
+CREATE INDEX IF NOT EXISTS idx_patientbills_status ON "PatientBills"("Status");
+CREATE INDEX IF NOT EXISTS idx_patientbills_generatedby ON "PatientBills"("BillGeneratedBy");
+
+-- BillItems table
+CREATE TABLE IF NOT EXISTS "BillItems" (
+    "BillItemsId" UUID PRIMARY KEY,
+    "BillId" UUID NOT NULL,
+    "ItemCategory" VARCHAR(50) CHECK ("ItemCategory" IN ('Consultation', 'Lab test', 'Medicine', 'Room Charges', 'OT Charges', 'ICU Charges', 'Emergency', 'Other')),
+    "Quantity" DECIMAL(10, 2) NOT NULL,
+    "UnitPrice" DECIMAL(10, 2) NOT NULL,
+    "TotalPrice" DECIMAL(10, 2),
+    "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
+    "CreatedBy" INTEGER,
+    "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY ("BillId") REFERENCES "PatientBills"("BillId") ON DELETE CASCADE,
+    FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_billitems_billid ON "BillItems"("BillId");
+CREATE INDEX IF NOT EXISTS idx_billitems_itemcategory ON "BillItems"("ItemCategory");
+CREATE INDEX IF NOT EXISTS idx_billitems_status ON "BillItems"("Status");
+CREATE INDEX IF NOT EXISTS idx_billitems_createdby ON "BillItems"("CreatedBy");
+CREATE INDEX IF NOT EXISTS idx_billitems_createdat ON "BillItems"("CreatedAt");
+
 -- EmergencyBed table
 CREATE TABLE IF NOT EXISTS "EmergencyBed" (
     "EmergencyBedId" SERIAL PRIMARY KEY,
