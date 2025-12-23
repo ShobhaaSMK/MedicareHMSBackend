@@ -1141,7 +1141,6 @@ exports.getICUAdmissionsforICUMgmt = async (req, res) => {
       patientAppointmentId: row.PatientAppointmentId || row.patientappointmentid || null,
       emergencyAdmissionId: row.EmergencyAdmissionId || row.emergencyadmissionid || null,
       roomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
-      patientType: row.PatientType || row.patienttype || null,
       icuPatientStatus: row.ICUPatientStatus || row.icupatientstatus || null,
       icuAdmissionStatus: row.ICUAdmissionStatus || row.icuadmissionstatus || null,
       icuAllocationFromDate: row.ICUAllocationFromDate || row.icuallocationfromdate || null,
