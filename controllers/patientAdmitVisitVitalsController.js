@@ -2,12 +2,15 @@ const db = require('../db');
 const { randomUUID } = require('crypto');
 
 const allowedStatus = ['Active', 'Inactive'];
-const allowedDailyOrHourlyVitals = ['Daily', 'Hourly'];
+// Note: Database constraint requires 'Daily Vitals' and 'Hourly Vitals' (with spaces)
+// We accept both 'Daily'/'Hourly' and 'Daily Vitals'/'Hourly Vitals' and normalize to the database format
+const allowedDailyOrHourlyVitals = ['Daily', 'Hourly', 'Daily Vitals', 'Hourly Vitals'];
 const allowedPatientStatus = ['Stable', 'Notstable'];
 const allowedVitalsStatus = ['Stable', 'Critical', 'Improving', 'Normal'];
 
 const mapPatientAdmitVisitVitalsRow = (row) => ({
   PatientAdmitVisitVitalsId: row.PatientAdmitVisitVitalsId || row.patientadmitvisitvitalsid,
+  PatientAdmitNurseVisitsId: row.PatientAdmitNurseVisitsId || row.patientadmitnursevisitsid || null,
   RoomAdmissionId: row.RoomAdmissionId || row.roomadmissionid,
   PatientId: row.PatientId || row.patientid,
   NurseId: row.NurseId || row.nurseid,
@@ -77,9 +80,16 @@ exports.getAllPatientAdmitVisitVitals = async (req, res) => {
       }
     }
     if (dailyOrHourlyVitals) {
-      if (allowedDailyOrHourlyVitals.includes(dailyOrHourlyVitals)) {
+      // Normalize for query: accept both 'Daily'/'Hourly' and 'Daily Vitals'/'Hourly Vitals'
+      const normalized = (dailyOrHourlyVitals === 'Daily' || dailyOrHourlyVitals === 'Daily Vitals') 
+        ? 'Daily Vitals' 
+        : (dailyOrHourlyVitals === 'Hourly' || dailyOrHourlyVitals === 'Hourly Vitals') 
+          ? 'Hourly Vitals' 
+          : null;
+      
+      if (normalized && allowedDailyOrHourlyVitals.includes(dailyOrHourlyVitals)) {
         conditions.push(`"DailyOrHourlyVitals" = $${params.length + 1}`);
-        params.push(dailyOrHourlyVitals);
+        params.push(normalized);
       }
     }
     if (fromDate) {
@@ -178,6 +188,14 @@ exports.getPatientAdmitVisitVitalsByRoomAdmissionId = async (req, res) => {
 const validatePatientAdmitVisitVitalsPayload = (body, requireAll = true) => {
   const errors = [];
 
+  // PatientAdmitNurseVisitsId is optional - if not provided, will be auto-created
+  if (body.PatientAdmitNurseVisitsId !== undefined && body.PatientAdmitNurseVisitsId !== null && body.PatientAdmitNurseVisitsId !== '') {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(body.PatientAdmitNurseVisitsId)) {
+      errors.push('PatientAdmitNurseVisitsId must be a valid UUID');
+    }
+  }
+
   if (body.RoomAdmissionId !== undefined && body.RoomAdmissionId !== null && body.RoomAdmissionId !== '') {
     const roomAdmissionIdInt = parseInt(body.RoomAdmissionId, 10);
     if (isNaN(roomAdmissionIdInt)) {
@@ -224,8 +242,12 @@ const validatePatientAdmitVisitVitalsPayload = (body, requireAll = true) => {
   if (body.DailyOrHourlyVitals !== undefined && body.DailyOrHourlyVitals !== null) {
     if (typeof body.DailyOrHourlyVitals !== 'string') {
       errors.push('DailyOrHourlyVitals must be a string');
-    } else if (!allowedDailyOrHourlyVitals.includes(body.DailyOrHourlyVitals)) {
-      errors.push('DailyOrHourlyVitals must be Daily or Hourly');
+    } else {
+      const trimmed = body.DailyOrHourlyVitals.trim();
+      // Accept both 'Daily'/'Hourly' and 'Daily Vitals'/'Hourly Vitals'
+      if (!allowedDailyOrHourlyVitals.includes(trimmed)) {
+        errors.push(`DailyOrHourlyVitals must be 'Daily', 'Hourly', 'Daily Vitals', or 'Hourly Vitals' (case-sensitive). Received: "${body.DailyOrHourlyVitals}"`);
+      }
     }
   }
 
@@ -289,6 +311,7 @@ exports.createPatientAdmitVisitVitals = async (req, res) => {
     const {
       RoomAdmissionId,
       PatientId,
+      PatientAdmitNurseVisitsId,
       NurseId,
       PatientStatus,
       RecordedDateTime,
@@ -311,6 +334,25 @@ exports.createPatientAdmitVisitVitals = async (req, res) => {
 
     if (!patientAdmitVisitVitalsId || typeof patientAdmitVisitVitalsId !== 'string') {
       throw new Error('Failed to generate PatientAdmitVisitVitalsId');
+    }
+
+    // Validate PatientAdmitNurseVisitsId if provided, otherwise create a new one
+    let patientAdmitNurseVisitsIdValue = null;
+    if (PatientAdmitNurseVisitsId !== undefined && PatientAdmitNurseVisitsId !== null && PatientAdmitNurseVisitsId !== '') {
+      // Use provided PatientAdmitNurseVisitsId
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(PatientAdmitNurseVisitsId)) {
+        return res.status(400).json({ success: false, message: 'PatientAdmitNurseVisitsId must be a valid UUID' });
+      }
+      // Check if PatientAdmitNurseVisits record exists
+      const nurseVisitExists = await db.query('SELECT "PatientAdmitNurseVisitsId" FROM "PatientAdmitNurseVisits" WHERE "PatientAdmitNurseVisitsId" = $1::uuid', [PatientAdmitNurseVisitsId]);
+      if (nurseVisitExists.rows.length === 0) {
+        return res.status(400).json({ success: false, message: 'PatientAdmitNurseVisitsId does not exist' });
+      }
+      patientAdmitNurseVisitsIdValue = PatientAdmitNurseVisitsId;
+    } else {
+      // Automatically create a new PatientAdmitNurseVisits record
+      // This will be done in the transaction below
     }
 
     // Validate foreign key existence
@@ -357,45 +399,170 @@ exports.createPatientAdmitVisitVitals = async (req, res) => {
       createdByValue = createdByInt;
     }
 
-    const insertQuery = `
-      INSERT INTO "PatientAdmitVisitVitals"
-        ("PatientAdmitVisitVitalsId", "RoomAdmissionId", "PatientId", "NurseId", "PatientStatus", "RecordedDateTime", "VisitRemarks",
-         "DailyOrHourlyVitals", "HeartRate", "BloodPressure", "Temperature", "O2Saturation", "RespiratoryRate",
-         "PulseRate", "VitalsStatus", "VitalsRemarks", "VitalsCreatedBy", "Status")
-      VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6::timestamp, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-      RETURNING *;
-    `;
+    // Use transaction to ensure both records are created atomically
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      
+      // Debug: Check the actual constraint definition in the database
+      const constraintCheck = await client.query(`
+        SELECT 
+          conname AS constraint_name,
+          pg_get_constraintdef(oid) AS constraint_definition
+        FROM pg_constraint
+        WHERE conname = 'PatientAdmitVisitVitals_DailyOrHourlyVitals_check'
+        LIMIT 1
+      `);
+      
+      if (constraintCheck.rows.length > 0) {
+        console.log('=== Database Constraint Definition ===');
+        console.log('Constraint Name:', constraintCheck.rows[0].constraint_name);
+        console.log('Constraint Definition:', constraintCheck.rows[0].constraint_definition);
+        console.log('=====================================');
+      } else {
+        console.log('⚠ Constraint PatientAdmitVisitVitals_DailyOrHourlyVitals_check not found in database');
+        // Try to find any constraints on this column
+        const allConstraints = await client.query(`
+          SELECT 
+            conname AS constraint_name,
+            pg_get_constraintdef(oid) AS constraint_definition
+          FROM pg_constraint
+          WHERE conrelid = 'PatientAdmitVisitVitals'::regclass
+          AND conname LIKE '%DailyOrHourlyVitals%'
+        `);
+        if (allConstraints.rows.length > 0) {
+          console.log('Found related constraints:');
+          allConstraints.rows.forEach(row => {
+            console.log(`  - ${row.constraint_name}: ${row.constraint_definition}`);
+          });
+        }
+      }
 
-    const insertParams = [
-      patientAdmitVisitVitalsId,
-      (RoomAdmissionId !== undefined && RoomAdmissionId !== null && RoomAdmissionId !== '') ? parseInt(RoomAdmissionId, 10) : null,
-      PatientId,
-      nurseIdValue,
-      (PatientStatus && PatientStatus !== '') ? PatientStatus : null,
-      RecordedDateTime,
-      (VisitRemarks && VisitRemarks !== '') ? VisitRemarks : null,
-      (DailyOrHourlyVitals && DailyOrHourlyVitals !== '') ? DailyOrHourlyVitals : null,
-      (HeartRate !== undefined && HeartRate !== null && HeartRate !== '') ? parseInt(HeartRate, 10) : null,
-      (BloodPressure && BloodPressure !== '') ? BloodPressure : null,
-      (Temperature !== undefined && Temperature !== null && Temperature !== '') ? parseInt(Temperature, 10) : null,
-      (O2Saturation !== undefined && O2Saturation !== null && O2Saturation !== '') ? parseInt(O2Saturation, 10) : null,
-      (RespiratoryRate !== undefined && RespiratoryRate !== null && RespiratoryRate !== '') ? parseInt(RespiratoryRate, 10) : null,
-      (PulseRate !== undefined && PulseRate !== null && PulseRate !== '') ? parseInt(PulseRate, 10) : null,
-      (VitalsStatus && VitalsStatus !== '') ? VitalsStatus : null,
-      (VitalsRemarks && VitalsRemarks !== '') ? VitalsRemarks : null,
-      createdByValue,
-      Status,
-    ];
-    
-    console.log('Inserting PatientAdmitVisitVitals with params:', insertParams);
-    
-    const { rows } = await db.query(insertQuery, insertParams);
+      // If PatientAdmitNurseVisitsId was not provided, create a new PatientAdmitNurseVisits record
+      if (!patientAdmitNurseVisitsIdValue) {
+        const patientAdmitNurseVisitsId = randomUUID();
+        
+        // Extract VisitDate and VisitTime from RecordedDateTime
+        const recordedDate = new Date(RecordedDateTime);
+        const visitDate = recordedDate.toISOString().split('T')[0]; // YYYY-MM-DD
+        const visitTime = recordedDate.toTimeString().split(' ')[0]; // HH:MM:SS
+        
+        // Use NurseId or VitalsCreatedBy for RoomVisitsCreatedBy
+        const roomVisitsCreatedBy = nurseIdValue || createdByValue;
+        
+        // Insert PatientAdmitNurseVisits record
+        const nurseVisitInsertQuery = `
+          INSERT INTO "PatientAdmitNurseVisits"
+            ("PatientAdmitNurseVisitsId", "RoomAdmissionId", "PatientId", "VisitDate", "VisitTime", 
+             "PatientStatus", "Remarks", "Status", "RoomVisitsCreatedBy")
+          VALUES ($1::uuid, $2, $3::uuid, $4::date, $5::time, $6, $7, $8, $9)
+          RETURNING "PatientAdmitNurseVisitsId";
+        `;
+        
+        const nurseVisitParams = [
+          patientAdmitNurseVisitsId,
+          (RoomAdmissionId !== undefined && RoomAdmissionId !== null && RoomAdmissionId !== '') ? parseInt(RoomAdmissionId, 10) : null,
+          PatientId,
+          visitDate,
+          visitTime,
+          (PatientStatus && PatientStatus !== '') ? PatientStatus : null,
+          (VisitRemarks && VisitRemarks !== '') ? VisitRemarks : null,
+          Status,
+          roomVisitsCreatedBy,
+        ];
+        
+        const nurseVisitResult = await client.query(nurseVisitInsertQuery, nurseVisitParams);
+        patientAdmitNurseVisitsIdValue = nurseVisitResult.rows[0].PatientAdmitNurseVisitsId;
+        
+        console.log(`✓ Created new PatientAdmitNurseVisits record: ${patientAdmitNurseVisitsIdValue}`);
+      }
 
-    res.status(201).json({
-      success: true,
-      message: 'Patient admit visit vitals created successfully',
-      data: mapPatientAdmitVisitVitalsRow(rows[0]),
-    });
+      // Insert PatientAdmitVisitVitals record
+      const insertQuery = `
+        INSERT INTO "PatientAdmitVisitVitals"
+          ("PatientAdmitVisitVitalsId", "PatientAdmitNurseVisitsId", "RoomAdmissionId", "PatientId", "NurseId", "PatientStatus", "RecordedDateTime", "VisitRemarks",
+           "DailyOrHourlyVitals", "HeartRate", "BloodPressure", "Temperature", "O2Saturation", "RespiratoryRate",
+           "PulseRate", "VitalsStatus", "VitalsRemarks", "VitalsCreatedBy", "Status")
+        VALUES ($1::uuid, $2::uuid, $3, $4::uuid, $5, $6, $7::timestamp, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        RETURNING *;
+      `;
+
+      // Ensure DailyOrHourlyVitals is valid and normalize to database format
+      // Database constraint requires 'Daily Vitals' or 'Hourly Vitals' (with spaces)
+      // We accept both 'Daily'/'Hourly' and 'Daily Vitals'/'Hourly Vitals' and normalize
+      if (DailyOrHourlyVitals === undefined || DailyOrHourlyVitals === null || DailyOrHourlyVitals === '') {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'DailyOrHourlyVitals is required and must be "Daily", "Hourly", "Daily Vitals", or "Hourly Vitals"' 
+        });
+      }
+      
+      const trimmed = String(DailyOrHourlyVitals).trim();
+      let dailyOrHourlyVitalsValue = null;
+      
+      // Normalize to database format: 'Daily' -> 'Daily Vitals', 'Hourly' -> 'Hourly Vitals'
+      if (trimmed === 'Daily' || trimmed === 'Daily Vitals') {
+        dailyOrHourlyVitalsValue = 'Daily Vitals'; // Database format
+      } else if (trimmed === 'Hourly' || trimmed === 'Hourly Vitals') {
+        dailyOrHourlyVitalsValue = 'Hourly Vitals'; // Database format
+      } else {
+        return res.status(400).json({ 
+          success: false, 
+          message: `DailyOrHourlyVitals must be 'Daily', 'Hourly', 'Daily Vitals', or 'Hourly Vitals' (case-sensitive). Received: "${DailyOrHourlyVitals}"` 
+        });
+      }
+      
+      console.log(`✓ Validated and normalized DailyOrHourlyVitals: "${dailyOrHourlyVitalsValue}" (original: "${DailyOrHourlyVitals}")`);
+
+      const insertParams = [
+        patientAdmitVisitVitalsId,
+        patientAdmitNurseVisitsIdValue,
+        (RoomAdmissionId !== undefined && RoomAdmissionId !== null && RoomAdmissionId !== '') ? parseInt(RoomAdmissionId, 10) : null,
+        PatientId,
+        nurseIdValue,
+        (PatientStatus && PatientStatus !== '') ? PatientStatus : null,
+        RecordedDateTime,
+        (VisitRemarks && VisitRemarks !== '') ? VisitRemarks : null,
+        dailyOrHourlyVitalsValue,
+        (HeartRate !== undefined && HeartRate !== null && HeartRate !== '') ? parseInt(HeartRate, 10) : null,
+        (BloodPressure && BloodPressure !== '') ? BloodPressure : null,
+        (Temperature !== undefined && Temperature !== null && Temperature !== '') ? parseInt(Temperature, 10) : null,
+        (O2Saturation !== undefined && O2Saturation !== null && O2Saturation !== '') ? parseInt(O2Saturation, 10) : null,
+        (RespiratoryRate !== undefined && RespiratoryRate !== null && RespiratoryRate !== '') ? parseInt(RespiratoryRate, 10) : null,
+        (PulseRate !== undefined && PulseRate !== null && PulseRate !== '') ? parseInt(PulseRate, 10) : null,
+        (VitalsStatus && VitalsStatus !== '') ? VitalsStatus : null,
+        (VitalsRemarks && VitalsRemarks !== '') ? VitalsRemarks : null,
+        createdByValue,
+        Status,
+      ];
+      
+      console.log('Inserting PatientAdmitVisitVitals with params:', insertParams);
+      console.log('DailyOrHourlyVitals value being inserted:', JSON.stringify(dailyOrHourlyVitalsValue));
+      console.log('DailyOrHourlyVitals type:', typeof dailyOrHourlyVitalsValue);
+      console.log('DailyOrHourlyVitals length:', dailyOrHourlyVitalsValue ? dailyOrHourlyVitalsValue.length : 'null');
+      
+      const { rows } = await client.query(insertQuery, insertParams);
+      
+      await client.query('COMMIT');
+      client.release();
+
+      // Prepare response data
+      const responseData = mapPatientAdmitVisitVitalsRow(rows[0]);
+      
+      // Add PatientAdmitNurseVisitsId to response
+      responseData.PatientAdmitNurseVisitsId = patientAdmitNurseVisitsIdValue;
+
+      res.status(201).json({
+        success: true,
+        message: 'Patient admit visit vitals created successfully',
+        data: responseData,
+        patientAdmitNurseVisitsId: patientAdmitNurseVisitsIdValue, // Also return it at top level for convenience
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      client.release();
+      throw error;
+    }
   } catch (error) {
     console.error('Error creating patient admit visit vitals:', error);
     console.error('Error code:', error.code);
@@ -425,12 +592,30 @@ exports.createPatientAdmitVisitVitals = async (req, res) => {
     }
     if (error.code === '23514') {
       // Check constraint violation
+      const receivedDailyOrHourlyVitals = req.body?.DailyOrHourlyVitals;
+      const receivedPatientStatus = req.body?.PatientStatus;
+      const receivedVitalsStatus = req.body?.VitalsStatus;
+      const receivedStatus = req.body?.Status;
+      
+      let specificMessage = 'Invalid value provided. Please check allowed values for PatientStatus, DailyOrHourlyVitals, VitalsStatus, or Status.';
+      
+      if (error.constraint && error.constraint.includes('DailyOrHourlyVitals')) {
+        specificMessage = `DailyOrHourlyVitals constraint violation. The value must be 'Daily', 'Hourly', 'Daily Vitals', or 'Hourly Vitals' (case-sensitive). The database requires 'Daily Vitals' or 'Hourly Vitals'. Received: "${receivedDailyOrHourlyVitals}"`;
+      } else if (error.constraint && error.constraint.includes('PatientStatus')) {
+        specificMessage = `PatientStatus must be exactly 'Stable' or 'Notstable' (case-sensitive). Received: "${receivedPatientStatus}"`;
+      } else if (error.constraint && error.constraint.includes('VitalsStatus')) {
+        specificMessage = `VitalsStatus must be exactly 'Stable', 'Critical', 'Improving', or 'Normal' (case-sensitive). Received: "${receivedVitalsStatus}"`;
+      } else if (error.constraint && error.constraint.includes('Status')) {
+        specificMessage = `Status must be exactly 'Active' or 'Inactive' (case-sensitive). Received: "${receivedStatus}"`;
+      }
+      
       return res.status(400).json({
         success: false,
-        message: 'Invalid value provided. Please check allowed values for PatientStatus, DailyOrHourlyVitals, VitalsStatus, or Status.',
+        message: specificMessage,
         error: error.message,
         detail: error.detail,
         constraint: error.constraint,
+        receivedValue: error.constraint && error.constraint.includes('DailyOrHourlyVitals') ? receivedDailyOrHourlyVitals : undefined,
       });
     }
     if (error.code === '22P02' || error.code === '42804') {
@@ -466,6 +651,7 @@ exports.updatePatientAdmitVisitVitals = async (req, res) => {
     const {
       RoomAdmissionId,
       PatientId,
+      PatientAdmitNurseVisitsId,
       NurseId,
       PatientStatus,
       RecordedDateTime,
@@ -509,6 +695,26 @@ exports.updatePatientAdmitVisitVitals = async (req, res) => {
       updates.push(`"PatientId" = $${paramIndex++}::uuid`);
       params.push(PatientId);
     }
+    if (PatientAdmitNurseVisitsId !== undefined) {
+      if (PatientAdmitNurseVisitsId !== null && PatientAdmitNurseVisitsId !== '') {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(PatientAdmitNurseVisitsId)) {
+          return res.status(400).json({ success: false, message: 'PatientAdmitNurseVisitsId must be a valid UUID.' });
+        }
+        // Check if PatientAdmitNurseVisits record exists
+        const nurseVisitExists = await db.query('SELECT "PatientAdmitNurseVisitsId" FROM "PatientAdmitNurseVisits" WHERE "PatientAdmitNurseVisitsId" = $1::uuid', [PatientAdmitNurseVisitsId]);
+        if (nurseVisitExists.rows.length === 0) {
+          return res.status(400).json({ success: false, message: 'PatientAdmitNurseVisitsId does not exist.' });
+        }
+        updates.push(`"PatientAdmitNurseVisitsId" = $${paramIndex++}::uuid`);
+        params.push(PatientAdmitNurseVisitsId);
+      } else {
+        // If null is provided, we can't set it to null if it's NOT NULL constraint
+        // But we'll allow it in case the constraint allows it
+        updates.push(`"PatientAdmitNurseVisitsId" = $${paramIndex++}::uuid`);
+        params.push(null);
+      }
+    }
     if (NurseId !== undefined) {
       if (NurseId !== null && NurseId !== '') {
         const nurseIdInt = parseInt(NurseId, 10);
@@ -539,8 +745,28 @@ exports.updatePatientAdmitVisitVitals = async (req, res) => {
       params.push(VisitRemarks);
     }
     if (DailyOrHourlyVitals !== undefined) {
-      updates.push(`"DailyOrHourlyVitals" = $${paramIndex++}`);
-      params.push(DailyOrHourlyVitals);
+      if (DailyOrHourlyVitals !== null && DailyOrHourlyVitals !== '') {
+        const trimmed = String(DailyOrHourlyVitals).trim();
+        let normalizedValue = null;
+        
+        // Normalize to database format: 'Daily' -> 'Daily Vitals', 'Hourly' -> 'Hourly Vitals'
+        if (trimmed === 'Daily' || trimmed === 'Daily Vitals') {
+          normalizedValue = 'Daily Vitals';
+        } else if (trimmed === 'Hourly' || trimmed === 'Hourly Vitals') {
+          normalizedValue = 'Hourly Vitals';
+        } else {
+          return res.status(400).json({ 
+            success: false, 
+            message: `DailyOrHourlyVitals must be 'Daily', 'Hourly', 'Daily Vitals', or 'Hourly Vitals' (case-sensitive). Received: "${DailyOrHourlyVitals}"` 
+          });
+        }
+        
+        updates.push(`"DailyOrHourlyVitals" = $${paramIndex++}`);
+        params.push(normalizedValue);
+      } else {
+        updates.push(`"DailyOrHourlyVitals" = $${paramIndex++}`);
+        params.push(null);
+      }
     }
     if (HeartRate !== undefined) {
       updates.push(`"HeartRate" = $${paramIndex++}`);
