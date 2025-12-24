@@ -110,6 +110,7 @@ Response: {
     CreatedDate: Date,
     PatientName: String | null,
     PatientNo: String | null,
+    AadharId: String | null,
     DoctorName: String | null,
     CreatedByName: String | null
   }]
@@ -149,6 +150,7 @@ Response: {
     CreatedDate: Date,
     PatientName: String | null,
     PatientNo: String | null,
+    AadharId: String | null,
     DoctorName: String | null,
     CreatedByName: String | null
   }]
@@ -185,6 +187,7 @@ Response: {
     CreatedDate: Date,
     PatientName: String | null,
     PatientNo: String | null,
+    AadharId: String | null,
     DoctorName: String | null,
     CreatedByName: String | null
   }
