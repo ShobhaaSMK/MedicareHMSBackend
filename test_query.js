@@ -14,39 +14,9 @@ async function testQuery() {
     // MODIFY THIS QUERY TO TEST YOUR QUERIES
     // ============================================
     const query = `
-       SELECT 
-        u."UserId" AS "DoctorId",
-        u."UserName" AS "Doctor",
-        dd."DepartmentName",
-        u."DoctorType",
-        COUNT(*) FILTER (
-          WHERE pa."AppointmentStatus" = 'Waiting' 
-          AND pa."Status" = 'Active'
-        ) AS "Waiting",
-        COUNT(*) FILTER (
-          WHERE pa."AppointmentStatus" = 'Consulting' 
-          AND pa."Status" = 'Active'
-        ) AS "Consulting",
-        COUNT(*) FILTER (
-          WHERE pa."AppointmentStatus" = 'Completed' 
-          AND pa."Status" = 'Active'
-        ) AS "Completed",
-        COUNT(*) FILTER (
-          WHERE pa."AppointmentDate" = '2025-12-23'::date 
-          AND pa."Status" = 'Active'
-        ) AS "Today",
-        u."Status"
-      FROM "PatientAppointment" pa
-      INNER JOIN "Users" u ON pa."DoctorId" = u."UserId"
-      INNER JOIN "DoctorDepartment" dd ON u."DoctorDepartmentId" = dd."DoctorDepartmentId"
-      WHERE pa."Status" = 'Active'
-      GROUP BY 
-        u."UserId",
-        u."UserName",
-        dd."DepartmentName",
-        u."DoctorType",
-        u."Status"
-      ORDER BY u."UserName" ASC
+      SELECT COUNT(*) as activeICUBedsCount
+      FROM "ICU"
+      WHERE "Status" = 'Active'
     `;
 
     console.log('Executing query...');

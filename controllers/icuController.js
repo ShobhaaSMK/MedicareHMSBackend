@@ -350,6 +350,31 @@ exports.updateICU = async (req, res) => {
   }
 };
 
+exports.getActiveICUBedsCount = async (req, res) => {
+  try {
+    const query = `
+      SELECT COUNT(*) as activeICUBedsCount
+      FROM "ICU"
+      WHERE "Status" = 'Active'
+    `;
+
+    const { rows } = await db.query(query);
+    const count = parseInt(rows[0].activeicubedscount || rows[0].activeICUBedsCount, 10);
+
+    res.status(200).json({
+      success: true,
+      count: count,
+      message: `Found ${count} active ICU beds`,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching active ICU beds count',
+      error: error.message,
+    });
+  }
+};
+
 exports.deleteICU = async (req, res) => {
   try {
     const { id } = req.params;

@@ -43,6 +43,14 @@ Response: {
 } */
 router.get('/by-bedno/:bedNo', icuController.getICUByBedNo);
 
+/* GET /api/icu/active-count
+Response: {
+  success: Boolean,
+  count: Number,
+  message: String
+} */
+router.get('/active-count', icuController.getActiveICUBedsCount);
+
 /* GET /api/icu/:id
 Params: id (Number)
 Response: {
