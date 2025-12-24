@@ -34,6 +34,7 @@ const mapAppointmentRow = (row) => ({
   CreatedDate: row.CreatedDate || row.createddate,
   PatientName: row.PatientName || row.patientname || null,
   PatientNo: row.PatientNo || row.patientno || null,
+  AadharId: row.AdhaarID || row.adhaarid || null,
   DoctorName: row.DoctorName || row.doctorname || null,
   CreatedByName: row.CreatedByName || row.createdbyname || null,
 });
@@ -63,7 +64,7 @@ exports.getAllAppointments = async (req, res) => {
     let query = `
       SELECT 
         pa.*,
-        p."PatientName", p."PatientNo",
+        p."PatientName", p."PatientNo", p."AdhaarID",
         d."UserName" AS "DoctorName",
         rd."UserName" AS "ReferredDoctorName",
         b."BillNo",
@@ -139,7 +140,7 @@ exports.getAppointmentById = async (req, res) => {
       `
       SELECT 
         pa.*,
-        p."PatientName", p."PatientNo",
+        p."PatientName", p."PatientNo", p."AdhaarID",
         d."UserName" AS "DoctorName",
         rd."UserName" AS "ReferredDoctorName",
         b."BillNo",
@@ -183,7 +184,7 @@ exports.getAppointmentsByPatientId = async (req, res) => {
     let query = `
       SELECT 
         pa.*,
-        p."PatientName", p."PatientNo",
+        p."PatientName", p."PatientNo", p."AdhaarID",
         d."UserName" AS "DoctorName",
         rd."UserName" AS "ReferredDoctorName",
         b."BillNo",
