@@ -9,7 +9,7 @@ const mapICUVisitVitalsRow = (row) => ({
   ICUVisitVitalsId: row.ICUVisitVitalsId || row.icuvisitvitalsid,
   ICUAdmissionId: row.ICUAdmissionId || row.icuadmissionid,
   PatientId: row.PatientId || row.patientid,
-  NurseId: row.NurseId || row.nurseid,
+  // NurseId: row.NurseId || row.nurseid, // Hidden as requested
   NurseVisitsDetails: row.NurseVisitsDetails || row.nursevisitsdetails,
   PatientCondition: row.PatientCondition || row.patientcondition,
   DailyOrHourlyVitals: row.DailyOrHourlyVitals || row.dailyorhourlyvitals,
@@ -25,6 +25,8 @@ const mapICUVisitVitalsRow = (row) => ({
     : (row.respiratoryrate !== undefined && row.respiratoryrate !== null ? parseInt(row.respiratoryrate, 10) : null),
   PulseRate: row.PulseRate !== undefined && row.PulseRate !== null ? parseInt(row.PulseRate, 10)
     : (row.pulserate !== undefined && row.pulserate !== null ? parseInt(row.pulserate, 10) : null),
+  BloodSugar: row.BloodSugar !== undefined && row.BloodSugar !== null ? parseFloat(row.BloodSugar)
+    : (row.bloodsugar !== undefined && row.bloodsugar !== null ? parseFloat(row.bloodsugar) : null),
   VitalsStatus: row.VitalsStatus || row.vitalsstatus,
   VitalsRemarks: row.VitalsRemarks || row.vitalsremarks,
   VitalsCreatedBy: row.VitalsCreatedBy || row.vitalscreatedby,
@@ -42,7 +44,13 @@ exports.getAllICUVisitVitals = async (req, res) => {
     // #endregion
 
     const { status, vitalsStatus, patientId, icuAdmissionId, nurseId, fromDate, toDate } = req.query;
-    let query = 'SELECT * FROM "ICUVisitVitals"';
+    let query = `
+      SELECT 
+        iv.*,
+        u."UserName" as "NurseName"
+      FROM "ICUVisitVitals" iv
+      LEFT JOIN "Users" u ON iv."NurseId" = u."UserId"
+    `;
     const params = [];
     const conditions = [];
 
@@ -112,10 +120,14 @@ exports.getAllICUVisitVitals = async (req, res) => {
 exports.getICUVisitVitalsById = async (req, res) => {
   try {
     const { id } = req.params;
-    const { rows } = await db.query(
-      'SELECT * FROM "ICUVisitVitals" WHERE "ICUVisitVitalsId" = $1::uuid',
-      [id]
-    );
+    const { rows } = await db.query(`
+      SELECT 
+        iv.*,
+        u."UserName" as "NurseName"
+      FROM "ICUVisitVitals" iv
+      LEFT JOIN "Users" u ON iv."NurseId" = u."UserId"
+      WHERE iv."ICUVisitVitalsId" = $1::uuid
+    `, [id]);
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'ICU visit vitals not found' });
     }
@@ -142,14 +154,15 @@ exports.getICUVisitVitalsByICUAdmissionId = async (req, res) => {
       });
     }
 
-    const { rows } = await db.query(
-      `
-      SELECT * FROM "ICUVisitVitals"
-      WHERE "ICUAdmissionId" = $1::uuid
-      ORDER BY "RecordedDateTime" DESC
-      `,
-      [icuAdmissionId]
-    );
+    const { rows } = await db.query(`
+      SELECT 
+        iv.*,
+        u."UserName" as "NurseName"
+      FROM "ICUVisitVitals" iv
+      LEFT JOIN "Users" u ON iv."NurseId" = u."UserId"
+      WHERE iv."ICUAdmissionId" = $1::uuid
+      ORDER BY iv."RecordedDateTime" DESC
+    `, [icuAdmissionId]);
 
     res.status(200).json({
       success: true,
@@ -290,6 +303,10 @@ const validateICUVisitVitalsPayload = (body, requireAll = true) => {
     errors.push('PulseRate must be a non-negative number');
   }
 
+  if (body.BloodSugar !== undefined && body.BloodSugar !== null && (isNaN(body.BloodSugar) || body.BloodSugar < 0)) {
+    errors.push('BloodSugar must be a non-negative number');
+  }
+
   if (body.VitalsStatus !== undefined && body.VitalsStatus !== null && typeof body.VitalsStatus !== 'string') {
     errors.push('VitalsStatus must be a string');
   }
@@ -347,6 +364,7 @@ exports.createICUVisitVitals = async (req, res) => {
       O2Saturation,
       RespiratoryRate,
       PulseRate,
+      BloodSugar,
       VitalsStatus,
       VitalsRemarks,
       VitalsCreatedBy,
@@ -433,8 +451,8 @@ exports.createICUVisitVitals = async (req, res) => {
       INSERT INTO "ICUVisitVitals"
         ("ICUVisitVitalsId", "ICUAdmissionId", "PatientId", "NurseId", "NurseVisitsDetails", "PatientCondition", "DailyOrHourlyVitals",
          "RecordedDateTime", "HeartRate", "BloodPressure", "Temperature", "O2Saturation", "RespiratoryRate",
-         "PulseRate", "VitalsStatus", "VitalsRemarks", "VitalsCreatedBy", "Status")
-      VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8::timestamp, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+         "PulseRate", "BloodSugar", "VitalsStatus", "VitalsRemarks", "VitalsCreatedBy", "Status")
+      VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8::timestamp, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       RETURNING *;
     `;
 
@@ -453,6 +471,7 @@ exports.createICUVisitVitals = async (req, res) => {
       O2Saturation ? parseInt(O2Saturation, 10) : null,
       RespiratoryRate ? parseInt(RespiratoryRate, 10) : null,
       PulseRate ? parseInt(PulseRate, 10) : null,
+      BloodSugar ? parseFloat(BloodSugar) : null,
       VitalsStatus || null,
       VitalsRemarks || null,
       createdByValue,
@@ -620,6 +639,10 @@ exports.updateICUVisitVitals = async (req, res) => {
     if (PulseRate !== undefined) {
       updates.push(`"PulseRate" = $${paramIndex++}`);
       params.push(PulseRate !== null ? parseInt(PulseRate, 10) : null);
+    }
+    if (BloodSugar !== undefined) {
+      updates.push(`"BloodSugar" = $${paramIndex++}`);
+      params.push(BloodSugar !== null ? parseFloat(BloodSugar) : null);
     }
     if (VitalsStatus !== undefined) {
       updates.push(`"VitalsStatus" = $${paramIndex++}`);
