@@ -826,49 +826,6 @@ CREATE INDEX IF NOT EXISTS idx_emergencyadmissionvitals_recordeddatetime ON "Eme
 CREATE INDEX IF NOT EXISTS idx_emergencyadmissionvitals_vitalsstatus ON "EmergencyAdmissionVitals"("VitalsStatus");
 CREATE INDEX IF NOT EXISTS idx_emergencyadmissionvitals_status ON "EmergencyAdmissionVitals"("Status");
 
--- PatientAdmitNurseVisits table
-CREATE TABLE IF NOT EXISTS "PatientAdmitNurseVisits" (
-    "PatientAdmitNurseVisitsId" UUID PRIMARY KEY,
-    "RoomAdmissionId" INTEGER,
-    "PatientId" UUID NOT NULL,
-    "VisitDate" DATE NOT NULL,
-    "VisitTime" TIME,
-    "PatientStatus" VARCHAR(50),
-    "SupervisionDetails" TEXT,
-    "Remarks" TEXT,
-    "Status" VARCHAR(50) DEFAULT 'Active',
-    "RoomVisitsCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    "RoomVisitsCreatedBy" INTEGER,
-    FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
-    FOREIGN KEY ("RoomVisitsCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
-);
-
--- Add RoomAdmissionId foreign key to PatientAdmitNurseVisits if column exists
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'PatientAdmitNurseVisits'
-    ) AND EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-        AND table_name = 'PatientAdmitNurseVisits' 
-        AND column_name = 'RoomAdmissionId'
-    ) AND EXISTS (
-        SELECT 1 FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'RoomAdmission'
-    ) AND NOT EXISTS (
-        SELECT 1 FROM pg_constraint 
-        WHERE conname = 'PatientAdmitNurseVisits_RoomAdmissionId_fkey'
-    ) THEN
-        ALTER TABLE "PatientAdmitNurseVisits" 
-        ADD CONSTRAINT "PatientAdmitNurseVisits_RoomAdmissionId_fkey" 
-        FOREIGN KEY ("RoomAdmissionId") REFERENCES "RoomAdmission"("RoomAdmissionId") ON DELETE SET NULL;
-    END IF;
-END $$;
-
 -- ICUDoctorVisits table
 CREATE TABLE IF NOT EXISTS "ICUDoctorVisits" (
     "ICUDoctorVisitsId" UUID PRIMARY KEY,
@@ -989,9 +946,9 @@ CREATE TABLE IF NOT EXISTS "PatientAdmitVisitVitals" (
     "PatientId" UUID NOT NULL,
     "NurseId" INTEGER,
     "PatientStatus" VARCHAR(50) CHECK ("PatientStatus" IN ('Stable', 'Notstable')),
-    "RecordedDateTime" TIMESTAMP NOT NULL,
+    "RecordedDateTime" DATE NOT NULL,
     "VisitRemarks" TEXT,
-    "DailyOrHourlyVitals" VARCHAR(50) CHECK ("DailyOrHourlyVitals" IN ('Daily', 'Hourly')),
+    "DailyOrHourlyVitals" VARCHAR(50),
     "HeartRate" INTEGER,
     "BloodPressure" VARCHAR(50),
     "Temperature" INTEGER,

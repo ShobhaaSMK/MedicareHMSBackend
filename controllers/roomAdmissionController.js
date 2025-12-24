@@ -1,10 +1,30 @@
 const db = require('../db');
 
-const allowedAdmissionStatus = ['Active', 'Moved to ICU', 'Surgery Scheduled', 'Discharged'];
+const allowedAdmissionStatus = ['Active', 'Moved To ICU', 'Surgery Scheduled', 'Discharged'];
 const allowedYesNo = ['Yes', 'No'];
 const allowedStatus = ['Active', 'Inactive'];
 const allowedPatientTypes = ['OPD', 'Emergency', 'Direct'];
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Normalize "Yes"/"No" values in a case-insensitive way
+const normalizeYesNo = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === 'yes') return 'Yes';
+  if (normalized === 'no') return 'No';
+  return null;
+};
+
+// Normalize AdmissionStatus in a case-insensitive way and map to canonical values
+const normalizeAdmissionStatus = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === 'active') return 'Active';
+  if (normalized === 'moved to icu') return 'Moved To ICU';
+  if (normalized === 'surgery scheduled') return 'Surgery Scheduled';
+  if (normalized === 'discharged') return 'Discharged';
+  return null;
+};
 
 const mapRoomAdmissionRow = (row) => ({
   RoomAdmissionId: row.RoomAdmissionId || row.roomadmissionid,
@@ -308,7 +328,15 @@ const validateRoomAdmissionPayload = (body, requireAll = true) => {
     }
   }
 
-  if (body.AdmissionStatus && !allowedAdmissionStatus.includes(body.AdmissionStatus)) {
+  const admissionStatusProvided =
+    body.AdmissionStatus !== undefined ||
+    body.admissionStatus !== undefined ||
+    body.admission_status !== undefined;
+  const normalizedAdmissionStatus = normalizeAdmissionStatus(
+    body.AdmissionStatus ?? body.admissionStatus ?? body.admission_status
+  );
+
+  if (admissionStatusProvided && !normalizedAdmissionStatus) {
     errors.push(`AdmissionStatus must be one of: ${allowedAdmissionStatus.join(', ')}`);
   }
 
@@ -334,7 +362,15 @@ const validateRoomAdmissionPayload = (body, requireAll = true) => {
     }
   }
 
-  if (body.IsLinkedToICU && !allowedYesNo.includes(body.IsLinkedToICU)) {
+  const providedIsLinkedToICU =
+    body.IsLinkedToICU !== undefined ||
+    body.isLinkedToICU !== undefined ||
+    body.is_linked_to_icu !== undefined;
+  const normalizedIsLinkedToICU = normalizeYesNo(
+    body.IsLinkedToICU ?? body.isLinkedToICU ?? body.is_linked_to_icu
+  );
+
+  if (providedIsLinkedToICU && !normalizedIsLinkedToICU) {
     errors.push('IsLinkedToICU must be "Yes" or "No"');
   }
 
@@ -394,7 +430,8 @@ exports.createRoomAdmission = async (req, res) => {
     const RoomBedsId = req.body.RoomBedsId || req.body.roomBedsId || req.body.room_beds_id;
     const RoomAllocationDate = req.body.RoomAllocationDate || req.body.roomAllocationDate || req.body.room_allocation_date;
     const RoomVacantDate = req.body.RoomVacantDate || req.body.roomVacantDate || req.body.room_vacant_date;
-    const AdmissionStatus = req.body.AdmissionStatus || req.body.admissionStatus || req.body.admission_status || 'Active';
+    const AdmissionStatusRaw = req.body.AdmissionStatus || req.body.admissionStatus || req.body.admission_status;
+    const AdmissionStatus = normalizeAdmissionStatus(AdmissionStatusRaw) || 'Active';
     const CaseSheetDetails = req.body.CaseSheetDetails || req.body.caseSheetDetails || req.body.case_sheet_details;
     const CaseSheet = req.body.CaseSheet || req.body.caseSheet || req.body.case_sheet;
     const ShiftToAnotherRoom = req.body.ShiftToAnotherRoom || req.body.shiftToAnotherRoom || req.body.shift_to_another_room || 'No';
@@ -402,7 +439,8 @@ exports.createRoomAdmission = async (req, res) => {
     const ShiftedToDetails = req.body.ShiftedToDetails || req.body.shiftedToDetails || req.body.shifted_to_details;
     const ScheduleOT = req.body.ScheduleOT || req.body.scheduleOT || req.body.schedule_ot || 'No';
     const OTAdmissionId = req.body.OTAdmissionId || req.body.otAdmissionId || req.body.ot_admission_id;
-    const IsLinkedToICU = req.body.IsLinkedToICU || req.body.isLinkedToICU || req.body.is_linked_to_icu || 'No';
+    const IsLinkedToICURaw = req.body.IsLinkedToICU || req.body.isLinkedToICU || req.body.is_linked_to_icu;
+    const IsLinkedToICU = normalizeYesNo(IsLinkedToICURaw) || 'No';
     const ICUAdmissionId = req.body.ICUAdmissionId || req.body.icuAdmissionId || req.body.icu_admission_id;
     const BillId = req.body.BillId || req.body.billId || req.body.bill_id;
     const AllocatedBy = req.body.AllocatedBy || req.body.allocatedBy || req.body.allocated_by;
@@ -413,6 +451,14 @@ exports.createRoomAdmission = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: `PatientType must be one of: ${allowedPatientTypes.join(', ')}`,
+      });
+    }
+
+    // Validate AdmissionStatus after normalization
+    if (!AdmissionStatus) {
+      return res.status(400).json({
+        success: false,
+        message: `AdmissionStatus must be one of: ${allowedAdmissionStatus.join(', ')}`,
       });
     }
 
@@ -643,7 +689,7 @@ console.log("ICUAdmissionId", ICUAdmissionId);
       RoomAllocationDate,
       // RoomVacantDate - timestamp or null
       roomVacantDateValue,
-      // AdmissionStatus - string
+      // AdmissionStatus - string (already normalized)
       AdmissionStatus || 'Active',
       // CaseSheetDetails - text or null
       caseSheetDetailsValue,
@@ -843,6 +889,8 @@ exports.updateRoomAdmission = async (req, res) => {
       Status,
     } = req.body;
 
+    const normalizedIsLinkedToICU = normalizeYesNo(IsLinkedToICU);
+
     // Validate PatientType if provided
     if (PatientType !== undefined && PatientType !== null && PatientType !== '') {
       if (!allowedPatientTypes.includes(PatientType)) {
@@ -935,6 +983,12 @@ exports.updateRoomAdmission = async (req, res) => {
       }
     }
 
+    if (IsLinkedToICU !== undefined && IsLinkedToICU !== null && IsLinkedToICU !== '') {
+      if (!normalizedIsLinkedToICU) {
+        return res.status(400).json({ success: false, message: 'IsLinkedToICU must be "Yes" or "No"' });
+      }
+    }
+
     if (ICUAdmissionId !== undefined && ICUAdmissionId !== null) {
       const icuAdmissionExists = await db.query('SELECT "PatientICUAdmissionId" FROM "PatientICUAdmission" WHERE "PatientICUAdmissionId" = $1::uuid', [ICUAdmissionId]);
       if (icuAdmissionExists.rows.length === 0) {
@@ -1006,8 +1060,12 @@ exports.updateRoomAdmission = async (req, res) => {
       params.push(RoomVacantDate || null);
     }
     if (AdmissionStatus !== undefined) {
+      const normalizedAdmissionStatus = normalizeAdmissionStatus(AdmissionStatus);
+      if (!normalizedAdmissionStatus && AdmissionStatus !== null && AdmissionStatus !== '') {
+        return res.status(400).json({ success: false, message: `AdmissionStatus must be one of: ${allowedAdmissionStatus.join(', ')}` });
+      }
       updates.push(`"AdmissionStatus" = $${paramIndex++}`);
-      params.push(AdmissionStatus);
+      params.push(normalizedAdmissionStatus ?? null);
     }
     if (CaseSheetDetails !== undefined) {
       updates.push(`"CaseSheetDetails" = $${paramIndex++}`);
@@ -1038,8 +1096,11 @@ exports.updateRoomAdmission = async (req, res) => {
       params.push(OTAdmissionId || null);
     }
     if (IsLinkedToICU !== undefined) {
+      if (!normalizedIsLinkedToICU && IsLinkedToICU !== null && IsLinkedToICU !== '') {
+        return res.status(400).json({ success: false, message: 'IsLinkedToICU must be "Yes" or "No"' });
+      }
       updates.push(`"IsLinkedToICU" = $${paramIndex++}`);
-      params.push(IsLinkedToICU);
+      params.push(normalizedIsLinkedToICU ?? null);
     }
     if (ICUAdmissionId !== undefined) {
       updates.push(`"ICUAdmissionId" = $${paramIndex++}::uuid`);
@@ -1335,6 +1396,7 @@ exports.getRoomAdmissionsData = async (req, res) => {
         // Additional display fields
         roomAdmissionId: mappedRow.RoomAdmissionId,
         bedNo: row.BedNo || row.bedno || null,
+        roomNo: row.RoomNo || row.roomno || null,
         patientName: row.PatientName || row.patientname || null,
         age: age !== null ? parseInt(age, 10) : null,
         gender: gender || null,

@@ -3,7 +3,7 @@ const { randomUUID } = require('crypto');
 
 const allowedStatus = ['Active', 'Inactive'];
 const allowedPatientCondition = ['Stable', 'Notstable'];
-const allowedDailyOrHourlyVitals = ['Daily', 'Hourly'];
+const allowedDailyOrHourlyVitals = ['Daily', 'Hourly', 'Daily Vitals', 'Hourly Vitals'];
 
 const mapICUVisitVitalsRow = (row) => ({
   ICUVisitVitalsId: row.ICUVisitVitalsId || row.icuvisitvitalsid,
@@ -412,6 +412,23 @@ exports.createICUVisitVitals = async (req, res) => {
       createdByValue = createdByInt;
     }
 
+    // Normalize DailyOrHourlyVitals to database format
+    let dailyOrHourlyVitalsValue = null;
+    if (DailyOrHourlyVitals !== undefined && DailyOrHourlyVitals !== null && DailyOrHourlyVitals !== '') {
+      const trimmed = String(DailyOrHourlyVitals).trim();
+      // Normalize to database format: 'Daily' -> 'Daily Vitals', 'Hourly' -> 'Hourly Vitals'
+      if (trimmed === 'Daily' || trimmed === 'Daily Vitals') {
+        dailyOrHourlyVitalsValue = 'Daily Vitals'; // Database format
+      } else if (trimmed === 'Hourly' || trimmed === 'Hourly Vitals') {
+        dailyOrHourlyVitalsValue = 'Hourly Vitals'; // Database format
+      } else {
+        return res.status(400).json({ 
+          success: false, 
+          message: `DailyOrHourlyVitals must be 'Daily', 'Hourly', 'Daily Vitals', or 'Hourly Vitals' (case-sensitive). Received: "${DailyOrHourlyVitals}"` 
+        });
+      }
+    }
+
     const insertQuery = `
       INSERT INTO "ICUVisitVitals"
         ("ICUVisitVitalsId", "ICUAdmissionId", "PatientId", "NurseId", "NurseVisitsDetails", "PatientCondition", "DailyOrHourlyVitals",
@@ -428,7 +445,7 @@ exports.createICUVisitVitals = async (req, res) => {
       nurseIdValue,
       NurseVisitsDetails || null,
       PatientCondition || null,
-      DailyOrHourlyVitals || null,
+      dailyOrHourlyVitalsValue,
       RecordedDateTime,
       HeartRate ? parseInt(HeartRate, 10) : null,
       BloodPressure || null,

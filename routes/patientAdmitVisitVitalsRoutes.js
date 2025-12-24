@@ -10,7 +10,7 @@ Query Parameters:
   - roomAdmissionId: Number (optional)
   - nurseId: Number (optional)
   - patientStatus: String (optional) // "Stable" | "Notstable"
-  - dailyOrHourlyVitals: String (optional) // "Daily" | "Hourly"
+  - dailyOrHourlyVitals: String (optional) // "Daily" | "Hourly" | "Daily Vitals" | "Hourly Vitals"
   - fromDate: String (optional) // ISO timestamp
   - toDate: String (optional) // ISO timestamp
 Response: {

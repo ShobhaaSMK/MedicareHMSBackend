@@ -131,7 +131,7 @@ Request: {
   NurseId: Number (optional),
   NurseVisitsDetails: String (optional),
   PatientCondition: String (optional),
-  DailyOrHourlyVitals: String (optional), // "Daily" | "Hourly"
+  DailyOrHourlyVitals: String (optional), // "Daily" | "Hourly" | "Daily Vitals" | "Hourly Vitals"
   RecordedDateTime: String (required), // ISO format (YYYY-MM-DD HH:MM:SS or YYYY-MM-DDTHH:MM:SS)
   HeartRate: Number (optional), // Integer
   BloodPressure: String (optional),

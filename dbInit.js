@@ -399,7 +399,7 @@ async function ensureAllTablesAndColumns(pool) {
       'PatientAppointment', 'PatientICUAdmission', 'RoomAdmission',
       'PatientLabTest', 'SurgeryProcedure', 'PatientOTAllocation',
       'PatientOTAllocationSlots', 'EmergencyAdmission', 'EmergencyAdmissionVitals',
-      'PatientAdmitNurseVisits', 'ICUDoctorVisits', 'ICUVisitVitals',
+      'ICUDoctorVisits', 'ICUVisitVitals',
       'PatientAdmitDoctorVisits', 'PatientAdmitVisitVitals', 'AuditLog'
     ];
     
@@ -452,7 +452,6 @@ async function ensureAllTablesAndColumns(pool) {
       { table: 'PatientLabTest', column: 'Priority', type: inferColumnType('Priority', 'PatientLabTest') },
       { table: 'PatientOTAllocation', column: 'RoomAdmissionId', type: inferColumnType('RoomAdmissionId', 'PatientOTAllocation') },
       { table: 'PatientOTAllocation', column: 'NurseId', type: inferColumnType('NurseId', 'PatientOTAllocation') },
-      { table: 'PatientAdmitNurseVisits', column: 'RoomAdmissionId', type: inferColumnType('RoomAdmissionId', 'PatientAdmitNurseVisits') },
       { table: 'PatientAdmitDoctorVisits', column: 'RoomAdmissionId', type: inferColumnType('RoomAdmissionId', 'PatientAdmitDoctorVisits') },
       { table: 'PatientAdmitVisitVitals', column: 'RoomAdmissionId', type: inferColumnType('RoomAdmissionId', 'PatientAdmitVisitVitals') },
       { table: 'PatientAdmitVisitVitals', column: 'NurseId', type: inferColumnType('NurseId', 'PatientAdmitVisitVitals') },
@@ -673,7 +672,7 @@ async function initializeTables() {
           WHERE t.table_schema = 'public' 
             AND t.table_type = 'BASE TABLE'
             AND t.table_name IN (
-              'PatientLabTest', 'PatientOTAllocation', 'PatientAdmitNurseVisits',
+              'PatientLabTest', 'PatientOTAllocation',
               'PatientAdmitDoctorVisits', 'PatientAdmitVisitVitals', 'PatientICUAdmission',
               'ICUNurseVisitVitals', 'ICUVisitVitals'
             )
@@ -682,7 +681,6 @@ async function initializeTables() {
           SELECT 'PatientLabTest' as table_name, 'RoomAdmissionId' as column_name
           UNION ALL SELECT 'PatientLabTest', 'OrderedByDoctorId'
           UNION ALL SELECT 'PatientOTAllocation', 'RoomAdmissionId'
-          UNION ALL SELECT 'PatientAdmitNurseVisits', 'RoomAdmissionId'
           UNION ALL SELECT 'PatientAdmitDoctorVisits', 'RoomAdmissionId'
           UNION ALL SELECT 'PatientAdmitVisitVitals', 'RoomAdmissionId'
           UNION ALL SELECT 'PatientAdmitVisitVitals', 'NurseId'
@@ -764,7 +762,7 @@ async function initializeTables() {
       'PatientAppointment', 'PatientICUAdmission', 'RoomAdmission',
       'PatientLabTest', 'SurgeryProcedure', 'PatientOTAllocation',
       'PatientOTAllocationSlots', 'EmergencyAdmission', 'EmergencyAdmissionVitals',
-      'PatientAdmitNurseVisits', 'ICUDoctorVisits', 'ICUVisitVitals',
+      'ICUDoctorVisits', 'ICUVisitVitals',
       'PatientAdmitDoctorVisits', 'PatientAdmitVisitVitals', 'AuditLog'
     ];
     
