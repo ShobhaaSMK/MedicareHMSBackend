@@ -1077,7 +1077,7 @@ exports.getICUAdmissionsforICUMgmt = async (req, res) => {
     // Query to get all ICU beds with their current admission details (if any)
     // This shows all active ICU beds and their current patient admission status
     const query = `
-      SELECT 
+      SELECT
         icu."ICUId",
         icu."ICUBedNo",
         icu."ICUType",
@@ -1098,9 +1098,10 @@ exports.getICUAdmissionsforICUMgmt = async (req, res) => {
         p."PhoneNo" AS "PatientPhoneNo",
         pa."TokenNo" AS "AppointmentTokenNo",
         u."UserName" AS "CreatedByName",
-        attendingDoctor."UserName" AS "AttendingDoctorName"
+        attendingDoctor."UserName" AS "AttendingDoctorName",
+        pica."PatientType"
       FROM "ICU" icu
-      INNER JOIN "PatientICUAdmission" pica ON icu."ICUId" = pica."ICUId"
+      LEFT JOIN "PatientICUAdmission" pica ON icu."ICUId" = pica."ICUId"
         AND pica."Status" = 'Active'
         AND pica."ICUAdmissionStatus" = 'Occupied'
         AND pica."ICUAllocationFromDate" IS NOT NULL
@@ -1141,6 +1142,7 @@ exports.getICUAdmissionsforICUMgmt = async (req, res) => {
       patientAppointmentId: row.PatientAppointmentId || row.patientappointmentid || null,
       emergencyAdmissionId: row.EmergencyAdmissionId || row.emergencyadmissionid || null,
       roomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
+      patientType: row.PatientType || row.patienttype || null,
       icuPatientStatus: row.ICUPatientStatus || row.icupatientstatus || null,
       icuAdmissionStatus: row.ICUAdmissionStatus || row.icuadmissionstatus || null,
       icuAllocationFromDate: row.ICUAllocationFromDate || row.icuallocationfromdate || null,
@@ -1167,6 +1169,10 @@ exports.getICUAdmissionsforICUMgmt = async (req, res) => {
       // Computed field
       isOccupied: row.PatientICUAdmissionId ? true : false
     }));
+
+    formattedData.forEach(item => {
+      item.currentPatientType = item.patientType;
+    });
 
     res.status(200).json({
       success: true,
@@ -1896,13 +1902,6 @@ exports.getICUAdmissionsforICUMgmtByPatientICUAdmissionId = async (req, res) => 
         p."Age",
         p."Gender",
         p."PhoneNo" AS "PatientPhoneNo",
-        p."EmailId" AS "PatientEmailId",
-        p."Address" AS "PatientAddress",
-        p."DateOfBirth" AS "PatientDateOfBirth",
-        p."BloodGroup" AS "PatientBloodGroup",
-        p."EmergencyContactName" AS "PatientEmergencyContactName",
-        p."EmergencyContactPhone" AS "PatientEmergencyContactPhone",
-        p."Status" AS "PatientStatus",
         -- Appointment Details (if exists)
         pa."TokenNo" AS "AppointmentTokenNo",
         pa."AppointmentDate" AS "AppointmentDate",
@@ -1959,6 +1958,7 @@ exports.getICUAdmissionsforICUMgmtByPatientICUAdmissionId = async (req, res) => 
         patientAppointmentId: row.PatientAppointmentId || row.patientappointmentid || null,
         emergencyAdmissionId: row.EmergencyAdmissionId || row.emergencyadmissionid || null,
         roomAdmissionId: row.RoomAdmissionId || row.roomadmissionid || null,
+        patientType: row.PatientType || row.patienttype || null,
         icuId: row.AdmissionICUId || row.admissionicuid || null,
         icuPatientStatus: row.ICUPatientStatus || row.icupatientstatus || null,
         icuAdmissionStatus: row.ICUAdmissionStatus || row.icuadmissionstatus || null,
