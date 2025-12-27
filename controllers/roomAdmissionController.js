@@ -445,7 +445,7 @@ exports.createRoomAdmission = async (req, res) => {
     const BillId = req.body.BillId || req.body.billId || req.body.bill_id;
     const AllocatedBy = req.body.AllocatedBy || req.body.allocatedBy || req.body.allocated_by;
     const Status = req.body.Status || req.body.status || 'Active';
- console.log("PatientType&&&&&&&&&&&&&&&&&&&&&&&&&", PatientType);
+    
     // Validate PatientType if provided
     if (PatientType && !allowedPatientTypes.includes(PatientType)) {
       return res.status(400).json({
