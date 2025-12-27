@@ -934,7 +934,7 @@ exports.getPatientLabTestsWithDetails = async (req, res) => {
         -- Bill details
         b."BillNo",
         b."BillDateTime",
-        b."Amount" AS "BillAmount",
+        
         b."PaidStatus"
       FROM "PatientLabTest" plt
       LEFT JOIN "PatientRegistration" p ON plt."PatientId" = p."PatientId"
@@ -1246,7 +1246,7 @@ exports.getPatientLabTestsWithDetailsById = async (req, res) => {
         -- Bill details
         b."BillNo",
         b."BillDateTime",
-        b."Amount" AS "BillAmount",
+        
         b."PaidStatus"
       FROM "PatientLabTest" plt
       LEFT JOIN "PatientRegistration" p ON plt."PatientId" = p."PatientId"

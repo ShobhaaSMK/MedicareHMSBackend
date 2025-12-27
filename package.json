@@ -9,6 +9,7 @@
     "test": "cross-env NODE_ENV=test jest --runInBand"
   },
   "dependencies": {
+    "axios": "^1.13.2",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
@@ -16,7 +17,8 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.11",
-    "pg": "^8.11.3"
+    "pg": "^8.11.3",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "cross-env": "^7.0.3",

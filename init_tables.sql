@@ -117,52 +117,8 @@ CREATE TABLE IF NOT EXISTS "ICU" (
     FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
--- BillEntity table
-CREATE TABLE IF NOT EXISTS "BillEntity" (
-    "BillEntityId" SERIAL PRIMARY KEY,
-    "BillEntity" VARCHAR(50) NOT NULL CHECK ("BillEntity" IN ('OPD_VISIT', 'LAB', 'IPD_ADMISSION', 'OT_CASE', 'ICU_STAY', 'PHARMACY')),
-    "EntityDescription" TEXT,
-    "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
-    "BillEntityCreatedBy" INTEGER,
-    "BillEntityCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY ("BillEntityCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
-);
 
-CREATE INDEX IF NOT EXISTS idx_billentity_billentity ON "BillEntity"("BillEntity");
-CREATE INDEX IF NOT EXISTS idx_billentity_status ON "BillEntity"("Status");
-CREATE INDEX IF NOT EXISTS idx_billentity_createdby ON "BillEntity"("BillEntityCreatedBy");
 
--- Bills table
-CREATE TABLE IF NOT EXISTS "Bills" (
-    "BillId" SERIAL PRIMARY KEY,
-    "BillNo" VARCHAR(50) NOT NULL UNIQUE,
-    "PatientId" UUID,
-    "BillEntityId" INTEGER NOT NULL,
-    "ServiceId" VARCHAR(100),
-    "Quantity" DECIMAL(10, 2) DEFAULT 1,
-    "Rate" DECIMAL(10, 2) NOT NULL,
-    "Amount" DECIMAL(10, 2) NOT NULL,
-    "BillDateTime" TIMESTAMP NOT NULL,
-    "ModeOfPayment" VARCHAR(50) CHECK ("ModeOfPayment" IN ('Cash', 'Card', 'Insurance', 'Scheme')),
-    "InsuranceReferenceNo" VARCHAR(100),
-    "InsuranceBillAmount" DECIMAL(10, 2),
-    "SchemeReferenceNo" VARCHAR(100),
-    "PaidStatus" VARCHAR(50) CHECK ("PaidStatus" IN ('Paid', 'NotPaid')) DEFAULT 'NotPaid',
-    "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
-    "BillGeneratedBy" INTEGER,
-    "BillGeneratedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE SET NULL,
-    FOREIGN KEY ("BillEntityId") REFERENCES "BillEntity"("BillEntityId") ON DELETE RESTRICT,
-    FOREIGN KEY ("BillGeneratedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_bills_billno ON "Bills"("BillNo");
-CREATE INDEX IF NOT EXISTS idx_bills_patientid ON "Bills"("PatientId");
-CREATE INDEX IF NOT EXISTS idx_bills_billentityid ON "Bills"("BillEntityId");
-CREATE INDEX IF NOT EXISTS idx_bills_billdatetime ON "Bills"("BillDateTime");
-CREATE INDEX IF NOT EXISTS idx_bills_paidstatus ON "Bills"("PaidStatus");
-CREATE INDEX IF NOT EXISTS idx_bills_status ON "Bills"("Status");
-CREATE INDEX IF NOT EXISTS idx_bills_generatedby ON "Bills"("BillGeneratedBy");
 
 -- EmergencyBed table
 CREATE TABLE IF NOT EXISTS "EmergencyBed" (
@@ -250,14 +206,12 @@ CREATE TABLE IF NOT EXISTS "PatientAppointment" (
     "TransferToIPDOTICU" VARCHAR(10) DEFAULT 'No' CHECK ("TransferToIPDOTICU" IN ('Yes', 'No')),
     "TransferTo" VARCHAR(50) CHECK ("TransferTo" IN ('IPD Room Admission', 'ICU', 'OT')),
     "TransferDetails" TEXT,
-    "BillId" INTEGER,
     "Status" VARCHAR(50) DEFAULT 'Active',
     "CreatedBy" INTEGER,
     "CreatedDate" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
     FOREIGN KEY ("ReferredDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL,
-    FOREIGN KEY ("BillId") REFERENCES "Bills"("BillId") ON DELETE SET NULL,
     FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
@@ -313,7 +267,6 @@ CREATE TABLE IF NOT EXISTS "RoomAdmission" (
     "OTAdmissionId" INTEGER,
     "IsLinkedToICU" VARCHAR(10) DEFAULT 'No' CHECK ("IsLinkedToICU" IN ('Yes', 'No')),
     "ICUAdmissionId" UUID,
-    "BillId" INTEGER,
     "AllocatedBy" INTEGER,
     "AllocatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
@@ -324,7 +277,6 @@ CREATE TABLE IF NOT EXISTS "RoomAdmission" (
     FOREIGN KEY ("RoomBedsId") REFERENCES "RoomBeds"("RoomBedsId") ON DELETE RESTRICT,
     FOREIGN KEY ("ShiftedTo") REFERENCES "RoomBeds"("RoomBedsId") ON DELETE SET NULL,
     FOREIGN KEY ("ICUAdmissionId") REFERENCES "PatientICUAdmission"("PatientICUAdmissionId") ON DELETE SET NULL,
-    FOREIGN KEY ("BillId") REFERENCES "Bills"("BillId") ON DELETE SET NULL,
     FOREIGN KEY ("AllocatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
@@ -384,7 +336,6 @@ CREATE TABLE IF NOT EXISTS "PatientLabTest" (
     "AppointmentId" INTEGER,
     "RoomAdmissionId" INTEGER,
     "EmergencyAdmissionId" INTEGER,
-    "BillId" INTEGER,
     "OrderedByDoctorId" INTEGER,
     "Priority" VARCHAR(50) CHECK ("Priority" IN ('Normal', 'Urgent')),
     "LabTestDone" VARCHAR(10) DEFAULT 'No',
@@ -397,8 +348,7 @@ CREATE TABLE IF NOT EXISTS "PatientLabTest" (
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("LabTestId") REFERENCES "LabTest"("LabTestId") ON DELETE RESTRICT,
     FOREIGN KEY ("AppointmentId") REFERENCES "PatientAppointment"("PatientAppointmentId") ON DELETE SET NULL,
-    FOREIGN KEY ("EmergencyAdmissionId") REFERENCES "EmergencyAdmission"("EmergencyAdmissionId") ON DELETE SET NULL,
-    FOREIGN KEY ("BillId") REFERENCES "Bills"("BillId") ON DELETE SET NULL
+    FOREIGN KEY ("EmergencyAdmissionId") REFERENCES "EmergencyAdmission"("EmergencyAdmissionId") ON DELETE SET NULL
 );
 
 -- Add missing columns to PatientLabTest if table exists but columns don't
@@ -646,7 +596,6 @@ CREATE TABLE IF NOT EXISTS "PatientOTAllocation" (
     "PreOperationNotes" TEXT,
     "PostOperationNotes" TEXT,
     "OTDocuments" TEXT,
-    "BillId" INTEGER,
     "OTAllocationCreatedBy" INTEGER,
     "OTAllocationCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
@@ -658,7 +607,6 @@ CREATE TABLE IF NOT EXISTS "PatientOTAllocation" (
     FOREIGN KEY ("LeadSurgeonId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
     FOREIGN KEY ("AssistantDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL,
     FOREIGN KEY ("AnaesthetistId") REFERENCES "Users"("UserId") ON DELETE SET NULL,
-    FOREIGN KEY ("BillId") REFERENCES "Bills"("BillId") ON DELETE SET NULL,
     FOREIGN KEY ("OTAllocationCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
@@ -1156,4 +1104,35 @@ CREATE TABLE IF NOT EXISTS "AuditLog" (
 -- Create indexes for AuditLog
 CREATE INDEX IF NOT EXISTS idx_auditlog_actionby ON "AuditLog"("ActionBy");
 CREATE INDEX IF NOT EXISTS idx_auditlog_actiondate ON "AuditLog"("ActionDate");
+
+-- Create Bills table
+CREATE TABLE IF NOT EXISTS "Bills" (
+    "BillId" SERIAL PRIMARY KEY,
+    "BillNo" VARCHAR(50) NOT NULL UNIQUE,
+    "BillDateTime" TIMESTAMP NOT NULL,
+    "Amount" DECIMAL(10, 2) NOT NULL,
+    "PaidStatus" VARCHAR(50) DEFAULT 'Unpaid' CHECK ("PaidStatus" IN ('Paid', 'Unpaid', 'Partial')),
+    "PatientId" UUID,
+    "PatientType" VARCHAR(50),
+    "AppointmentId" INTEGER,
+    "RoomAdmissionId" INTEGER,
+    "EmergencyAdmissionId" INTEGER,
+    "BillType" VARCHAR(50) DEFAULT 'Consultation',
+    "Remarks" TEXT,
+    "CreatedBy" INTEGER,
+    "CreatedDate" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "Status" VARCHAR(50) DEFAULT 'Active',
+    FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE SET NULL,
+    FOREIGN KEY ("AppointmentId") REFERENCES "PatientAppointment"("PatientAppointmentId") ON DELETE SET NULL,
+    FOREIGN KEY ("RoomAdmissionId") REFERENCES "RoomAdmission"("RoomAdmissionId") ON DELETE SET NULL,
+    FOREIGN KEY ("EmergencyAdmissionId") REFERENCES "EmergencyAdmission"("EmergencyAdmissionId") ON DELETE SET NULL,
+    FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+);
+
+-- Create indexes for Bills table
+CREATE INDEX IF NOT EXISTS idx_bills_billno ON "Bills"("BillNo");
+CREATE INDEX IF NOT EXISTS idx_bills_patientid ON "Bills"("PatientId");
+CREATE INDEX IF NOT EXISTS idx_bills_billdatetime ON "Bills"("BillDateTime");
+CREATE INDEX IF NOT EXISTS idx_bills_paidstatus ON "Bills"("PaidStatus");
+CREATE INDEX IF NOT EXISTS idx_bills_status ON "Bills"("Status");
 

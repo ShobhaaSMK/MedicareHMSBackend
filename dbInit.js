@@ -267,7 +267,7 @@ function inferColumnType(columnName, tableName) {
   }
   
   // Integer ID columns (most common)
-  if (columnName.endsWith('Id') && columnName !== 'PatientId' && columnName !== 'RoleId' && columnName !== 'BillId') {
+  if (columnName.endsWith('Id') && columnName !== 'PatientId' && columnName !== 'RoleId') {
     return 'INTEGER';
   }
   
@@ -390,11 +390,11 @@ async function ensureAllTablesAndColumns(pool) {
     console.log('📊 Scanning controllers for tables and columns...');
     const { tablesUsed: scannedTables, columnsByTable: scannedColumns } = scanControllersForTablesAndColumns();
     
-    // Base list of all required tables (from init_tables.sql - all 28 tables)
+    // Base list of all required tables (from init_tables.sql - all 26 tables)
     // This ensures we check all tables defined in the schema
     const baseTables = [
       'Roles', 'DoctorDepartment', 'Users', 'PatientRegistration',
-      'RoomBeds', 'LabTest', 'ICU', 'BillEntity', 'Bills',
+      'RoomBeds', 'LabTest', 'ICU',
       'EmergencyBed', 'EmergencyBedSlot', 'OT', 'OTSlot',
       'PatientAppointment', 'PatientICUAdmission', 'RoomAdmission',
       'PatientLabTest', 'SurgeryProcedure', 'PatientOTAllocation',
