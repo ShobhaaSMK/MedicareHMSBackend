@@ -35,6 +35,7 @@ Response: {
   }
 } */
 router.post('/login', authController.login);
+router.get('/login', authController.login);
 
 /* POST /api/auth/forgot-password
 Request: {

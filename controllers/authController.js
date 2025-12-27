@@ -14,7 +14,10 @@ const RESET_TOKEN_EXPIRES_IN = process.env.RESET_TOKEN_EXPIRES_IN || '1h';
  */
 exports.login = async (req, res) => {
   try {
-    const { UserName, Password } = req.body;
+
+    
+
+    const { username: UserName, password: Password } = req.method === 'GET' ? req.query : req.body;
 
     // Validate input
     if (!UserName || !UserName.trim()) {
@@ -128,6 +131,7 @@ exports.login = async (req, res) => {
         userId: userWithoutPassword.UserId,
         userName: userWithoutPassword.UserName,
         roleId: userWithoutPassword.RoleId,
+        RoleName: userWithoutPassword.RoleName,
       },
       JWT_SECRET,
       {
