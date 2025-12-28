@@ -199,7 +199,7 @@ exports.getLatestICUVisitVitalsByICUAdmissionId = async (req, res) => {
       SELECT 
         ivv.*,
         u."UserName" AS "NurseName",
-        TO_CHAR(iv."RecordedDateTime", 'DD-MM-YYYY HH24:MI') AS "RecordedDateTime"
+        TO_CHAR(ivv."RecordedDateTime", 'DD-MM-YYYY HH24:MI') AS "RecordedDateTime"
       FROM "ICUVisitVitals" ivv
       LEFT JOIN "Users" u ON ivv."NurseId" = u."UserId"
       WHERE ivv."ICUAdmissionId" = $1::uuid
