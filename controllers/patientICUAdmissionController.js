@@ -1099,6 +1099,7 @@ exports.getICUAdmissionsforICUMgmt = async (req, res) => {
         pa."TokenNo" AS "AppointmentTokenNo",
         u."UserName" AS "CreatedByName",
         attendingDoctor."UserName" AS "AttendingDoctorName",
+        TO_CHAR(pica."ICUAllocationFromDate", 'DD-MM-YYYY HH24:MI') AS "ICUAllocationFromDate",
         pica."PatientType"
       FROM "ICU" icu
       LEFT JOIN "PatientICUAdmission" pica ON icu."ICUId" = pica."ICUId"

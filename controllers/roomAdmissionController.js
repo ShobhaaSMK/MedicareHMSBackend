@@ -71,7 +71,8 @@ exports.getAllRoomAdmissions = async (req, res) => {
         d."UserName" AS "AdmittingDoctorName",
         pa."TokenNo" AS "AppointmentTokenNo",
         rb."BedNo", rb."RoomNo",
-        u."UserName" AS "AllocatedByName"
+        u."UserName" AS "AllocatedByName",
+        TO_CHAR(ra."RoomAllocationDate", 'DD-MM-YYYY HH24:MI') AS "RoomAllocationDate"
       FROM "RoomAdmission" ra
       LEFT JOIN "PatientRegistration" p ON ra."PatientId" = p."PatientId"
       LEFT JOIN "Users" d ON ra."AdmittingDoctorId" = d."UserId"
@@ -1302,7 +1303,8 @@ exports.getRoomAdmissionsData = async (req, res) => {
         latest_emergency."EmergencyAdmissionDate" as "EmergencyAdmissionDate",
         latest_emergency."EmergencyBedId" as "EmergencyBedId",
         latest_emergency."EmergencyStatus" as "EmergencyStatus",
-        latest_emergency."EmergencyBedNo" as "EmergencyBedNo"
+        latest_emergency."EmergencyBedNo" as "EmergencyBedNo",
+        TO_CHAR(ra."RoomAllocationDate", 'DD-MM-YYYY HH24:MI') AS "RoomAllocationDate"
       FROM "RoomAdmission" ra
       INNER JOIN "RoomBeds" rb ON ra."RoomBedsId" = rb."RoomBedsId"
       INNER JOIN "PatientRegistration" p ON ra."PatientId" = p."PatientId"

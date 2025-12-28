@@ -47,7 +47,8 @@ exports.getAllICUVisitVitals = async (req, res) => {
     let query = `
       SELECT 
         iv.*,
-        u."UserName" as "NurseName"
+        u."UserName" as "NurseName",
+        TO_CHAR(iv."RecordedDateTime", 'DD-MM-YYYY HH24:MI') AS "RecordedDateTime"
       FROM "ICUVisitVitals" iv
       LEFT JOIN "Users" u ON iv."NurseId" = u."UserId"
     `;
@@ -157,7 +158,8 @@ exports.getICUVisitVitalsByICUAdmissionId = async (req, res) => {
     const { rows } = await db.query(`
       SELECT 
         iv.*,
-        u."UserName" as "NurseName"
+        u."UserName" as "NurseName",
+        TO_CHAR(iv."RecordedDateTime", 'DD-MM-YYYY HH24:MI') AS "RecordedDateTime"
       FROM "ICUVisitVitals" iv
       LEFT JOIN "Users" u ON iv."NurseId" = u."UserId"
       WHERE iv."ICUAdmissionId" = $1::uuid
@@ -196,7 +198,8 @@ exports.getLatestICUVisitVitalsByICUAdmissionId = async (req, res) => {
       `
       SELECT 
         ivv.*,
-        u."UserName" AS "NurseName"
+        u."UserName" AS "NurseName",
+        TO_CHAR(iv."RecordedDateTime", 'DD-MM-YYYY HH24:MI') AS "RecordedDateTime"
       FROM "ICUVisitVitals" ivv
       LEFT JOIN "Users" u ON ivv."NurseId" = u."UserId"
       WHERE ivv."ICUAdmissionId" = $1::uuid

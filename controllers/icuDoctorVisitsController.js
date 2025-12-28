@@ -149,7 +149,8 @@ exports.getICUDoctorVisitsByICUAdmissionId = async (req, res) => {
         p."PatientName", p."PatientNo",
         d."UserName" AS "DoctorName",
         icu."ICUBedNo" AS "ICUNo",
-        u."UserName" AS "CreatedByName"
+        u."UserName" AS "CreatedByName",
+        TO_CHAR(idv."DoctorVisitedDateTime", 'DD-MM-YYYY HH24:MI') AS "DoctorVisitedDateTime"
       FROM "ICUDoctorVisits" idv
       LEFT JOIN "PatientRegistration" p ON idv."PatientId" = p."PatientId"
       LEFT JOIN "Users" d ON idv."DoctorId" = d."UserId"
