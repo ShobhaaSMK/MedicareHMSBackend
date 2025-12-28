@@ -2,7 +2,7 @@ require('dotenv').config();
 const app = require('./app');
 const { initializeDatabase, initializeTables } = require('./dbInit');
 
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 4002;
 
 // Initialize database and tables on server startup
 async function startServer() {
