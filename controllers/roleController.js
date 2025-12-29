@@ -65,12 +65,14 @@ exports.createRole = async (req, res) => {
       return res.status(400).json({ success: false, message: 'RoleName is required' });
     }
 
-    const trimmedRoleName = RoleName.trim();
+    const trimmedRoleName = RoleName.replace(/\s/g, '');
+
+
 
     // Check if RoleName already exists (proactive validation)
     const checkQuery = 'SELECT "RoleId", "RoleName" FROM "Roles" WHERE LOWER("RoleName") = LOWER($1)';
     const { rows: existingRoles } = await db.query(checkQuery, [trimmedRoleName]);
-    
+
     if (existingRoles.length > 0) {
       return res.status(400).json({
         success: false,
@@ -84,9 +86,9 @@ exports.createRole = async (req, res) => {
     if (CreatedBy !== undefined && CreatedBy !== null && CreatedBy !== '') {
       const createdByInt = parseInt(CreatedBy, 10);
       if (isNaN(createdByInt)) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'CreatedBy must be a valid integer. Leave it empty or null if not needed.' 
+        return res.status(400).json({
+          success: false,
+          message: 'CreatedBy must be a valid integer. Leave it empty or null if not needed.'
         });
       }
       createdByValue = createdByInt;
@@ -98,16 +100,16 @@ exports.createRole = async (req, res) => {
       VALUES ($1, $2, $3)
       RETURNING *;
     `;
-    
+
     const { rows } = await db.query(insertQuery, [
       trimmedRoleName,
       RoleDescription ? RoleDescription.trim() : null,
       createdByValue,
     ]);
-    
+
     console.log('Role inserted successfully. Rows returned:', rows.length);
     console.log('Inserted RoleId:', rows[0]?.RoleId);
-    
+
     res.status(201).json({
       success: true,
       message: 'Role created successfully',
@@ -160,12 +162,12 @@ exports.updateRole = async (req, res) => {
 
     // If RoleName is being updated, check if it already exists for another role
     if (RoleName && RoleName.trim()) {
-      const trimmedRoleName = RoleName.trim();
-      
+      const trimmedRoleName = RoleName.replace(/\s/g, '');
+
       // Check if RoleName already exists for a different role
       const checkQuery = 'SELECT "RoleId", "RoleName" FROM "Roles" WHERE LOWER("RoleName") = LOWER($1) AND "RoleId" != $2::uuid';
       const { rows: existingRoles } = await db.query(checkQuery, [trimmedRoleName, id]);
-      
+
       if (existingRoles.length > 0) {
         return res.status(400).json({
           success: false,
@@ -183,7 +185,7 @@ exports.updateRole = async (req, res) => {
       RETURNING *;
     `;
     const { rows } = await db.query(updateQuery, [
-      RoleName ? RoleName.trim() : null,
+      RoleName ? RoleName.replace(/\s/g, '') : null,
       RoleDescription ? RoleDescription.trim() : null,
       id,
     ]);

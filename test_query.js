@@ -14,9 +14,10 @@ async function testQuery() {
     // MODIFY THIS QUERY TO TEST YOUR QUERIES
     // ============================================
     const query = `
-      SELECT COUNT(*) as activeICUBedsCount
-      FROM "ICU"
-      WHERE "Status" = 'Active'
+       SELECT u.*, r."RoleName", d."DepartmentName"
+      FROM "Users" u
+      LEFT JOIN "Roles" r ON u."RoleId" = r."RoleId"
+      WHERE u."RoleId" = '7e96edb8-5277-4cec-b50f-0fc2ebb375e9';
     `;
 
     console.log('Executing query...');

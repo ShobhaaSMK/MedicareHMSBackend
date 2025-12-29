@@ -754,6 +754,71 @@ async function initializeTables() {
       console.warn('⚠ Warning during table/column verification:', verifyError.message);
     }
 
+    // Insert default roles if they don't exist
+    try {
+      console.log('\n=== Inserting default roles ===');
+
+      // Check if SuperAdmin role exists
+      const checkSuperAdmin = await pool.query(
+        'SELECT "RoleId" FROM "Roles" WHERE "RoleName" = $1',
+        ['SuperAdmin']
+      );
+
+      if (checkSuperAdmin.rows.length === 0) {
+        // Insert SuperAdmin role
+        await pool.query(
+          'INSERT INTO "Roles" ("RoleName", "RoleDescription") VALUES ($1, $2)',
+          ['SuperAdmin', 'Super Administrator role with full access']
+        );
+        console.log('✓ Inserted SuperAdmin role');
+      } else {
+        console.log('✓ SuperAdmin role already exists');
+      }
+    } catch (roleError) {
+      console.warn('⚠ Could not insert default roles:', roleError.message);
+    }
+
+    // Insert default users if they don't exist
+    try {
+      console.log('\n=== Inserting default users ===');
+
+      // Get SuperAdmin role ID
+      const roleResult = await pool.query(
+        'SELECT "RoleId" FROM "Roles" WHERE "RoleName" = $1',
+        ['SuperAdmin']
+      );
+
+      if (roleResult.rows.length === 0) {
+        console.warn('⚠ SuperAdmin role not found, skipping user creation');
+      } else {
+        const superAdminRoleId = roleResult.rows[0].RoleId;
+
+        // Check if SuperAdmin user exists
+        const checkSuperAdminUser = await pool.query(
+          'SELECT "UserId" FROM "Users" WHERE "UserName" = $1',
+          ['SuperAdmin']
+        );
+
+        if (checkSuperAdminUser.rows.length === 0) {
+          // Hash the password
+          const bcrypt = require('bcrypt');
+          const saltRounds = 10;
+          const hashedPassword = await bcrypt.hash('SuperAdmin', saltRounds);
+
+          // Insert SuperAdmin user
+          await pool.query(
+            'INSERT INTO "Users" ("RoleId", "UserName", "Password", "Status") VALUES ($1::uuid, $2, $3, $4)',
+            [superAdminRoleId, 'SuperAdmin', hashedPassword, 'Active']
+          );
+          console.log('✓ Inserted SuperAdmin user');
+        } else {
+          console.log('✓ SuperAdmin user already exists');
+        }
+      }
+    } catch (userError) {
+      console.warn('⚠ Could not insert default users:', userError.message);
+    }
+
     // Check which tables exist - verify all 28 required tables
     const baseTablesList = [
       'Roles', 'DoctorDepartment', 'Users', 'PatientRegistration',

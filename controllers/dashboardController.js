@@ -380,12 +380,14 @@ exports.getActiveTokensCount = async (req, res) => {
 /**
  * Get Today's IPD admissions count
  * Returns count of room admissions for today where Status = 'Active' and AdmissionStatus != 'Discharged'
+ * Also includes count of available IPD beds from RoomBeds table where Status = 'Active'
  */
 exports.getTodayIPDAdmissionsCount = async (req, res) => {
   try {
     const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-    
-    const query = `
+
+    // Query for today's IPD admissions count
+    const admissionsQuery = `
       SELECT COUNT(*) AS count
       FROM "RoomAdmission"
       WHERE DATE("RoomAllocationDate") = $1::date
@@ -393,18 +395,31 @@ exports.getTodayIPDAdmissionsCount = async (req, res) => {
       AND "AdmissionStatus" != 'Discharged'
     `;
 
-    const { rows } = await db.query(query, [today]);
+    // Query for available IPD beds count
+    const availableBedsQuery = `
+      SELECT COUNT(*) AS count
+      FROM "RoomBeds"
+      WHERE "Status" = 'Active'
+    `;
 
-    const count = parseInt(rows[0].count, 10) || 0;
+    // Execute both queries
+    const [admissionsResult, bedsResult] = await Promise.all([
+      db.query(admissionsQuery, [today]),
+      db.query(availableBedsQuery)
+    ]);
+
+    const admissionsCount = parseInt(admissionsResult.rows[0].count, 10) || 0;
+    const availableBedsCount = parseInt(bedsResult.rows[0].count, 10) || 0;
 
     res.status(200).json({
       success: true,
-      message: 'Today\'s IPD admissions count retrieved successfully',
+      message: 'Today\'s IPD admissions count and available beds retrieved successfully',
       date: today,
-      count: count,
+      count: admissionsCount,
       data: {
         date: today,
-        count: count,
+        totalIPDAdmissions: admissionsCount,
+        availableIPDBeds: availableBedsCount,
         status: 'Active',
         admissionStatus: 'Not Discharged'
       }
@@ -412,7 +427,7 @@ exports.getTodayIPDAdmissionsCount = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error fetching today\'s IPD admissions count',
+      message: 'Error fetching today\'s IPD admissions count and available beds',
       error: error.message,
     });
   }
@@ -421,38 +436,53 @@ exports.getTodayIPDAdmissionsCount = async (req, res) => {
 /**
  * Get Today's OT scheduled count
  * Returns count of OT allocations for today where OperationStatus = 'Scheduled' or 'In Progress'
+ * Also includes Ongoing OT count where OperationStatus = 'In Progress'
  */
 exports.getTodayOTScheduledCount = async (req, res) => {
   try {
     const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-    
-    // Compare OTAllocationDate with today's date
-    const query = `
+
+    // Query for today's OT scheduled count
+    const scheduledQuery = `
       SELECT COUNT(*) AS count
       FROM "PatientOTAllocation"
       WHERE "OTAllocationDate"::date = $1::date
       AND ("OperationStatus" = 'Scheduled' OR "OperationStatus" = 'In Progress')
     `;
 
-    const { rows } = await db.query(query, [today]);
+    // Query for ongoing OT count
+    const ongoingQuery = `
+      SELECT COUNT(*) AS count
+      FROM "PatientOTAllocation"
+      WHERE "OTAllocationDate"::date = $1::date
+      AND "OperationStatus" = 'In Progress'
+    `;
 
-    const count = parseInt(rows[0].count, 10) || 0;
+    // Execute both queries
+    const [scheduledResult, ongoingResult] = await Promise.all([
+      db.query(scheduledQuery, [today]),
+      db.query(ongoingQuery, [today])
+    ]);
+
+    const scheduledCount = parseInt(scheduledResult.rows[0].count, 10) || 0;
+    const ongoingCount = parseInt(ongoingResult.rows[0].count, 10) || 0;
 
     res.status(200).json({
       success: true,
-      message: 'Today\'s OT scheduled count retrieved successfully',
+      message: 'Today\'s OT scheduled count and ongoing OT count retrieved successfully',
       date: today,
-      count: count,
+      count: scheduledCount,
       data: {
         date: today,
-        count: count,
+        scheduledCount: scheduledCount,
+        OngoingOTCount: ongoingCount,
         operationStatus: ['Scheduled', 'In Progress']
       }
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error fetching today\'s OT scheduled count',
+      message: 'Error fetching today\'s OT scheduled count and ongoing OT count',
       error: error.message,
     });
   }

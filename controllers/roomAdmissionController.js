@@ -1662,6 +1662,7 @@ exports.getRoomAdmissionsDashboardMetrics = async (req, res) => {
       message: 'Room Admissions Dashboard metrics retrieved successfully',
       data: {
         totalAdmissions: totalAdmissions,
+        totalBeds: totalBeds,
         activePatients: activePatients,
         bedOccupancy: bedOccupancy,
         occupiedBeds: occupiedBeds,

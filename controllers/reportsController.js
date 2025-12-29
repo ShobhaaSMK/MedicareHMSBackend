@@ -2240,7 +2240,7 @@ exports.getICUStatistics = async (req, res) => {
               pica."ICUAllocationToDate" IS NULL
               OR ds.date <= pica."ICUAllocationToDate"::date
             )
-            AND pica."ICUAdmissionStatus" = 'Occupied'
+            
             AND pica."Status" = $3
             AND pica."ICUPatientStatus" = 'Critical'
         ) AS critical_patients,
