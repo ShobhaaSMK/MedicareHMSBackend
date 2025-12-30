@@ -1,9 +1,10 @@
 const db = require('../db');
 
-const allowedAdmissionStatus = ['Active', 'Moved To ICU', 'Surgery Scheduled', 'Discharged'];
+const allowedAdmissionStatus = ['Active', 'Moved to ICU', 'Surgery Scheduled', 'Discharged'];
 const allowedYesNo = ['Yes', 'No'];
 const allowedStatus = ['Active', 'Inactive'];
 const allowedPatientTypes = ['OPD', 'Emergency', 'Direct'];
+
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Normalize "Yes"/"No" values in a case-insensitive way
@@ -20,7 +21,7 @@ const normalizeAdmissionStatus = (value) => {
   if (value === undefined || value === null || value === '') return null;
   const normalized = String(value).trim().toLowerCase();
   if (normalized === 'active') return 'Active';
-  if (normalized === 'moved to icu') return 'Moved To ICU';
+  if (normalized === 'moved to icu') return 'Moved to ICU';
   if (normalized === 'surgery scheduled') return 'Surgery Scheduled';
   if (normalized === 'discharged') return 'Discharged';
   return null;
@@ -301,6 +302,7 @@ const validateRoomAdmissionPayload = (body, requireAll = true) => {
   if (requireAll && (!body.RoomAllocationDate || body.RoomAllocationDate === '')) {
     errors.push('RoomAllocationDate is required');
   }
+  
   if (body.RoomAllocationDate && body.RoomAllocationDate !== '') {
     const date = new Date(body.RoomAllocationDate);
     if (isNaN(date.getTime())) {
@@ -324,10 +326,12 @@ const validateRoomAdmissionPayload = (body, requireAll = true) => {
 
   if (body.RoomVacantDate !== undefined && body.RoomVacantDate !== null && body.RoomVacantDate !== '') {
     const date = new Date(body.RoomVacantDate);
+
     if (isNaN(date.getTime())) {
       errors.push('RoomVacantDate must be a valid date');
     }
   }
+  
 
   const admissionStatusProvided =
     body.AdmissionStatus !== undefined ||
@@ -408,6 +412,7 @@ const validateRoomAdmissionPayload = (body, requireAll = true) => {
 
 exports.createRoomAdmission = async (req, res) => {
   try {
+    console.log('AAAAAAAAAA',req.body);
     // Log all incoming fields for debugging
     console.log('=== INCOMING REQUEST BODY ===');
     console.log('All req.body keys:', Object.keys(req.body));
@@ -767,7 +772,7 @@ console.log("ICUAdmissionId", ICUAdmissionId);
       VALUES ($1, $2, $3, $4, $5::uuid, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::uuid, $19, $20, $21)
       RETURNING *;
     `;
-    console.log('&&&&&&&&&&&&&&&&&&&&&&&&Insert query:', insertQuery);
+    
     console.log('SQL Column Order:', [
       'PatientAppointmentId', 'EmergencyAdmissionId', 'PatientType', 'AdmittingDoctorId', 'PatientId', 'RoomBedsId',
       'RoomAllocationDate', 'RoomVacantDate', 'AdmissionStatus', 'CaseSheetDetails', 'CaseSheet',
@@ -777,6 +782,7 @@ console.log("ICUAdmissionId", ICUAdmissionId);
     
     const { rows } = await db.query(insertQuery, insertValues);
 
+    console.log('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB:', rows);
     // Verify the inserted record has the correct values
     console.log('=== VERIFICATION: Inserted Record ===');
     console.log('PatientType in DB:', rows[0].PatientType || rows[0].patienttype);
@@ -1462,7 +1468,11 @@ exports.getRoomAdmissionsDataById = async (req, res) => {
         p."Gender",
         d."UserName" AS "AdmittingDoctorName",
         u."UserName" AS "AllocatedByName",
-        pa."TokenNo" AS "AppointmentTokenNo"
+        pa."TokenNo" AS "AppointmentTokenNo",
+        TO_CHAR(ra."RoomAllocationDate", 'DD-MM-YYYY HH24:MI') AS "RoomAllocationDate",
+        TO_CHAR(ra."RoomVacantDate", 'DD-MM-YYYY HH24:MI') AS "RoomVacantDate",
+        ra."ShiftedToDetails",
+        ra."ShiftToAnotherRoom"
       FROM "RoomAdmission" ra
       LEFT JOIN "PatientRegistration" p ON ra."PatientId" = p."PatientId"
       LEFT JOIN "RoomBeds" rb ON ra."RoomBedsId" = rb."RoomBedsId"
@@ -1474,6 +1484,7 @@ exports.getRoomAdmissionsDataById = async (req, res) => {
     
     const { rows } = await db.query(query, [roomAdmissionId]);
     
+    console.log("rows", rows);
     if (rows.length === 0) {
       return res.status(404).json({
         success: false,
@@ -1771,7 +1782,7 @@ exports.checkRoomAvailability = async (req, res) => {
         AND (
           -- Active or Surgery Scheduled admissions that haven't been vacated
           (
-            ra."AdmissionStatus" IN ('Active', 'Surgery Scheduled')
+            ra."AdmissionStatus" IN ('Active', 'Surgery Scheduled','Moved to ICU')
             AND (
               ra."RoomVacantDate" IS NULL 
               OR ra."RoomVacantDate"::date > $2::date
