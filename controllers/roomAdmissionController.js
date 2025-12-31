@@ -1853,3 +1853,90 @@ exports.checkRoomAvailability = async (req, res) => {
   }
 };
 
+/**
+ * Check if Patient Has Active Admission
+ * Returns the latest room admission for a specific patient with optional status filters
+ * Path parameter: patientId (required, UUID)
+ * Query parameters:
+ * - status: Filter by status (Active, Inactive)
+ * - admissionStatus: Filter by admission status (Active, Moved to ICU, Surgery Scheduled, Discharged)
+ */
+exports.checkPatientHasActiveAdmission = async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const { status, admissionStatus } = req.query;
+
+    // Validate patientId format (UUID)
+    if (!uuidRegex.test(patientId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid patientId. Must be a valid UUID.',
+      });
+    }
+
+    let query = `
+      SELECT
+        ra.*,
+        p."PatientName", p."PatientNo",
+        d."UserName" AS "AdmittingDoctorName",
+        pa."TokenNo" AS "AppointmentTokenNo",
+        rb."BedNo", rb."RoomNo",
+        u."UserName" AS "AllocatedByName",
+        CONCAT(ra."RoomAdmissionId", '_', ra."RoomAllocationDate"::text) AS "RoomAdmissionId_RoomAllocationDate"
+      FROM "RoomAdmission" ra
+      LEFT JOIN "PatientRegistration" p ON ra."PatientId" = p."PatientId"
+      LEFT JOIN "Users" d ON ra."AdmittingDoctorId" = d."UserId"
+      LEFT JOIN "PatientAppointment" pa ON ra."PatientAppointmentId" = pa."PatientAppointmentId"
+      LEFT JOIN "RoomBeds" rb ON ra."RoomBedsId" = rb."RoomBedsId"
+      LEFT JOIN "Users" u ON ra."AllocatedBy" = u."UserId"
+      WHERE ra."PatientId" = $1::uuid
+    `;
+
+    const params = [patientId];
+    const conditions = [];
+
+    if (status) {
+      if (!allowedStatus.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid status. Must be one of: ${allowedStatus.join(', ')}`,
+        });
+      }
+      conditions.push(`ra."Status" = $${params.length + 1}`);
+      params.push(status);
+    }
+
+    if (admissionStatus) {
+      if (!allowedAdmissionStatus.includes(admissionStatus)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid admissionStatus. Must be one of: ${allowedAdmissionStatus.join(', ')}`,
+        });
+      }
+      conditions.push(`ra."AdmissionStatus" = $${params.length + 1}`);
+      params.push(admissionStatus);
+    }
+
+    if (conditions.length > 0) {
+      query += ' AND ' + conditions.join(' AND ');
+    }
+
+    query += ' ORDER BY ra."RoomAllocationDate" DESC LIMIT 1';
+
+    const { rows } = await db.query(query, params);
+
+    res.status(200).json({
+      success: true,
+      count: rows.length,
+      patientId: patientId,
+      data: rows.map(mapRoomAdmissionRow),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching room admissions',
+      error: error.message,
+    });
+  }
+};
+

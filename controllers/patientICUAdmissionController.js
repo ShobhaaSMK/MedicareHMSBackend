@@ -1101,8 +1101,8 @@ exports.getICUAdmissionsforICUMgmt = async (req, res) => {
         attendingDoctor."UserName" AS "AttendingDoctorName",
         TO_CHAR(pica."ICUAllocationFromDate", 'DD-MM-YYYY HH24:MI') AS "ICUAllocationFromDate",
         pica."PatientType"
-      FROM "ICU" icu
-      LEFT JOIN "PatientICUAdmission" pica ON icu."ICUId" = pica."ICUId"
+      FROM "PatientICUAdmission" pica
+      LEFT JOIN "ICU" icu ON icu."ICUId" = pica."ICUId"
         AND pica."Status" = 'Active'
         AND pica."ICUAdmissionStatus" = 'Occupied'
         AND pica."ICUAllocationFromDate" IS NOT NULL

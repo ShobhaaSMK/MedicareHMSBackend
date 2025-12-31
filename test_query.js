@@ -14,10 +14,49 @@ async function testQuery() {
     // MODIFY THIS QUERY TO TEST YOUR QUERIES
     // ============================================
     const query = `
-       SELECT u.*, r."RoleName", d."DepartmentName"
-      FROM "Users" u
-      LEFT JOIN "Roles" r ON u."RoleId" = r."RoleId"
-      WHERE u."RoleId" = '7e96edb8-5277-4cec-b50f-0fc2ebb375e9';
+      SELECT
+        icu."ICUId",
+        icu."ICUBedNo",
+        icu."ICUType",
+        icu."ICURoomNameNo",
+        icu."ICUDescription",
+        icu."IsVentilatorAttached",
+        icu."ICUStartTimeofDay",
+        icu."ICUEndTimeofDay",
+        icu."Status" AS "ICUStatus",
+        icu."CreatedBy" AS "ICUCreatedBy",
+        icu."CreatedAt" AS "ICUCreatedAt",
+        pica.*,
+        pica."Status" AS "AdmissionStatus",
+        p."PatientName",
+        p."PatientNo",
+        p."Age",
+        p."Gender",
+        p."PhoneNo" AS "PatientPhoneNo",
+        pa."TokenNo" AS "AppointmentTokenNo",
+        u."UserName" AS "CreatedByName",
+        attendingDoctor."UserName" AS "AttendingDoctorName",
+        TO_CHAR(pica."ICUAllocationFromDate", 'DD-MM-YYYY HH24:MI') AS "ICUAllocationFromDate",
+        pica."PatientType"
+      FROM "PatientICUAdmission" pica
+      LEFT JOIN "ICU" icu ON icu."ICUId" = pica."ICUId"
+        AND pica."Status" = 'Active'
+        AND pica."ICUAdmissionStatus" = 'Occupied'
+        AND pica."ICUAllocationFromDate" IS NOT NULL
+        AND (
+          (pica."ICUAllocationToDate" IS NOT NULL
+           AND $1::date >= pica."ICUAllocationFromDate"
+           AND $1::date <= pica."ICUAllocationToDate")
+          OR
+          (pica."ICUAllocationToDate" IS NULL
+           AND $1::date >= pica."ICUAllocationFromDate")
+        )
+      LEFT JOIN "PatientRegistration" p ON pica."PatientId" = p."PatientId"
+      LEFT JOIN "PatientAppointment" pa ON pica."PatientAppointmentId" = pa."PatientAppointmentId"
+      LEFT JOIN "Users" u ON pica."ICUAllocationCreatedBy" = u."UserId"
+      LEFT JOIN "Users" attendingDoctor ON pica."AttendingDoctorId" = attendingDoctor."UserId"
+      WHERE icu."Status" = 'Active'
+      ORDER BY icu."ICUBedNo" ASC
     `;
 
     console.log('Executing query...');
