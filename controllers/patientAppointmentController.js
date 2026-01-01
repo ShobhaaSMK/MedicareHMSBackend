@@ -63,7 +63,27 @@ exports.getAllAppointments = async (req, res) => {
     const { status, appointmentStatus, patientId, doctorId, appointmentDate } = req.query;
     let query = `
       SELECT 
-        pa.*,
+        pa."PatientAppointmentId",
+        pa."PatientId",
+        pa."DoctorId",
+        TO_CHAR(pa."AppointmentDate", 'YYYY-MM-DD') AS "AppointmentDate",
+        pa."AppointmentTime",
+        pa."TokenNo",
+        pa."AppointmentStatus",
+        pa."ConsultationCharge",
+        pa."Diagnosis",
+        pa."FollowUpDetails",
+        pa."PrescriptionsUrl",
+        pa."ToBeAdmitted",
+        pa."ReferToAnotherDoctor",
+        pa."ReferredDoctorId",
+        pa."TransferToIPDOTICU",
+        pa."TransferTo",
+        pa."TransferDetails",
+        pa."BillId",
+        pa."Status",
+        pa."CreatedBy",
+        pa."CreatedDate",
         p."PatientName", p."PatientNo", p."AdhaarID",
         d."UserName" AS "DoctorName",
         rd."UserName" AS "ReferredDoctorName",
@@ -139,7 +159,27 @@ exports.getAppointmentById = async (req, res) => {
     const { rows } = await db.query(
       `
       SELECT 
-        pa.*,
+        pa."PatientAppointmentId",
+        pa."PatientId",
+        pa."DoctorId",
+        TO_CHAR(pa."AppointmentDate", 'YYYY-MM-DD') AS "AppointmentDate",
+        pa."AppointmentTime",
+        pa."TokenNo",
+        pa."AppointmentStatus",
+        pa."ConsultationCharge",
+        pa."Diagnosis",
+        pa."FollowUpDetails",
+        pa."PrescriptionsUrl",
+        pa."ToBeAdmitted",
+        pa."ReferToAnotherDoctor",
+        pa."ReferredDoctorId",
+        pa."TransferToIPDOTICU",
+        pa."TransferTo",
+        pa."TransferDetails",
+        pa."BillId",
+        pa."Status",
+        pa."CreatedBy",
+        pa."CreatedDate",
         p."PatientName", p."PatientNo", p."AdhaarID",
         d."UserName" AS "DoctorName",
         rd."UserName" AS "ReferredDoctorName",
@@ -183,7 +223,27 @@ exports.getAppointmentsByPatientId = async (req, res) => {
 
     let query = `
       SELECT 
-        pa.*,
+        pa."PatientAppointmentId",
+        pa."PatientId",
+        pa."DoctorId",
+        TO_CHAR(pa."AppointmentDate", 'YYYY-MM-DD') AS "AppointmentDate",
+        pa."AppointmentTime",
+        pa."TokenNo",
+        pa."AppointmentStatus",
+        pa."ConsultationCharge",
+        pa."Diagnosis",
+        pa."FollowUpDetails",
+        pa."PrescriptionsUrl",
+        pa."ToBeAdmitted",
+        pa."ReferToAnotherDoctor",
+        pa."ReferredDoctorId",
+        pa."TransferToIPDOTICU",
+        pa."TransferTo",
+        pa."TransferDetails",
+        pa."BillId",
+        pa."Status",
+        pa."CreatedBy",
+        pa."CreatedDate",
         p."PatientName", p."PatientNo", p."AdhaarID",
         d."UserName" AS "DoctorName",
         rd."UserName" AS "ReferredDoctorName",
@@ -591,7 +651,28 @@ exports.updateAppointment = async (req, res) => {
         "Status" = COALESCE($17, "Status"),
         "CreatedBy" = COALESCE($18, "CreatedBy")
       WHERE "PatientAppointmentId" = $19
-      RETURNING *;
+      RETURNING 
+        "PatientAppointmentId",
+        "PatientId",
+        "DoctorId",
+        TO_CHAR("AppointmentDate", 'YYYY-MM-DD') AS "AppointmentDate",
+        "AppointmentTime",
+        "TokenNo",
+        "AppointmentStatus",
+        "ConsultationCharge",
+        "Diagnosis",
+        "FollowUpDetails",
+        "PrescriptionsUrl",
+        "ToBeAdmitted",
+        "ReferToAnotherDoctor",
+        "ReferredDoctorId",
+        "TransferToIPDOTICU",
+        "TransferTo",
+        "TransferDetails",
+        "BillId",
+        "Status",
+        "CreatedBy",
+        "CreatedDate";
     `;
 
     const updateParams = [
@@ -652,7 +733,30 @@ exports.deleteAppointment = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid PatientAppointmentId. Must be an integer.' });
     }
     const { rows } = await db.query(
-      'DELETE FROM "PatientAppointment" WHERE "PatientAppointmentId" = $1 RETURNING *;',
+      `DELETE FROM "PatientAppointment" 
+       WHERE "PatientAppointmentId" = $1 
+       RETURNING 
+         "PatientAppointmentId",
+         "PatientId",
+         "DoctorId",
+         TO_CHAR("AppointmentDate", 'YYYY-MM-DD') AS "AppointmentDate",
+         "AppointmentTime",
+         "TokenNo",
+         "AppointmentStatus",
+         "ConsultationCharge",
+         "Diagnosis",
+         "FollowUpDetails",
+         "PrescriptionsUrl",
+         "ToBeAdmitted",
+         "ReferToAnotherDoctor",
+         "ReferredDoctorId",
+         "TransferToIPDOTICU",
+         "TransferTo",
+         "TransferDetails",
+         "BillId",
+         "Status",
+         "CreatedBy",
+         "CreatedDate";`,
       [appointmentId]
     );
     if (rows.length === 0) {

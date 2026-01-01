@@ -1,8 +1,10 @@
+SET search_path TO public;
+
 -- Enable UUID extension if not already enabled
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Roles table
-CREATE TABLE IF NOT EXISTS "Roles" (
+CREATE TABLE IF NOT EXISTS public."Roles" (
     "RoleId" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     "RoleName" VARCHAR(255) NOT NULL UNIQUE,
     "RoleDescription" TEXT,
@@ -25,7 +27,7 @@ CREATE TABLE IF NOT EXISTS "DoctorDepartment" (
 );
 
 -- Users table
-CREATE TABLE IF NOT EXISTS "Users" (
+CREATE TABLE IF NOT EXISTS public."Users" (
     "UserId" SERIAL PRIMARY KEY,
     "RoleId" UUID NOT NULL,
     "UserName" VARCHAR(255) NOT NULL,
@@ -153,6 +155,44 @@ CREATE INDEX IF NOT EXISTS idx_emergencybedslot_slotstarttime ON "EmergencyBedSl
 CREATE INDEX IF NOT EXISTS idx_emergencybedslot_slotendtime ON "EmergencyBedSlot"("ESlotEndTime");
 CREATE INDEX IF NOT EXISTS idx_emergencybedslot_slottime ON "EmergencyBedSlot"("EmergencyBedId", "ESlotStartTime", "ESlotEndTime");
 
+-- EmergencyAdmission table (created early because other tables reference it)
+CREATE TABLE IF NOT EXISTS "EmergencyAdmission" (
+    "EmergencyAdmissionId" SERIAL PRIMARY KEY,
+    "DoctorId" INTEGER NOT NULL,
+    "PatientId" UUID NOT NULL,
+    "EmergencyBedId" INTEGER NOT NULL,
+    "EmergencyAdmissionDate" DATE NOT NULL,
+    "EmergencyStatus" VARCHAR(50) CHECK ("EmergencyStatus" IN ('Admitted', 'IPD', 'OT', 'ICU', 'Discharged')),
+    "Priority" VARCHAR(50),
+    "AllocationFromDate" DATE,
+    "AllocationToDate" DATE,
+    "NumberOfDays" INTEGER,
+    "Diagnosis" TEXT,
+    "TreatementDetails" TEXT,
+    "PatientCondition" VARCHAR(50) CHECK ("PatientCondition" IN ('Critical', 'Stable')),
+    "TransferToIPD" VARCHAR(10) DEFAULT 'No' CHECK ("TransferToIPD" IN ('Yes', 'No')),
+    "TransferToOT" VARCHAR(10) DEFAULT 'No' CHECK ("TransferToOT" IN ('Yes', 'No')),
+    "TransferToICU" VARCHAR(10) DEFAULT 'No' CHECK ("TransferToICU" IN ('Yes', 'No')),
+    "TransferTo" VARCHAR(50) CHECK ("TransferTo" IN ('IPD', 'ICU', 'OT')),
+    "TransferDetails" TEXT,
+    "AdmissionCreatedBy" INTEGER,
+    "AdmissionCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "Status" VARCHAR(50) DEFAULT 'Active',
+    FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
+    FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
+    FOREIGN KEY ("EmergencyBedId") REFERENCES "EmergencyBed"("EmergencyBedId") ON DELETE RESTRICT,
+    FOREIGN KEY ("AdmissionCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+);
+
+-- Create indexes for EmergencyAdmission
+CREATE INDEX IF NOT EXISTS idx_emergencyadmission_doctorid ON "EmergencyAdmission"("DoctorId");
+CREATE INDEX IF NOT EXISTS idx_emergencyadmission_patientid ON "EmergencyAdmission"("PatientId");
+CREATE INDEX IF NOT EXISTS idx_emergencyadmission_emergencybedid ON "EmergencyAdmission"("EmergencyBedId");
+CREATE INDEX IF NOT EXISTS idx_emergencyadmission_emergencystatus ON "EmergencyAdmission"("EmergencyStatus");
+CREATE INDEX IF NOT EXISTS idx_emergencyadmission_status ON "EmergencyAdmission"("Status");
+CREATE INDEX IF NOT EXISTS idx_emergencyadmission_admissiondate ON "EmergencyAdmission"("EmergencyAdmissionDate");
+CREATE INDEX IF NOT EXISTS idx_emergencyadmission_allocationfromdate ON "EmergencyAdmission"("AllocationFromDate");
+
 -- OT (Operation Theater) table
 CREATE TABLE IF NOT EXISTS "OT" (
     "OTId" SERIAL PRIMARY KEY,
@@ -240,7 +280,7 @@ CREATE TABLE IF NOT EXISTS "PatientICUAdmission" (
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("PatientAppointmentId") REFERENCES "PatientAppointment"("PatientAppointmentId") ON DELETE SET NULL,
     FOREIGN KEY ("EmergencyAdmissionId") REFERENCES "EmergencyAdmission"("EmergencyAdmissionId") ON DELETE SET NULL,
-    FOREIGN KEY ("RoomAdmissionId") REFERENCES "RoomAdmission"("RoomAdmissionId") ON DELETE SET NULL,
+    -- RoomAdmissionId foreign key will be added after RoomAdmission table is created
     FOREIGN KEY ("ICUId") REFERENCES "ICU"("ICUId") ON DELETE RESTRICT,
     FOREIGN KEY ("ICUAllocationCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL,
     FOREIGN KEY ("AttendingDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL
@@ -276,7 +316,7 @@ CREATE TABLE IF NOT EXISTS "RoomAdmission" (
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("RoomBedsId") REFERENCES "RoomBeds"("RoomBedsId") ON DELETE RESTRICT,
     FOREIGN KEY ("ShiftedTo") REFERENCES "RoomBeds"("RoomBedsId") ON DELETE SET NULL,
-    FOREIGN KEY ("ICUAdmissionId") REFERENCES "PatientICUAdmission"("PatientICUAdmissionId") ON DELETE SET NULL,
+    -- ICUAdmissionId foreign key will be added after PatientICUAdmission table is created
     FOREIGN KEY ("AllocatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
@@ -312,6 +352,26 @@ CREATE INDEX IF NOT EXISTS idx_roomadmission_roombedsid ON "RoomAdmission"("Room
 CREATE INDEX IF NOT EXISTS idx_roomadmission_admissionstatus ON "RoomAdmission"("AdmissionStatus");
 CREATE INDEX IF NOT EXISTS idx_roomadmission_status ON "RoomAdmission"("Status");
 CREATE INDEX IF NOT EXISTS idx_roomadmission_allocationdate ON "RoomAdmission"("RoomAllocationDate");
+
+-- Add ICUAdmissionId foreign key to RoomAdmission (after PatientICUAdmission is created)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientICUAdmission'
+    ) THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint 
+            WHERE conname = 'RoomAdmission_ICUAdmissionId_fkey'
+        ) THEN
+            ALTER TABLE "RoomAdmission" 
+            ADD CONSTRAINT "RoomAdmission_ICUAdmissionId_fkey" 
+            FOREIGN KEY ("ICUAdmissionId") REFERENCES "PatientICUAdmission"("PatientICUAdmissionId") ON DELETE SET NULL;
+            RAISE NOTICE 'Added RoomAdmission_ICUAdmissionId_fkey constraint';
+        END IF;
+    END IF;
+END $$;
 
 -- Add foreign key from PatientICUAdmission to RoomAdmission (after RoomAdmission is created)
 DO $$
@@ -680,35 +740,6 @@ BEGIN
     END IF;
 END $$;
 
--- EmergencyAdmission table
-CREATE TABLE IF NOT EXISTS "EmergencyAdmission" (
-    "EmergencyAdmissionId" SERIAL PRIMARY KEY,
-    "DoctorId" INTEGER NOT NULL,
-    "PatientId" UUID NOT NULL,
-    "EmergencyBedId" INTEGER NOT NULL,
-    "EmergencyAdmissionDate" DATE NOT NULL,
-    "EmergencyStatus" VARCHAR(50) CHECK ("EmergencyStatus" IN ('Admitted', 'IPD', 'OT', 'ICU', 'Discharged')),
-    "Priority" VARCHAR(50),
-    "AllocationFromDate" DATE,
-    "AllocationToDate" DATE,
-    "NumberOfDays" INTEGER,
-    "Diagnosis" TEXT,
-    "TreatementDetails" TEXT,
-    "PatientCondition" VARCHAR(50) CHECK ("PatientCondition" IN ('Critical', 'Stable')),
-    "TransferToIPD" VARCHAR(10) DEFAULT 'No' CHECK ("TransferToIPD" IN ('Yes', 'No')),
-    "TransferToOT" VARCHAR(10) DEFAULT 'No' CHECK ("TransferToOT" IN ('Yes', 'No')),
-    "TransferToICU" VARCHAR(10) DEFAULT 'No' CHECK ("TransferToICU" IN ('Yes', 'No')),
-    "TransferTo" VARCHAR(50) CHECK ("TransferTo" IN ('IPD', 'ICU', 'OT')),
-    "TransferDetails" TEXT,
-    "AdmissionCreatedBy" INTEGER,
-    "AdmissionCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    "Status" VARCHAR(50) DEFAULT 'Active',
-    FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
-    FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
-    FOREIGN KEY ("EmergencyBedId") REFERENCES "EmergencyBed"("EmergencyBedId") ON DELETE RESTRICT,
-    FOREIGN KEY ("AdmissionCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
-);
-
 -- EmergencyAdmissionVitals table
 CREATE TABLE IF NOT EXISTS "EmergencyAdmissionVitals" (
     "EmergencyAdmissionVitalsId" SERIAL PRIMARY KEY,
@@ -1012,13 +1043,6 @@ BEGIN
         CREATE INDEX IF NOT EXISTS idx_patientlabtest_emergencyadmissionid ON "PatientLabTest"("EmergencyAdmissionId");
     END IF;
 END $$;
-CREATE INDEX IF NOT EXISTS idx_emergencyadmission_doctorid ON "EmergencyAdmission"("DoctorId");
-CREATE INDEX IF NOT EXISTS idx_emergencyadmission_patientid ON "EmergencyAdmission"("PatientId");
-CREATE INDEX IF NOT EXISTS idx_emergencyadmission_emergencybedid ON "EmergencyAdmission"("EmergencyBedId");
-CREATE INDEX IF NOT EXISTS idx_emergencyadmission_emergencystatus ON "EmergencyAdmission"("EmergencyStatus");
-CREATE INDEX IF NOT EXISTS idx_emergencyadmission_status ON "EmergencyAdmission"("Status");
-CREATE INDEX IF NOT EXISTS idx_emergencyadmission_admissiondate ON "EmergencyAdmission"("EmergencyAdmissionDate");
-CREATE INDEX IF NOT EXISTS idx_emergencyadmission_allocationfromdate ON "EmergencyAdmission"("AllocationFromDate");
 CREATE INDEX IF NOT EXISTS idx_patienticuadmission_patientid ON "PatientICUAdmission"("PatientId");
 CREATE INDEX IF NOT EXISTS idx_patienticuadmission_patientappointmentid ON "PatientICUAdmission"("PatientAppointmentId");
 CREATE INDEX IF NOT EXISTS idx_patienticuadmission_icuid ON "PatientICUAdmission"("ICUId");
@@ -1065,32 +1089,50 @@ CREATE INDEX IF NOT EXISTS idx_patientadmitdoctorvisits_status ON "PatientAdmitD
 -- Create indexes for PatientAdmitVisitVitals optional columns only if they exist
 DO $$
 BEGIN
-    -- RoomAdmissionId index
+    -- Only proceed if PatientAdmitVisitVitals table exists
     IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
+        SELECT 1 FROM information_schema.tables 
         WHERE table_schema = 'public' 
-        AND table_name = 'PatientAdmitVisitVitals' 
-        AND column_name = 'RoomAdmissionId'
+        AND table_name = 'PatientAdmitVisitVitals'
     ) THEN
-        CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_roomadmissionid ON "PatientAdmitVisitVitals"("RoomAdmissionId");
-    END IF;
-    
-    -- NurseId index
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-        AND table_name = 'PatientAdmitVisitVitals' 
-        AND column_name = 'NurseId'
-    ) THEN
-        CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_nurseid ON "PatientAdmitVisitVitals"("NurseId");
+        -- RoomAdmissionId index
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = 'PatientAdmitVisitVitals' 
+            AND column_name = 'RoomAdmissionId'
+        ) THEN
+            CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_roomadmissionid ON "PatientAdmitVisitVitals"("RoomAdmissionId");
+        END IF;
+        
+        -- NurseId index
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' 
+            AND table_name = 'PatientAdmitVisitVitals' 
+            AND column_name = 'NurseId'
+        ) THEN
+            CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_nurseid ON "PatientAdmitVisitVitals"("NurseId");
+        END IF;
     END IF;
 END $$;
-CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_patientid ON "PatientAdmitVisitVitals"("PatientId");
-CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_patientstatus ON "PatientAdmitVisitVitals"("PatientStatus");
-CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_dailyorhourlyvitals ON "PatientAdmitVisitVitals"("DailyOrHourlyVitals");
-CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_recordeddatetime ON "PatientAdmitVisitVitals"("RecordedDateTime");
-CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_vitalsstatus ON "PatientAdmitVisitVitals"("VitalsStatus");
-CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_status ON "PatientAdmitVisitVitals"("Status");
+
+-- Create indexes for PatientAdmitVisitVitals (only if table exists)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientAdmitVisitVitals'
+    ) THEN
+        CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_patientid ON "PatientAdmitVisitVitals"("PatientId");
+        CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_patientstatus ON "PatientAdmitVisitVitals"("PatientStatus");
+        CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_dailyorhourlyvitals ON "PatientAdmitVisitVitals"("DailyOrHourlyVitals");
+        CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_recordeddatetime ON "PatientAdmitVisitVitals"("RecordedDateTime");
+        CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_vitalsstatus ON "PatientAdmitVisitVitals"("VitalsStatus");
+        CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_status ON "PatientAdmitVisitVitals"("Status");
+    END IF;
+END $$;
 
 -- AuditLog table
 CREATE TABLE IF NOT EXISTS "AuditLog" (
