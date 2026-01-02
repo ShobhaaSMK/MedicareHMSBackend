@@ -242,6 +242,7 @@ exports.forgotPassword = async (req, res) => {
   try {
     const { EmailId, UserName } = req.body;
 
+    console.log('AAAAAAAAAAAAAAAAAAAAAAAForgot password request received for:', { EmailId, UserName });
     // Validate input - require either EmailId or UserName
     if (!EmailId && !UserName) {
       return res.status(400).json({
