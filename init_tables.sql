@@ -47,8 +47,7 @@ CREATE TABLE IF NOT EXISTS public."Users" (
     "CreatedBy" INTEGER,
     "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     FOREIGN KEY ("RoleId") REFERENCES "Roles"("RoleId") ON DELETE RESTRICT,
-    FOREIGN KEY ("DoctorDepartmentId") REFERENCES "DoctorDepartment"("DoctorDepartmentId") ON DELETE SET NULL,
-    FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    FOREIGN KEY ("DoctorDepartmentId") REFERENCES "DoctorDepartment"("DoctorDepartmentId") ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS "PatientRegistration" (
@@ -80,8 +79,7 @@ CREATE TABLE IF NOT EXISTS "RoomBeds" (
     "ChargesPerDay" DECIMAL(10, 2) NOT NULL,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
     "CreatedBy" INTEGER,
-    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
-    FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP
 );
 
 -- Create indexes for RoomBeds
@@ -115,8 +113,7 @@ CREATE TABLE IF NOT EXISTS "ICU" (
     "ICUEndTimeofDay" TIME WITHOUT TIME ZONE,
     "Status" VARCHAR(50) DEFAULT 'Active',
     "CreatedBy" INTEGER,
-    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
-    FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP
 );
 
 
@@ -131,8 +128,7 @@ CREATE TABLE IF NOT EXISTS "EmergencyBed" (
     "ChargesPerDay" DECIMAL(10, 2),
     "Status" VARCHAR(50) DEFAULT 'Unoccupied' CHECK ("Status" IN ('Active', 'Inactive', 'Occupied', 'Unoccupied')),
     "CreatedBy" INTEGER,
-    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
-    FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP
 );
 
 -- EmergencyBedSlot table
@@ -180,8 +176,7 @@ CREATE TABLE IF NOT EXISTS "EmergencyAdmission" (
     "Status" VARCHAR(50) DEFAULT 'Active',
     FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
-    FOREIGN KEY ("EmergencyBedId") REFERENCES "EmergencyBed"("EmergencyBedId") ON DELETE RESTRICT,
-    FOREIGN KEY ("AdmissionCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    FOREIGN KEY ("EmergencyBedId") REFERENCES "EmergencyBed"("EmergencyBedId") ON DELETE RESTRICT
 );
 
 -- Create indexes for EmergencyAdmission
@@ -204,8 +199,7 @@ CREATE TABLE IF NOT EXISTS "OT" (
     "OTEndTimeofDay" TIME WITHOUT TIME ZONE,
     "Status" VARCHAR(50) DEFAULT 'Active',
     "CreatedBy" INTEGER,
-    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
-    FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP
 );
 
 -- OTSlot table
@@ -252,8 +246,7 @@ CREATE TABLE IF NOT EXISTS "PatientAppointment" (
     "CreatedDate" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
-    FOREIGN KEY ("ReferredDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL,
-    FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    FOREIGN KEY ("ReferredDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
 -- PatientICUAdmission table
@@ -283,7 +276,6 @@ CREATE TABLE IF NOT EXISTS "PatientICUAdmission" (
     FOREIGN KEY ("EmergencyAdmissionId") REFERENCES "EmergencyAdmission"("EmergencyAdmissionId") ON DELETE SET NULL,
     -- RoomAdmissionId foreign key will be added after RoomAdmission table is created
     FOREIGN KEY ("ICUId") REFERENCES "ICU"("ICUId") ON DELETE RESTRICT,
-    FOREIGN KEY ("ICUAllocationCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL,
     FOREIGN KEY ("AttendingDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
@@ -317,9 +309,8 @@ CREATE TABLE IF NOT EXISTS "RoomAdmission" (
     FOREIGN KEY ("AdmittingDoctorId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("RoomBedsId") REFERENCES "RoomBeds"("RoomBedsId") ON DELETE RESTRICT,
-    FOREIGN KEY ("ShiftedTo") REFERENCES "RoomBeds"("RoomBedsId") ON DELETE SET NULL,
+    FOREIGN KEY ("ShiftedTo") REFERENCES "RoomBeds"("RoomBedsId") ON DELETE SET NULL
     -- ICUAdmissionId foreign key will be added after PatientICUAdmission table is created
-    FOREIGN KEY ("AllocatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
 -- Add OTAdmissionId foreign key constraint after PatientOTAllocation is created
@@ -495,46 +486,6 @@ BEGIN
             RAISE NOTICE 'Added PatientLabTest_OrderedByDoctorId_fkey constraint';
         END IF;
         
-        -- Ensure CreatedBy foreign key constraint exists (for new or existing tables)
-        IF EXISTS (
-            SELECT 1 FROM information_schema.columns 
-            WHERE table_schema = 'public' 
-            AND table_name = 'PatientLabTest' 
-            AND column_name = 'CreatedBy'
-        ) AND EXISTS (
-            SELECT 1 FROM information_schema.tables 
-            WHERE table_schema = 'public' 
-            AND table_name = 'Users'
-        ) AND NOT EXISTS (
-            SELECT 1 FROM pg_constraint 
-            WHERE conname = 'PatientLabTest_CreatedBy_fkey'
-        ) THEN
-            -- Check if CreatedBy is INTEGER type, if not, it needs to be converted first
-            IF EXISTS (
-                SELECT 1 FROM information_schema.columns 
-                WHERE table_schema = 'public' 
-                AND table_name = 'PatientLabTest' 
-                AND column_name = 'CreatedBy'
-                AND data_type = 'integer'
-            ) THEN
-                -- Clean up any invalid foreign key references before adding constraint
-                UPDATE "PatientLabTest" 
-                SET "CreatedBy" = NULL 
-                WHERE "CreatedBy" IS NOT NULL 
-                AND NOT EXISTS (
-                    SELECT 1 FROM "Users" WHERE "UserId" = "PatientLabTest"."CreatedBy"
-                );
-                
-                ALTER TABLE "PatientLabTest" 
-                ADD CONSTRAINT "PatientLabTest_CreatedBy_fkey" 
-                FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL;
-                RAISE NOTICE 'Added PatientLabTest_CreatedBy_fkey constraint';
-            ELSE
-                -- CreatedBy is not INTEGER, skip constraint creation
-                -- User should run the migration change_createdby_to_integer_patient_lab_test.sql first
-                RAISE NOTICE 'CreatedBy column is not INTEGER type. Please run migration change_createdby_to_integer_patient_lab_test.sql first.';
-            END IF;
-        END IF;
         
         -- Migrate EmergencyBedSlotId to EmergencyAdmissionId if old column exists
         IF EXISTS (
@@ -627,8 +578,7 @@ CREATE TABLE IF NOT EXISTS "SurgeryProcedure" (
     "PostSurgerySpecifications" TEXT,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
     "CreatedBy" INTEGER,
-    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
-    FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_surgeryprocedure_surgeryname ON "SurgeryProcedure"("SurgeryName");
@@ -670,8 +620,7 @@ CREATE TABLE IF NOT EXISTS "PatientOTAllocation" (
     FOREIGN KEY ("SurgeryId") REFERENCES "SurgeryProcedure"("SurgeryId") ON DELETE SET NULL,
     FOREIGN KEY ("LeadSurgeonId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
     FOREIGN KEY ("AssistantDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL,
-    FOREIGN KEY ("AnaesthetistId") REFERENCES "Users"("UserId") ON DELETE SET NULL,
-    FOREIGN KEY ("OTAllocationCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    FOREIGN KEY ("AnaesthetistId") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
 -- Add NurseId foreign key to PatientOTAllocation if column exists
@@ -761,8 +710,7 @@ CREATE TABLE IF NOT EXISTS "EmergencyAdmissionVitals" (
     "VitalsCreatedBy" INTEGER,
     "VitalsCreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
-    FOREIGN KEY ("EmergencyAdmissionId") REFERENCES "EmergencyAdmission"("EmergencyAdmissionId") ON DELETE RESTRICT,
-    FOREIGN KEY ("VitalsCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    FOREIGN KEY ("EmergencyAdmissionId") REFERENCES "EmergencyAdmission"("EmergencyAdmissionId") ON DELETE RESTRICT
 );
 
 -- Add NurseId foreign key to EmergencyAdmissionVitals if column exists
@@ -823,8 +771,7 @@ CREATE TABLE IF NOT EXISTS "ICUDoctorVisits" (
     "VisitCreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     FOREIGN KEY ("ICUAdmissionId") REFERENCES "PatientICUAdmission"("PatientICUAdmissionId") ON DELETE RESTRICT,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
-    FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
-    FOREIGN KEY ("VisitCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE RESTRICT
 );
 
 -- ICUVisitVitals table
@@ -850,8 +797,7 @@ CREATE TABLE IF NOT EXISTS "ICUVisitVitals" (
     "VitalsCreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
     FOREIGN KEY ("ICUAdmissionId") REFERENCES "PatientICUAdmission"("PatientICUAdmissionId") ON DELETE RESTRICT,
-    FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
-    FOREIGN KEY ("VitalsCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT
 );
 
 -- Add NurseId foreign key to ICUVisitVitals if column exists
@@ -893,8 +839,7 @@ CREATE TABLE IF NOT EXISTS "PatientAdmitDoctorVisits" (
     "VisitCreatedBy" INTEGER,
     "VisitCreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
-    FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
-    FOREIGN KEY ("VisitCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE RESTRICT
 );
 
 -- Add RoomAdmissionId foreign key to PatientAdmitDoctorVisits if column exists
@@ -944,8 +889,7 @@ CREATE TABLE IF NOT EXISTS "PatientAdmitVisitVitals" (
     "VitalsCreatedBy" INTEGER,
     "VitalsCreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
-    FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
-    FOREIGN KEY ("VitalsCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT
 );
 
 -- Add RoomAdmissionId and NurseId foreign keys to PatientAdmitVisitVitals if columns exist
@@ -1005,51 +949,6 @@ CREATE INDEX IF NOT EXISTS idx_patient_registeredby ON "PatientRegistration"("Re
 CREATE INDEX IF NOT EXISTS idx_patient_patientno ON "PatientRegistration"("PatientNo");
 CREATE INDEX IF NOT EXISTS idx_patient_status ON "PatientRegistration"("Status");
 
--- Add foreign key constraint for PatientRegistration.RegisteredBy
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'Users'
-    ) AND EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-        AND table_name = 'PatientRegistration' 
-        AND column_name = 'RegisteredBy'
-    ) AND NOT EXISTS (
-        SELECT 1 FROM pg_constraint 
-        WHERE conname = 'PatientRegistration_RegisteredBy_fkey'
-    ) THEN
-        ALTER TABLE "PatientRegistration" 
-        ADD CONSTRAINT "PatientRegistration_RegisteredBy_fkey" 
-        FOREIGN KEY ("RegisteredBy") REFERENCES "Users"("UserId") ON DELETE SET NULL;
-        RAISE NOTICE 'Added PatientRegistration_RegisteredBy_fkey constraint';
-    END IF;
-END $$;
-
--- Add foreign key constraint for DoctorDepartment.CreatedBy
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'Users'
-    ) AND EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_schema = 'public' 
-        AND table_name = 'DoctorDepartment' 
-        AND column_name = 'CreatedBy'
-    ) AND NOT EXISTS (
-        SELECT 1 FROM pg_constraint 
-        WHERE conname = 'DoctorDepartment_CreatedBy_fkey'
-    ) THEN
-        ALTER TABLE "DoctorDepartment" 
-        ADD CONSTRAINT "DoctorDepartment_CreatedBy_fkey" 
-        FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL;
-        RAISE NOTICE 'Added DoctorDepartment_CreatedBy_fkey constraint';
-    END IF;
-END $$;
 CREATE INDEX IF NOT EXISTS idx_appointment_patientid ON "PatientAppointment"("PatientId");
 CREATE INDEX IF NOT EXISTS idx_appointment_doctorid ON "PatientAppointment"("DoctorId");
 CREATE INDEX IF NOT EXISTS idx_appointment_date ON "PatientAppointment"("AppointmentDate");
@@ -1208,8 +1107,7 @@ CREATE TABLE IF NOT EXISTS "Bills" (
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("DepartmentId") REFERENCES "DoctorDepartment"("DoctorDepartmentId") ON DELETE SET NULL,
-    FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL,
-    FOREIGN KEY ("BillGeneratedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
 -- Create indexes for Bills
@@ -1234,8 +1132,7 @@ CREATE TABLE IF NOT EXISTS "BillItems" (
     "CreatedBy" INTEGER,
     "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
-    FOREIGN KEY ("BillId") REFERENCES "Bills"("BillId") ON DELETE CASCADE,
-    FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    FOREIGN KEY ("BillId") REFERENCES "Bills"("BillId") ON DELETE CASCADE
 );
 
 -- Create indexes for BillItems
@@ -1421,8 +1318,7 @@ CREATE TABLE IF NOT EXISTS "AuditLog" (
     "AuditLogId" SERIAL PRIMARY KEY,
     "ActionLogName" VARCHAR(255) NOT NULL,
     "ActionBy" INTEGER,
-    "ActionDate" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
-    FOREIGN KEY ("ActionBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+    "ActionDate" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP
 );
 
 -- Create indexes for AuditLog
