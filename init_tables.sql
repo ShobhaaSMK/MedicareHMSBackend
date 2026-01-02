@@ -246,6 +246,7 @@ CREATE TABLE IF NOT EXISTS "PatientAppointment" (
     "TransferToIPDOTICU" VARCHAR(10) DEFAULT 'No' CHECK ("TransferToIPDOTICU" IN ('Yes', 'No')),
     "TransferTo" VARCHAR(50) CHECK ("TransferTo" IN ('IPD Room Admission', 'ICU', 'OT')),
     "TransferDetails" TEXT,
+    "BillId" INTEGER,
     "Status" VARCHAR(50) DEFAULT 'Active',
     "CreatedBy" INTEGER,
     "CreatedDate" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
@@ -307,6 +308,7 @@ CREATE TABLE IF NOT EXISTS "RoomAdmission" (
     "OTAdmissionId" INTEGER,
     "IsLinkedToICU" VARCHAR(10) DEFAULT 'No' CHECK ("IsLinkedToICU" IN ('Yes', 'No')),
     "ICUAdmissionId" UUID,
+    "BillId" INTEGER,
     "AllocatedBy" INTEGER,
     "AllocatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
@@ -397,6 +399,7 @@ CREATE TABLE IF NOT EXISTS "PatientLabTest" (
     "RoomAdmissionId" INTEGER,
     "EmergencyAdmissionId" INTEGER,
     "OrderedByDoctorId" INTEGER,
+    "BillId" INTEGER,
     "Priority" VARCHAR(50) CHECK ("Priority" IN ('Normal', 'Urgent')),
     "LabTestDone" VARCHAR(10) DEFAULT 'No',
     "ReportsUrl" TEXT,
@@ -656,6 +659,7 @@ CREATE TABLE IF NOT EXISTS "PatientOTAllocation" (
     "PreOperationNotes" TEXT,
     "PostOperationNotes" TEXT,
     "OTDocuments" TEXT,
+    "BillId" INTEGER,
     "OTAllocationCreatedBy" INTEGER,
     "OTAllocationCreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
@@ -1000,6 +1004,52 @@ CREATE INDEX IF NOT EXISTS idx_users_doctordepartmentid ON "Users"("DoctorDepart
 CREATE INDEX IF NOT EXISTS idx_patient_registeredby ON "PatientRegistration"("RegisteredBy");
 CREATE INDEX IF NOT EXISTS idx_patient_patientno ON "PatientRegistration"("PatientNo");
 CREATE INDEX IF NOT EXISTS idx_patient_status ON "PatientRegistration"("Status");
+
+-- Add foreign key constraint for PatientRegistration.RegisteredBy
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Users'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientRegistration' 
+        AND column_name = 'RegisteredBy'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'PatientRegistration_RegisteredBy_fkey'
+    ) THEN
+        ALTER TABLE "PatientRegistration" 
+        ADD CONSTRAINT "PatientRegistration_RegisteredBy_fkey" 
+        FOREIGN KEY ("RegisteredBy") REFERENCES "Users"("UserId") ON DELETE SET NULL;
+        RAISE NOTICE 'Added PatientRegistration_RegisteredBy_fkey constraint';
+    END IF;
+END $$;
+
+-- Add foreign key constraint for DoctorDepartment.CreatedBy
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Users'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'DoctorDepartment' 
+        AND column_name = 'CreatedBy'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'DoctorDepartment_CreatedBy_fkey'
+    ) THEN
+        ALTER TABLE "DoctorDepartment" 
+        ADD CONSTRAINT "DoctorDepartment_CreatedBy_fkey" 
+        FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL;
+        RAISE NOTICE 'Added DoctorDepartment_CreatedBy_fkey constraint';
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_appointment_patientid ON "PatientAppointment"("PatientId");
 CREATE INDEX IF NOT EXISTS idx_appointment_doctorid ON "PatientAppointment"("DoctorId");
 CREATE INDEX IF NOT EXISTS idx_appointment_date ON "PatientAppointment"("AppointmentDate");
@@ -1133,6 +1183,238 @@ BEGIN
         CREATE INDEX IF NOT EXISTS idx_patientadmitvisitvitals_status ON "PatientAdmitVisitVitals"("Status");
     END IF;
 END $$;
+
+-- Bills table
+CREATE TABLE IF NOT EXISTS "Bills" (
+    "BillId" SERIAL PRIMARY KEY,
+    "BillNo" VARCHAR(100) NOT NULL UNIQUE,
+    "PatientId" UUID NOT NULL,
+    "BillType" VARCHAR(100),
+    "DepartmentId" INTEGER,
+    "DoctorId" INTEGER,
+    "BillDateTime" TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    "TotalAmount" DECIMAL(10, 2) NOT NULL DEFAULT 0,
+    "PaidStatus" VARCHAR(50) DEFAULT 'Pending' CHECK ("PaidStatus" IN ('Pending', 'Paid', 'Partial')),
+    "PaidAmount" DECIMAL(10, 2) DEFAULT 0,
+    "PartialPaidAmount" DECIMAL(10, 2) DEFAULT 0,
+    "Balance" DECIMAL(10, 2) DEFAULT 0,
+    "ModeOfPayment" VARCHAR(100),
+    "InsuranceReferenceNo" VARCHAR(255),
+    "InsuranceBillAmount" DECIMAL(10, 2),
+    "SchemeReferenceNo" VARCHAR(255),
+    "Remarks" TEXT,
+    "BillGeneratedBy" INTEGER,
+    "BillGeneratedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
+    "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
+    FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
+    FOREIGN KEY ("DepartmentId") REFERENCES "DoctorDepartment"("DoctorDepartmentId") ON DELETE SET NULL,
+    FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL,
+    FOREIGN KEY ("BillGeneratedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+);
+
+-- Create indexes for Bills
+CREATE INDEX IF NOT EXISTS idx_bills_patientid ON "Bills"("PatientId");
+CREATE INDEX IF NOT EXISTS idx_bills_billno ON "Bills"("BillNo");
+CREATE INDEX IF NOT EXISTS idx_bills_billtype ON "Bills"("BillType");
+CREATE INDEX IF NOT EXISTS idx_bills_departmentid ON "Bills"("DepartmentId");
+CREATE INDEX IF NOT EXISTS idx_bills_doctorid ON "Bills"("DoctorId");
+CREATE INDEX IF NOT EXISTS idx_bills_paidstatus ON "Bills"("PaidStatus");
+CREATE INDEX IF NOT EXISTS idx_bills_billdatetime ON "Bills"("BillDateTime");
+CREATE INDEX IF NOT EXISTS idx_bills_billgeneratedat ON "Bills"("BillGeneratedAt");
+CREATE INDEX IF NOT EXISTS idx_bills_status ON "Bills"("Status");
+
+-- BillItems table
+CREATE TABLE IF NOT EXISTS "BillItems" (
+    "BillItemsId" SERIAL PRIMARY KEY,
+    "BillId" INTEGER NOT NULL,
+    "ItemCategory" VARCHAR(255) NOT NULL,
+    "Quantity" INTEGER NOT NULL DEFAULT 1,
+    "UnitPrice" DECIMAL(10, 2) NOT NULL,
+    "TotalPrice" DECIMAL(10, 2) NOT NULL,
+    "CreatedBy" INTEGER,
+    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
+    "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
+    FOREIGN KEY ("BillId") REFERENCES "Bills"("BillId") ON DELETE CASCADE,
+    FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
+);
+
+-- Create indexes for BillItems
+CREATE INDEX IF NOT EXISTS idx_billitems_billid ON "BillItems"("BillId");
+CREATE INDEX IF NOT EXISTS idx_billitems_itemcategory ON "BillItems"("ItemCategory");
+CREATE INDEX IF NOT EXISTS idx_billitems_status ON "BillItems"("Status");
+CREATE INDEX IF NOT EXISTS idx_billitems_createdat ON "BillItems"("CreatedAt");
+
+-- Add BillId columns to tables if they don't exist (for existing tables)
+-- PatientAppointment BillId column
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientAppointment'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientAppointment' 
+        AND column_name = 'BillId'
+    ) THEN
+        ALTER TABLE "PatientAppointment" ADD COLUMN "BillId" INTEGER;
+        RAISE NOTICE 'Added BillId column to PatientAppointment';
+    END IF;
+END $$;
+
+-- RoomAdmission BillId column
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'RoomAdmission'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'RoomAdmission' 
+        AND column_name = 'BillId'
+    ) THEN
+        ALTER TABLE "RoomAdmission" ADD COLUMN "BillId" INTEGER;
+        RAISE NOTICE 'Added BillId column to RoomAdmission';
+    END IF;
+END $$;
+
+-- PatientLabTest BillId column
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientLabTest'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientLabTest' 
+        AND column_name = 'BillId'
+    ) THEN
+        ALTER TABLE "PatientLabTest" ADD COLUMN "BillId" INTEGER;
+        RAISE NOTICE 'Added BillId column to PatientLabTest';
+    END IF;
+END $$;
+
+-- PatientOTAllocation BillId column
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientOTAllocation'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientOTAllocation' 
+        AND column_name = 'BillId'
+    ) THEN
+        ALTER TABLE "PatientOTAllocation" ADD COLUMN "BillId" INTEGER;
+        RAISE NOTICE 'Added BillId column to PatientOTAllocation';
+    END IF;
+END $$;
+
+-- Add BillId foreign key constraints to tables that reference Bills
+-- PatientAppointment BillId foreign key
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Bills'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientAppointment' 
+        AND column_name = 'BillId'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'PatientAppointment_BillId_fkey'
+    ) THEN
+        ALTER TABLE "PatientAppointment" 
+        ADD CONSTRAINT "PatientAppointment_BillId_fkey" 
+        FOREIGN KEY ("BillId") REFERENCES "Bills"("BillId") ON DELETE SET NULL;
+        RAISE NOTICE 'Added PatientAppointment_BillId_fkey constraint';
+    END IF;
+END $$;
+
+-- RoomAdmission BillId foreign key
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Bills'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'RoomAdmission' 
+        AND column_name = 'BillId'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'RoomAdmission_BillId_fkey'
+    ) THEN
+        ALTER TABLE "RoomAdmission" 
+        ADD CONSTRAINT "RoomAdmission_BillId_fkey" 
+        FOREIGN KEY ("BillId") REFERENCES "Bills"("BillId") ON DELETE SET NULL;
+        RAISE NOTICE 'Added RoomAdmission_BillId_fkey constraint';
+    END IF;
+END $$;
+
+-- PatientLabTest BillId foreign key
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Bills'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientLabTest' 
+        AND column_name = 'BillId'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'PatientLabTest_BillId_fkey'
+    ) THEN
+        ALTER TABLE "PatientLabTest" 
+        ADD CONSTRAINT "PatientLabTest_BillId_fkey" 
+        FOREIGN KEY ("BillId") REFERENCES "Bills"("BillId") ON DELETE SET NULL;
+        RAISE NOTICE 'Added PatientLabTest_BillId_fkey constraint';
+    END IF;
+END $$;
+
+-- PatientOTAllocation BillId foreign key
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'Bills'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'PatientOTAllocation' 
+        AND column_name = 'BillId'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM pg_constraint 
+        WHERE conname = 'PatientOTAllocation_BillId_fkey'
+    ) THEN
+        ALTER TABLE "PatientOTAllocation" 
+        ADD CONSTRAINT "PatientOTAllocation_BillId_fkey" 
+        FOREIGN KEY ("BillId") REFERENCES "Bills"("BillId") ON DELETE SET NULL;
+        RAISE NOTICE 'Added PatientOTAllocation_BillId_fkey constraint';
+    END IF;
+END $$;
+
+-- Create indexes for BillId columns
+CREATE INDEX IF NOT EXISTS idx_patientappointment_billid ON "PatientAppointment"("BillId");
+CREATE INDEX IF NOT EXISTS idx_roomadmission_billid ON "RoomAdmission"("BillId");
+CREATE INDEX IF NOT EXISTS idx_patientlabtest_billid ON "PatientLabTest"("BillId");
+CREATE INDEX IF NOT EXISTS idx_patientotallocation_billid ON "PatientOTAllocation"("BillId");
 
 -- AuditLog table
 CREATE TABLE IF NOT EXISTS "AuditLog" (
