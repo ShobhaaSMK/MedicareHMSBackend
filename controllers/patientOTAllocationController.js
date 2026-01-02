@@ -5,18 +5,12 @@ const fs = require('fs');
 const allowedStatus = ['Active', 'Inactive'];
 const allowedOperationStatus = ['Scheduled', 'In Progress', 'Completed', 'Cancelled', 'Postponed'];
 
-// Helper function to get today's date in IST (Indian Standard Time)
-const getTodayIST = () => {
+// Helper function to get today's date
+const getTodayDate = () => {
   const now = new Date();
-  // IST is UTC+5:30
-  // Get UTC time and add IST offset (5 hours 30 minutes = 19800000 milliseconds)
-  const istOffset = 5.5 * 60 * 60 * 1000; // 5 hours 30 minutes in milliseconds
-  const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000); // Convert to UTC
-  const istTime = new Date(utcTime + istOffset);
-  
-  const year = istTime.getUTCFullYear();
-  const month = String(istTime.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(istTime.getUTCDate()).padStart(2, '0');
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
   
   return {
     dbFormat: `${year}-${month}-${day}`, // YYYY-MM-DD for database
@@ -1005,9 +999,9 @@ exports.updatePatientOTAllocation = async (req, res) => {
       if (currentAllocation.rows.length > 0 && currentAllocation.rows[0].OTAllocationDate) {
         otAllocationDateDB = currentAllocation.rows[0].OTAllocationDate;
       } else {
-        // Default to today's date in IST if no date available
-        const todayIST = getTodayIST();
-        otAllocationDateDB = todayIST.dbFormat;
+        // Default to today's date if no date available
+        const todayDate = getTodayDate();
+        otAllocationDateDB = todayDate.dbFormat;
       }
     }
 
@@ -1506,10 +1500,10 @@ exports.updatePatientOTAllocation = async (req, res) => {
  */
 exports.getTodayOTScheduledAndInProgressCount = async (req, res) => {
   try {
-    // Get today's date in IST
-    const todayIST = getTodayIST();
-    const todayDB = todayIST.dbFormat; // YYYY-MM-DD for database
-    const todayDisplay = todayIST.displayFormat; // DD-MM-YYYY for display
+    // Get today's date
+    const todayDate = getTodayDate();
+    const todayDB = todayDate.dbFormat; // YYYY-MM-DD for database
+    const todayDisplay = todayDate.displayFormat; // DD-MM-YYYY for display
     
     // Query to get both counts
     const query = `

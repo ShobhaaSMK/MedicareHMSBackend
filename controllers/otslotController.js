@@ -2,18 +2,12 @@ const db = require('../db');
 
 const allowedStatus = ['Active', 'InActive'];
 
-// Helper function to get today's date in IST (Indian Standard Time)
-const getTodayIST = () => {
+// Helper function to get today's date
+const getTodayDate = () => {
   const now = new Date();
-  // IST is UTC+5:30
-  // Get UTC time and add IST offset (5 hours 30 minutes = 19800000 milliseconds)
-  const istOffset = 5.5 * 60 * 60 * 1000; // 5 hours 30 minutes in milliseconds
-  const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000); // Convert to UTC
-  const istTime = new Date(utcTime + istOffset);
-  
-  const year = istTime.getUTCFullYear();
-  const month = String(istTime.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(istTime.getUTCDate()).padStart(2, '0');
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
   
   return {
     dbFormat: `${year}-${month}-${day}`, // YYYY-MM-DD for database
@@ -96,13 +90,13 @@ exports.getAllOTSlots = async (req, res) => {
   try {
     const { status, otId, date } = req.query;
     
-    // Default to today's date in IST if not provided
+    // Default to today's date if not provided
     let checkDate = date;
     let displayDate = date;
     if (!checkDate) {
-      const todayIST = getTodayIST();
-      checkDate = todayIST.dbFormat; // YYYY-MM-DD for database
-      displayDate = todayIST.displayFormat; // DD-MM-YYYY for display
+      const todayDate = getTodayDate();
+      checkDate = todayDate.dbFormat; // YYYY-MM-DD for database
+      displayDate = todayDate.displayFormat; // DD-MM-YYYY for display
     } else {
       // Validate and convert date format
       const dateRegex = /^(\d{2}-\d{2}-\d{4}|\d{4}-\d{2}-\d{2})$/;
@@ -303,13 +297,13 @@ exports.getOTSlotsByOTId = async (req, res) => {
       });
     }
 
-    // Default to today's date in IST if not provided
+    // Default to today's date if not provided
     let checkDate = date;
     let displayDate = date;
     if (!checkDate) {
-      const todayIST = getTodayIST();
-      checkDate = todayIST.dbFormat; // YYYY-MM-DD for database
-      displayDate = todayIST.displayFormat; // DD-MM-YYYY for display
+      const todayDate = getTodayDate();
+      checkDate = todayDate.dbFormat; // YYYY-MM-DD for database
+      displayDate = todayDate.displayFormat; // DD-MM-YYYY for display
     } else {
       // Validate and convert date format
       const dateRegex = /^(\d{2}-\d{2}-\d{4}|\d{4}-\d{2}-\d{2})$/;

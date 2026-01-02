@@ -10,8 +10,8 @@ CREATE TABLE IF NOT EXISTS public."Roles" (
     "RoleDescription" TEXT,
     "Status" VARCHAR(50) DEFAULT 'Active',
     "CreatedBy" INTEGER,
-    "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    "UpdatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
+    "UpdatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP
 );
 
 -- DoctorDepartment table
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS "DoctorDepartment" (
     "NoOfDoctors" INTEGER DEFAULT 0,
     "Status" VARCHAR(50) DEFAULT 'Active',
     "CreatedBy" INTEGER,
-    "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP
 );
 
 -- Users table
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS public."Users" (
     "ICUVisits" VARCHAR(10) CHECK ("ICUVisits" IN ('Yes', 'No')),
     "Status" VARCHAR(50) DEFAULT 'Active',
     "CreatedBy" INTEGER,
-    "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     FOREIGN KEY ("RoleId") REFERENCES "Roles"("RoleId") ON DELETE RESTRICT,
     FOREIGN KEY ("DoctorDepartmentId") REFERENCES "DoctorDepartment"("DoctorDepartmentId") ON DELETE SET NULL,
     FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS "PatientRegistration" (
     "Description" TEXT,
     "Status" VARCHAR(50) DEFAULT 'Active',
     "RegisteredBy" INTEGER,
-    "RegisteredDate" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    "RegisteredDate" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP
 );
 
 -- RoomBeds table
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS "RoomBeds" (
     "ChargesPerDay" DECIMAL(10, 2) NOT NULL,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
     "CreatedBy" INTEGER,
-    "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS "LabTest" (
     "Description" TEXT,
     "Charges" DECIMAL(10, 2) NOT NULL,
     "Status" VARCHAR(50) DEFAULT 'Active',
-    "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS "ICU" (
@@ -111,11 +111,11 @@ CREATE TABLE IF NOT EXISTS "ICU" (
     "ICURoomNameNo" VARCHAR(100),
     "ICUDescription" TEXT,
     "IsVentilatorAttached" VARCHAR(10) NOT NULL CHECK ("IsVentilatorAttached" IN ('Yes', 'No')),
-    "ICUStartTimeofDay" TIME,
-    "ICUEndTimeofDay" TIME,
+    "ICUStartTimeofDay" TIME WITHOUT TIME ZONE,
+    "ICUEndTimeofDay" TIME WITHOUT TIME ZONE,
     "Status" VARCHAR(50) DEFAULT 'Active',
     "CreatedBy" INTEGER,
-    "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS "EmergencyBed" (
     "ChargesPerDay" DECIMAL(10, 2),
     "Status" VARCHAR(50) DEFAULT 'Unoccupied' CHECK ("Status" IN ('Active', 'Inactive', 'Occupied', 'Unoccupied')),
     "CreatedBy" INTEGER,
-    "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
@@ -140,10 +140,10 @@ CREATE TABLE IF NOT EXISTS "EmergencyBedSlot" (
     "EmergencyBedSlotId" SERIAL PRIMARY KEY,
     "EmergencyBedId" INTEGER NOT NULL,
     "EBedSlotNo" VARCHAR(50) NOT NULL UNIQUE,
-    "ESlotStartTime" TIME NOT NULL,
-    "ESlotEndTime" TIME NOT NULL,
+    "ESlotStartTime" TIME WITHOUT TIME ZONE NOT NULL,
+    "ESlotEndTime" TIME WITHOUT TIME ZONE NOT NULL,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
-    "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     FOREIGN KEY ("EmergencyBedId") REFERENCES "EmergencyBed"("EmergencyBedId") ON DELETE RESTRICT
 );
 
@@ -161,11 +161,11 @@ CREATE TABLE IF NOT EXISTS "EmergencyAdmission" (
     "DoctorId" INTEGER NOT NULL,
     "PatientId" UUID NOT NULL,
     "EmergencyBedId" INTEGER NOT NULL,
-    "EmergencyAdmissionDate" DATE NOT NULL,
+    "EmergencyAdmissionDate" TIMESTAMP WITHOUT TIME ZONE NOT NULL,
     "EmergencyStatus" VARCHAR(50) CHECK ("EmergencyStatus" IN ('Admitted', 'IPD', 'OT', 'ICU', 'Discharged')),
     "Priority" VARCHAR(50),
-    "AllocationFromDate" DATE,
-    "AllocationToDate" DATE,
+    "AllocationFromDate" TIMESTAMP WITHOUT TIME ZONE,
+    "AllocationToDate" TIMESTAMP WITHOUT TIME ZONE,
     "NumberOfDays" INTEGER,
     "Diagnosis" TEXT,
     "TreatementDetails" TEXT,
@@ -176,7 +176,7 @@ CREATE TABLE IF NOT EXISTS "EmergencyAdmission" (
     "TransferTo" VARCHAR(50) CHECK ("TransferTo" IN ('IPD', 'ICU', 'OT')),
     "TransferDetails" TEXT,
     "AdmissionCreatedBy" INTEGER,
-    "AdmissionCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "AdmissionCreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active',
     FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
@@ -200,11 +200,11 @@ CREATE TABLE IF NOT EXISTS "OT" (
     "OTType" VARCHAR(100),
     "OTName" VARCHAR(255),
     "OTDescription" TEXT,
-    "OTStartTimeofDay" TIME,
-    "OTEndTimeofDay" TIME,
+    "OTStartTimeofDay" TIME WITHOUT TIME ZONE,
+    "OTEndTimeofDay" TIME WITHOUT TIME ZONE,
     "Status" VARCHAR(50) DEFAULT 'Active',
     "CreatedBy" INTEGER,
-    "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
@@ -213,10 +213,10 @@ CREATE TABLE IF NOT EXISTS "OTSlot" (
     "OTSlotId" SERIAL PRIMARY KEY,
     "OTId" INTEGER NOT NULL,
     "OTSlotNo" INTEGER NOT NULL,
-    "SlotStartTime" TIME NOT NULL,
-    "SlotEndTime" TIME NOT NULL,
+    "SlotStartTime" TIME WITHOUT TIME ZONE NOT NULL,
+    "SlotEndTime" TIME WITHOUT TIME ZONE NOT NULL,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'InActive')),
-    "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     FOREIGN KEY ("OTId") REFERENCES "OT"("OTId") ON DELETE RESTRICT,
     UNIQUE ("OTId", "OTSlotNo")
 );
@@ -232,8 +232,8 @@ CREATE TABLE IF NOT EXISTS "PatientAppointment" (
     "PatientAppointmentId" SERIAL PRIMARY KEY,
     "PatientId" UUID NOT NULL,
     "DoctorId" INTEGER NOT NULL,
-    "AppointmentDate" DATE NOT NULL,
-    "AppointmentTime" TIME NOT NULL,
+    "AppointmentDate" TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    "AppointmentTime" TIME WITHOUT TIME ZONE NOT NULL,
     "TokenNo" VARCHAR(20) NOT NULL UNIQUE,
     "AppointmentStatus" VARCHAR(50) DEFAULT 'Waiting',
     "ConsultationCharge" DECIMAL(10, 2),
@@ -248,7 +248,7 @@ CREATE TABLE IF NOT EXISTS "PatientAppointment" (
     "TransferDetails" TEXT,
     "Status" VARCHAR(50) DEFAULT 'Active',
     "CreatedBy" INTEGER,
-    "CreatedDate" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "CreatedDate" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
     FOREIGN KEY ("ReferredDoctorId") REFERENCES "Users"("UserId") ON DELETE SET NULL,
@@ -266,14 +266,14 @@ CREATE TABLE IF NOT EXISTS "PatientICUAdmission" (
     "ICUId" INTEGER NOT NULL,
     "ICUPatientStatus" VARCHAR(50),
     "ICUAdmissionStatus" VARCHAR(50) DEFAULT 'Occupied' CHECK ("ICUAdmissionStatus" IN ('Occupied', 'Discharged')),
-    "ICUAllocationFromDate" DATE,
-    "ICUAllocationToDate" DATE,
+    "ICUAllocationFromDate" TIMESTAMP WITHOUT TIME ZONE,
+    "ICUAllocationToDate" TIMESTAMP WITHOUT TIME ZONE,
     "NumberOfDays" INTEGER,
     "Diagnosis" TEXT,
     "TreatementDetails" TEXT,
     "PatientCondition" TEXT,
     "ICUAllocationCreatedBy" INTEGER,
-    "ICUAllocationCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "ICUAllocationCreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active',
     "OnVentilator" VARCHAR(10) DEFAULT 'No' CHECK ("OnVentilator" IN ('Yes', 'No')),
     "AttendingDoctorId" INTEGER,
@@ -295,8 +295,8 @@ CREATE TABLE IF NOT EXISTS "RoomAdmission" (
     "AdmittingDoctorId" INTEGER NOT NULL,
     "PatientId" UUID NOT NULL,
     "RoomBedsId" INTEGER NOT NULL,
-    "RoomAllocationDate" TIMESTAMP NOT NULL,
-    "RoomVacantDate" TIMESTAMP,
+    "RoomAllocationDate" TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    "RoomVacantDate" TIMESTAMP WITHOUT TIME ZONE,
     "AdmissionStatus" VARCHAR(50) DEFAULT 'Active' CHECK ("AdmissionStatus" IN ('Active', 'Moved to ICU', 'Surgery Scheduled', 'Discharged')),
     "CaseSheetDetails" TEXT,
     "CaseSheet" TEXT,
@@ -308,7 +308,7 @@ CREATE TABLE IF NOT EXISTS "RoomAdmission" (
     "IsLinkedToICU" VARCHAR(10) DEFAULT 'No' CHECK ("IsLinkedToICU" IN ('Yes', 'No')),
     "ICUAdmissionId" UUID,
     "AllocatedBy" INTEGER,
-    "AllocatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "AllocatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
     FOREIGN KEY ("PatientAppointmentId") REFERENCES "PatientAppointment"("PatientAppointmentId") ON DELETE SET NULL,
     FOREIGN KEY ("EmergencyAdmissionId") REFERENCES "EmergencyAdmission"("EmergencyAdmissionId") ON DELETE SET NULL,
@@ -401,10 +401,10 @@ CREATE TABLE IF NOT EXISTS "PatientLabTest" (
     "LabTestDone" VARCHAR(10) DEFAULT 'No',
     "ReportsUrl" TEXT,
     "TestStatus" VARCHAR(50) CHECK ("TestStatus" IN ('Pending', 'InProgress', 'Completed')),
-    "TestDoneDateTime" TIMESTAMP,
+    "TestDoneDateTime" TIMESTAMP WITHOUT TIME ZONE,
     "Status" VARCHAR(50) DEFAULT 'Active',
     "CreatedBy" INTEGER,
-    "CreatedDate" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "CreatedDate" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("LabTestId") REFERENCES "LabTest"("LabTestId") ON DELETE RESTRICT,
     FOREIGN KEY ("AppointmentId") REFERENCES "PatientAppointment"("PatientAppointmentId") ON DELETE SET NULL,
@@ -624,7 +624,7 @@ CREATE TABLE IF NOT EXISTS "SurgeryProcedure" (
     "PostSurgerySpecifications" TEXT,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
     "CreatedBy" INTEGER,
-    "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     FOREIGN KEY ("CreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
@@ -645,19 +645,19 @@ CREATE TABLE IF NOT EXISTS "PatientOTAllocation" (
     "AssistantDoctorId" INTEGER,
     "AnaesthetistId" INTEGER,
     "NurseId" INTEGER,
-    "OTAllocationDate" DATE NOT NULL,
+    "OTAllocationDate" TIMESTAMP WITHOUT TIME ZONE NOT NULL,
     "Duration" VARCHAR(50),
-    "OTStartTime" TIME,
-    "OTEndTime" TIME,
-    "OTActualStartTime" TIME,
-    "OTActualEndTime" TIME,
+    "OTStartTime" TIME WITHOUT TIME ZONE,
+    "OTEndTime" TIME WITHOUT TIME ZONE,
+    "OTActualStartTime" TIME WITHOUT TIME ZONE,
+    "OTActualEndTime" TIME WITHOUT TIME ZONE,
     "OperationDescription" TEXT,
     "OperationStatus" VARCHAR(50) DEFAULT 'Scheduled',
     "PreOperationNotes" TEXT,
     "PostOperationNotes" TEXT,
     "OTDocuments" TEXT,
     "OTAllocationCreatedBy" INTEGER,
-    "OTAllocationCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "OTAllocationCreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("PatientAppointmentId") REFERENCES "PatientAppointment"("PatientAppointmentId") ON DELETE SET NULL,
@@ -701,8 +701,8 @@ CREATE TABLE IF NOT EXISTS "PatientOTAllocationSlots" (
     "PatientOTAllocationSlotId" SERIAL PRIMARY KEY,
     "PatientOTAllocationId" INTEGER NOT NULL,
     "OTSlotId" INTEGER NOT NULL,
-    "OTAllocationDate" DATE NOT NULL,
-    "CreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "OTAllocationDate" TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+    "CreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     FOREIGN KEY ("PatientOTAllocationId") REFERENCES "PatientOTAllocation"("PatientOTAllocationId") ON DELETE CASCADE,
     FOREIGN KEY ("OTSlotId") REFERENCES "OTSlot"("OTSlotId") ON DELETE RESTRICT,
     UNIQUE ("PatientOTAllocationId", "OTSlotId")
@@ -745,7 +745,7 @@ CREATE TABLE IF NOT EXISTS "EmergencyAdmissionVitals" (
     "EmergencyAdmissionVitalsId" SERIAL PRIMARY KEY,
     "EmergencyAdmissionId" INTEGER NOT NULL,
     "NurseId" INTEGER NOT NULL,
-    "RecordedDateTime" TIMESTAMP NOT NULL,
+    "RecordedDateTime" TIMESTAMP WITHOUT TIME ZONE NOT NULL,
     "HeartRate" INTEGER,
     "BloodPressure" VARCHAR(50),
     "Temperature" DECIMAL(5, 2),
@@ -755,7 +755,7 @@ CREATE TABLE IF NOT EXISTS "EmergencyAdmissionVitals" (
     "VitalsStatus" VARCHAR(50) CHECK ("VitalsStatus" IN ('Stable', 'Critical', 'Improving')),
     "VitalsRemarks" TEXT,
     "VitalsCreatedBy" INTEGER,
-    "VitalsCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "VitalsCreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
     FOREIGN KEY ("EmergencyAdmissionId") REFERENCES "EmergencyAdmission"("EmergencyAdmissionId") ON DELETE RESTRICT,
     FOREIGN KEY ("VitalsCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
@@ -811,12 +811,12 @@ CREATE TABLE IF NOT EXISTS "ICUDoctorVisits" (
     "ICUAdmissionId" UUID NOT NULL,
     "PatientId" UUID NOT NULL,
     "DoctorId" INTEGER NOT NULL,
-    "DoctorVisitedDateTime" TIMESTAMP NOT NULL,
+    "DoctorVisitedDateTime" TIMESTAMP WITHOUT TIME ZONE NOT NULL,
     "VisitsDetails" TEXT,
     "PatientCondition" TEXT,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
     "VisitCreatedBy" INTEGER,
-    "VisitCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "VisitCreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     FOREIGN KEY ("ICUAdmissionId") REFERENCES "PatientICUAdmission"("PatientICUAdmissionId") ON DELETE RESTRICT,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
@@ -832,7 +832,7 @@ CREATE TABLE IF NOT EXISTS "ICUVisitVitals" (
     "NurseVisitsDetails" TEXT,
     "PatientCondition" VARCHAR(50) CHECK ("PatientCondition" IN ('Stable', 'Notstable')),
     "DailyOrHourlyVitals" VARCHAR(50) CHECK ("DailyOrHourlyVitals" IN ('Daily Vitals', 'Hourly Vitals')),
-    "RecordedDateTime" TIMESTAMP NOT NULL,
+    "RecordedDateTime" TIMESTAMP WITHOUT TIME ZONE NOT NULL,
     "HeartRate" INTEGER,
     "BloodPressure" VARCHAR(50),
     "Temperature" DECIMAL(5, 2),
@@ -843,7 +843,7 @@ CREATE TABLE IF NOT EXISTS "ICUVisitVitals" (
     "VitalsStatus" VARCHAR(50) CHECK ("VitalsStatus" IN ('Stable', 'Critical', 'Improving', 'Normal')),
     "VitalsRemarks" TEXT,
     "VitalsCreatedBy" INTEGER,
-    "VitalsCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "VitalsCreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
     FOREIGN KEY ("ICUAdmissionId") REFERENCES "PatientICUAdmission"("PatientICUAdmissionId") ON DELETE RESTRICT,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
@@ -882,12 +882,12 @@ CREATE TABLE IF NOT EXISTS "PatientAdmitDoctorVisits" (
     "RoomAdmissionId" INTEGER,
     "PatientId" UUID NOT NULL,
     "DoctorId" INTEGER NOT NULL,
-    "DoctorVisitedDateTime" TIMESTAMP NOT NULL,
+    "DoctorVisitedDateTime" TIMESTAMP WITHOUT TIME ZONE NOT NULL,
     "VisitsRemarks" TEXT,
     "PatientCondition" TEXT,
     "Status" VARCHAR(50) DEFAULT 'Active',
     "VisitCreatedBy" INTEGER,
-    "VisitCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "VisitCreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("DoctorId") REFERENCES "Users"("UserId") ON DELETE RESTRICT,
     FOREIGN KEY ("VisitCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
@@ -926,7 +926,7 @@ CREATE TABLE IF NOT EXISTS "PatientAdmitVisitVitals" (
     "PatientId" UUID NOT NULL,
     "NurseId" INTEGER,
     "PatientStatus" VARCHAR(50) CHECK ("PatientStatus" IN ('Stable', 'Notstable')),
-    "RecordedDateTime" DATE NOT NULL,
+    "RecordedDateTime" TIMESTAMP WITHOUT TIME ZONE NOT NULL,
     "VisitRemarks" TEXT,
     "DailyOrHourlyVitals" VARCHAR(50) CHECK ("DailyOrHourlyVitals" IN ('Daily Vitals', 'Hourly Vitals')),
     "HeartRate" INTEGER,
@@ -938,7 +938,7 @@ CREATE TABLE IF NOT EXISTS "PatientAdmitVisitVitals" (
     "VitalsStatus" VARCHAR(50) CHECK ("VitalsStatus" IN ('Stable', 'Critical', 'Improving', 'Normal')),
     "VitalsRemarks" TEXT,
     "VitalsCreatedBy" INTEGER,
-    "VitalsCreatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "VitalsCreatedAt" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     "Status" VARCHAR(50) DEFAULT 'Active' CHECK ("Status" IN ('Active', 'Inactive')),
     FOREIGN KEY ("PatientId") REFERENCES "PatientRegistration"("PatientId") ON DELETE RESTRICT,
     FOREIGN KEY ("VitalsCreatedBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
@@ -1139,7 +1139,7 @@ CREATE TABLE IF NOT EXISTS "AuditLog" (
     "AuditLogId" SERIAL PRIMARY KEY,
     "ActionLogName" VARCHAR(255) NOT NULL,
     "ActionBy" INTEGER,
-    "ActionDate" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    "ActionDate" TIMESTAMP WITHOUT TIME ZONE DEFAULT LOCALTIMESTAMP,
     FOREIGN KEY ("ActionBy") REFERENCES "Users"("UserId") ON DELETE SET NULL
 );
 
