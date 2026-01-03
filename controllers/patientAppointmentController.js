@@ -222,7 +222,7 @@ exports.getAppointmentsByPatientId = async (req, res) => {
     }
 
     let query = `
-      SELECT 
+      SELECT
         pa."PatientAppointmentId",
         pa."PatientId",
         pa."DoctorId",
@@ -258,7 +258,7 @@ exports.getAppointmentsByPatientId = async (req, res) => {
       LEFT JOIN "Users" u ON pa."CreatedBy" = u."UserId"
       WHERE pa."PatientId" = $1::uuid
     `;
-    
+
     const params = [patientId];
     const conditions = [];
 
@@ -291,7 +291,7 @@ exports.getAppointmentsByPatientId = async (req, res) => {
     query += ' ORDER BY pa."AppointmentDate" DESC LIMIT 1';
 
     const { rows } = await db.query(query, params);
-    
+
     res.status(200).json({
       success: true,
       count: rows.length,
@@ -305,6 +305,118 @@ exports.getAppointmentsByPatientId = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching patient appointments',
+      error: error.message,
+    });
+  }
+};
+
+exports.getAppointmentsByDoctorId = async (req, res) => {
+  try {
+    const { doctorId } = req.params;
+    const { status, appointmentStatus, appointmentDate } = req.query;
+
+    // Validate doctorId format (integer)
+    const doctorIdInt = parseInt(doctorId, 10);
+    if (isNaN(doctorIdInt)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid doctorId. Must be a valid integer.',
+      });
+    }
+
+    let query = `
+      SELECT
+        pa."PatientAppointmentId",
+        pa."PatientId",
+        pa."DoctorId",
+        TO_CHAR(pa."AppointmentDate", 'YYYY-MM-DD') AS "AppointmentDate",
+        pa."AppointmentTime",
+        pa."TokenNo",
+        pa."AppointmentStatus",
+        pa."ConsultationCharge",
+        pa."Diagnosis",
+        pa."FollowUpDetails",
+        pa."PrescriptionsUrl",
+        pa."ToBeAdmitted",
+        pa."ReferToAnotherDoctor",
+        pa."ReferredDoctorId",
+        pa."TransferToIPDOTICU",
+        pa."TransferTo",
+        pa."TransferDetails",
+        pa."BillId",
+        pa."Status",
+        pa."CreatedBy",
+        pa."CreatedDate",
+        p."PatientName", p."PatientNo", p."AdhaarID",
+        d."UserName" AS "DoctorName",
+        rd."UserName" AS "ReferredDoctorName",
+        b."BillNo",
+        u."UserName" AS "CreatedByName"
+      FROM "PatientAppointment" pa
+      LEFT JOIN "PatientRegistration" p ON pa."PatientId" = p."PatientId"
+      LEFT JOIN "Users" d ON pa."DoctorId" = d."UserId"
+      LEFT JOIN "Users" rd ON pa."ReferredDoctorId" = rd."UserId"
+      LEFT JOIN "Bills" b ON pa."BillId" = b."BillId"
+      LEFT JOIN "Users" u ON pa."CreatedBy" = u."UserId"
+      WHERE pa."DoctorId" = $1
+    `;
+
+    const params = [doctorIdInt];
+    const conditions = [];
+
+    if (status) {
+      if (!allowedStatus.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid status. Must be one of: ${allowedStatus.join(', ')}`,
+        });
+      }
+      conditions.push(`pa."Status" = $${params.length + 1}`);
+      params.push(status);
+    }
+
+    if (appointmentStatus) {
+      if (!allowedAppointmentStatus.includes(appointmentStatus)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid appointmentStatus. Must be one of: ${allowedAppointmentStatus.join(', ')}`,
+        });
+      }
+      conditions.push(`pa."AppointmentStatus" = $${params.length + 1}`);
+      params.push(appointmentStatus);
+    }
+
+    if (appointmentDate) {
+      // Validate date format (YYYY-MM-DD)
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dateRegex.test(appointmentDate)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid appointmentDate format. Please use YYYY-MM-DD format (e.g., 2025-11-30)',
+        });
+      }
+      conditions.push(`pa."AppointmentDate" = $${params.length + 1}`);
+      params.push(appointmentDate);
+    }
+
+    if (conditions.length > 0) {
+      query += ' AND ' + conditions.join(' AND ');
+    }
+
+    query += ' ORDER BY pa."AppointmentDate" DESC, pa."AppointmentTime" ASC';
+
+    const { rows } = await db.query(query, params);
+
+    res.status(200).json({
+      success: true,
+      count: rows.length,
+      doctorId: doctorIdInt,
+      data: rows.map(mapAppointmentRow),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching doctor appointments',
       error: error.message,
     });
   }

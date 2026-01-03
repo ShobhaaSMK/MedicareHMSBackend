@@ -117,6 +117,46 @@ Response: {
 } */
 router.get('/', patientAppointmentController.getAllAppointments);
 
+/* GET /api/patient-appointments/doctor/:doctorId
+Params: doctorId (Number) - required
+Query params: ?status=String (optional), ?appointmentStatus=String (optional), ?appointmentDate=String (optional)
+Response: {
+  success: Boolean,
+  count: Number,
+  doctorId: Number,
+  data: [{
+    PatientAppointmentId: Number,
+    PatientId: String (UUID),
+    DoctorId: Number,
+    AppointmentDate: Date,
+    AppointmentTime: String,
+    TokenNo: String,
+    AppointmentStatus: String, // "Waiting" | "Consulting" | "Completed"
+    ConsultationCharge: Number | null,
+    Diagnosis: String | null,
+    FollowUpDetails: String | null,
+    PrescriptionsUrl: String | null,
+    ToBeAdmitted: String, // "Yes" | "No"
+    ReferToAnotherDoctor: String, // "Yes" | "No"
+    ReferredDoctorId: Number | null,
+    ReferredDoctorName: String | null,
+    TransferToIPDOTICU: String, // "Yes" | "No"
+    TransferTo: String | null, // "IPD Room Admission" | "ICU" | "OT"
+    TransferDetails: String | null,
+    BillId: Number | null,
+    BillNo: String | null,
+    Status: String, // "Active" | "InActive"
+    CreatedBy: Number | null,
+    CreatedDate: Date,
+    PatientName: String | null,
+    PatientNo: String | null,
+    AadharId: String | null,
+    DoctorName: String | null,
+    CreatedByName: String | null
+  }]
+} */
+router.get('/doctor/:doctorId', patientAppointmentController.getAppointmentsByDoctorId);
+
 /* GET /api/patient-appointments/patient/:patientId
 Params: patientId (String UUID) - required
 Query params: ?status=String (optional), ?appointmentStatus=String (optional)
