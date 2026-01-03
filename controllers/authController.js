@@ -241,8 +241,7 @@ exports.verifyToken = async (req, res) => {
 exports.forgotPassword = async (req, res) => {
   try {
     const { EmailId, UserName } = req.body;
-
-    console.log('AAAAAAAAAAAAAAAAAAAAAAAForgot password request received for:', { EmailId, UserName });
+    
     // Validate input - require either EmailId or UserName
     if (!EmailId && !UserName) {
       return res.status(400).json({
@@ -322,6 +321,7 @@ exports.forgotPassword = async (req, res) => {
     );
 
     try {
+      console.log('Sending password reset email to:', user.EmailId);
       // Send password reset email
       await sendPasswordResetEmail(
         user.EmailId.trim(),
@@ -335,6 +335,7 @@ exports.forgotPassword = async (req, res) => {
       });
     } catch (emailError) {
       console.error('Error sending password reset email:', emailError);
+      
       
       // In development mode, return the token directly if email is not configured
       if (process.env.NODE_ENV === 'development' && emailError.message.includes('Email service is not configured')) {
@@ -374,6 +375,8 @@ exports.forgotPassword = async (req, res) => {
 exports.resetPassword = async (req, res) => {
   try {
     const { token, newPassword } = req.body;
+    console.log('Reset password request received with token:', token);
+    console.log('New password received:', newPassword);
 
     // Validate input
     if (!token) {
@@ -458,6 +461,7 @@ exports.resetPassword = async (req, res) => {
 
     // Hash the new password
     const saltRounds = 10;
+    console.log('newPasswordnewPassword:', newPassword);
     const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
 
     // Update user password
@@ -482,6 +486,101 @@ exports.resetPassword = async (req, res) => {
     });
   } catch (error) {
     console.error('Reset password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error resetting password',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Reset password for a specific UserId (admin function)
+ * Resets user password directly using UserId
+ */
+exports.resetPasswordForUserId = async (req, res) => {
+  try {
+    const { UserId, newPassword } = req.body;
+
+    // Validate input
+    if (!UserId) {
+      return res.status(400).json({
+        success: false,
+        message: 'UserId is required',
+      });
+    }
+
+    if (!newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password is required',
+      });
+    }
+
+    // Validate password strength (optional - add your own rules)
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters long',
+      });
+    }
+
+    // Verify user exists and is active
+    const { rows } = await db.query(
+      `
+      SELECT
+        u."UserId",
+        u."UserName",
+        u."EmailId",
+        u."Status"
+      FROM "Users" u
+      WHERE u."UserId" = $1
+      `,
+      [UserId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    const user = rows[0];
+
+    if (user.Status !== 'Active') {
+      return res.status(403).json({
+        success: false,
+        message: 'User account is not active',
+      });
+    }
+
+    // Hash the new password
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+
+    // Update user password
+    await db.query(
+      'UPDATE "Users" SET "Password" = $1 WHERE "UserId" = $2',
+      [hashedPassword, user.UserId]
+    );
+
+    // Send success email (don't fail if email fails)
+    try {
+      if (user.EmailId) {
+        await sendPasswordResetSuccessEmail(user.EmailId, user.UserName);
+      }
+    } catch (emailError) {
+      console.error('Error sending password reset success email:', emailError);
+      // Continue even if email fails
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Password has been reset successfully.',
+    });
+  } catch (error) {
+    console.error('Reset password for UserId error:', error);
     res.status(500).json({
       success: false,
       message: 'Error resetting password',

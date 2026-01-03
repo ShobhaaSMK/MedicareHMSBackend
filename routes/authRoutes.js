@@ -64,6 +64,17 @@ Response: {
 } */
 router.post('/reset-password', authController.resetPassword);
 
+/* POST /api/auth/reset-password-for-userid
+Request: {
+  UserId: Number (required), // User ID to reset password for
+  newPassword: String (required) // Minimum 6 characters
+}
+Response: {
+  success: Boolean,
+  message: String
+} */
+router.post('/reset-password-for-userid', authController.resetPasswordForUserId);
+
 /* GET /api/auth/verify
 Headers: Authorization: Bearer <token> OR x-access-token: <token>
 Response: {

@@ -14,6 +14,11 @@ const createTransporter = () => {
   // If email credentials are not configured, return null
   if (!EMAIL_USER || !EMAIL_PASSWORD) {
     console.warn('Email credentials not configured. Email functionality will be disabled.');
+    console.warn('To enable email sending:');
+    console.warn('1. Set EMAIL_USER to your Gmail address');
+    console.warn('2. Generate an App Password from Google Account settings (https://support.google.com/accounts/answer/185833)');
+    console.warn('3. Set EMAIL_PASSWORD to the generated App Password (not your regular password)');
+    console.warn('4. Set EMAIL_HOST=smtp.gmail.com, EMAIL_PORT=587, EMAIL_SECURE=false');
     return null;
   }
 
@@ -168,8 +173,15 @@ const sendPasswordResetEmail = async (to, userName, resetToken) => {
  */
 const sendPasswordResetSuccessEmail = async (to, userName) => {
   try {
+    // In development mode, skip sending emails to avoid authentication issues
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Development mode: Skipping password reset success email to', to);
+      console.log('Email content would be: Password reset successful for user', userName);
+      return;
+    }
+
     const transporter = createTransporter();
-    
+
     if (!transporter) {
       // If email is not configured, just log and return
       console.log('Email service not configured. Skipping success email.');
